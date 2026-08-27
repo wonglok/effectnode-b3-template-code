@@ -8,7 +8,6 @@ import {
   CanvasGPU,
   SyncViewer,
   CameraSync,
-  opfs,
   useBlenderStore,
 } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
@@ -45,17 +44,17 @@ export function DeployedPage() {
   const downloadDeployment = async () => {
     try {
       setDownloadStatus("saving");
-      const buf = await opfs.readDeployment();
-      if (!buf) {
+      const res = await fetch("/deploy/place.zip");
+      if (!res.ok) {
         setDownloadStatus("empty");
         setTimeout(() => setDownloadStatus("idle"), 2000);
         return;
       }
-      const blob = new Blob([buf], { type: "application/zip" });
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "scene.zip";
+      a.download = "place.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -63,7 +62,7 @@ export function DeployedPage() {
       setDownloadStatus("done");
       setTimeout(() => setDownloadStatus("idle"), 2000);
     } catch (err) {
-      console.error("[DevPage] Failed to download deployment:", err);
+      console.error("[DeployedPage] Failed to download deployment:", err);
       setDownloadStatus("error");
       setTimeout(() => setDownloadStatus("idle"), 2000);
     }
