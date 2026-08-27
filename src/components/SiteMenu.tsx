@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { CubeIcon } from "./Icons";
 
-type PageKey = "home" | "dev" | "production";
+type PageKey = "home" | "dev" | "production" | "deployment";
 
 interface SiteMenuProps {
   active?: PageKey;
@@ -11,6 +11,7 @@ const navItems: { key: PageKey; label: string; to: string }[] = [
   { key: "home", label: "Home", to: "/" },
   { key: "dev", label: "Dev", to: "/dev" },
   { key: "production", label: "Production", to: "/production" },
+  { key: "deployment", label: "Deployment", to: "/deployment" },
 ];
 
 export function SiteMenu({ active }: SiteMenuProps) {

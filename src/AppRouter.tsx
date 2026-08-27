@@ -9,8 +9,8 @@ export function AppRouter() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/dev" element={<DevPage />} />
-      <Route path="/deployment" element={<DeployedPage />} />
       <Route path="/production" element={<ProductionPage />} />
+      <Route path="/deployment" element={<DeployedPage />} />
       <Route path="*" element={<HomePage />} />
     </Routes>
   );

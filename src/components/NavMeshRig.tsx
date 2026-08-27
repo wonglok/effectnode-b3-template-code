@@ -122,7 +122,25 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     let navMesh: any = null;
     let navMeshHelper: any = null;
 
-    const buildColliderMeshes = () => buildWalkableMeshesFromStore();
+    /**
+     * Collect the walkable collider meshes. Prefers the live Blender store
+     * (transient copies we own); falls back to collider meshes already rendered
+     * in this scene (e.g. a deployment rendered by ProductionViewer), which the
+     * scene owns and must not be disposed.
+     */
+    const buildColliderMeshes = (): { meshes: THREE.Mesh[]; owned: boolean } => {
+      const store = buildWalkableMeshesFromStore();
+      if (store.length > 0) return { meshes: store, owned: true };
+
+      const sceneColliders: THREE.Mesh[] = [];
+      scene.traverse((obj) => {
+        const m = obj as THREE.Mesh;
+        if (m.isMesh && m.name.toLowerCase().includes("collider")) {
+          sceneColliders.push(m);
+        }
+      });
+      return { meshes: sceneColliders, owned: false };
+    };
 
     let warnedNoCollider = false;
 
@@ -133,21 +151,20 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         navMeshHelper = null;
       }
 
-      const colliders = buildColliderMeshes();
+      const { meshes: colliders, owned } = buildColliderMeshes();
       if (colliders.length === 0) {
         if (!warnedNoCollider) {
           console.warn(
-            "[NavMeshRig] No *collider* mesh synced yet — name a Blender object 'collider'. Will retry.",
+            "[NavMeshRig] No *collider* mesh found — name a Blender object 'collider' or include one in the deployment.",
           );
           warnedNoCollider = true;
         }
         return null;
       }
 
-      // Transient meshes only feed the generator — the collider is already
-      // rendered in this canvas by SyncViewer.
       const [positions, indices] = getPositionsAndIndices(colliders);
-      for (const m of colliders) disposeMesh(m);
+      // Only dispose the transient store copies — scene-owned meshes stay.
+      if (owned) for (const m of colliders) disposeMesh(m);
 
       const input: SoloNavMeshInput = { positions, indices };
       const config: SoloNavMeshOptions = {
@@ -233,7 +250,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const placePlayer = () => {
       if (!navMesh) return;
 
-      const colliders = buildColliderMeshes();
+      const { meshes: colliders, owned } = buildColliderMeshes();
       if (colliders.length === 0) return;
 
       const box = new THREE.Box3();
@@ -244,7 +261,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         [boxCenter.x, boxCenter.y, boxCenter.z],
         [0, 2, 0],
       ];
-      for (const m of colliders) disposeMesh(m);
+      if (owned) for (const m of colliders) disposeMesh(m);
 
       for (const candidate of candidates) {
         const result = findNearestPoly(
