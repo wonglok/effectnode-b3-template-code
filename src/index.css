@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Component-library semantic tokens                                   */
+/* These are the names the b3-runtime package consumes (surface, text, */
+/* accent, status…).  Mapped to the dark Blender studio + tiffany      */
+/* brand so the receiver UI matches the app shell.                     */
+/* ------------------------------------------------------------------ */
+
+@theme {
+  /* Surface — dark graphite */
+  --color-surface-primary: #1c1f20;
+  --color-surface-secondary: #232627;
+  --color-surface-tertiary: #2a2d2e;
+  --color-surface-elevated: #282b2c;
+
+  /* Text — cool light */
+  --color-text-primary: #f2f6f6;
+  --color-text-secondary: #9aa4a6;
+  --color-text-muted: #636d6f;
+
+  /* Borders */
+  --color-border: #2d3132;
+  --color-border-subtle: #232627;
+
+  /* Accent — tiffany blue */
+  --color-accent: #81d8d0;
+  --color-accent-strong: #2bb5ac;
+  --color-accent-subtle: rgba(129, 216, 208, 0.12);
+
+  /* Semantic */
+  --color-status-green: #2d8a4e;
+  --color-status-yellow: #c7852a;
+  --color-status-red: #c43a3a;
+
+  /* Canvas — deepest, for 3D viewport depth */
+  --color-canvas: #111415;
+  --color-canvas-alt: #16191a;
+
+  /* ---------------------------------------------------------------- */
+  /* Dark Blender studio — tiffany accent                              */
+  /* ---------------------------------------------------------------- */
+
+  /* Surfaces — graphite, cool-tinted */
+  --color-studio-950: #111415;
+  --color-studio-900: #16191a;
+  --color-studio-850: #1c1f20;
+  --color-studio-800: #232627;
+  --color-studio-700: #2d3132;
+  --color-studio-600: #3a3f41;
+
+  /* Text — cool light */
+  --color-ice-50: #f2f6f6;
+  --color-ice-200: #ccd6d8;
+  --color-ice-400: #9aa4a6;
+  --color-ice-600: #636d6f;
+
+  /* Accent — Tiffany blue */
+  --color-tiffany-200: #c9f2ee;
+  --color-tiffany-300: #a7e7e0;
+  --color-tiffany-400: #81d8d0;
+  --color-tiffany-500: #5cc9bf;
+  --color-tiffany-600: #2bb5ac;
+  --color-tiffany-700: #0abab5;
+
+  /* Motion */
+  --animate-grid-drift: grid-drift 44s linear infinite;
+  --animate-glow-pulse: glow-pulse 7s ease-in-out infinite;
+  --animate-float: float 22s ease-in-out infinite;
+
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 56px 28px, 56px 28px;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Viewport helpers — landing hero                                     */
+/* ------------------------------------------------------------------ */
+
+/* A faint studio grid that drifts diagonally, suggesting a live     */
+/* camera orbit.  Masked to a radial vignette like a 3D viewport.    */
+.viewport-grid {
+  background-image: linear-gradient(var(--color-studio-700) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-studio-700) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 45%,
+    #000 40%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 45%,
+    #000 40%,
+    transparent 78%
+  );
+}
+
+/* Soft tiffany light source behind the wireframe cube. */
+.viewport-glow {
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(129, 216, 208, 0.26),
+    transparent 65%
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-studio-950);
+  color: var(--color-ice-50);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Visible keyboard focus — tiffany ring, consistent across the app. */
+:focus-visible {
+  outline: 2px solid var(--color-tiffany-400);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Ambient motion is decoration, not content. */
+@media (prefers-reduced-motion: reduce) {
+  .viewport-grid,
+  .viewport-glow,
+  .animate-float {
+    animation: none !important;
+  }
+}
