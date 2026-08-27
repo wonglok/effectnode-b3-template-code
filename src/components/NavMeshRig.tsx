@@ -117,15 +117,9 @@ export function NavMeshRig() {
     let navMesh: any = null;
     let navMeshHelper: any = null;
 
-    const buildColliderMeshes = () => {
-      const colliders = buildWalkableMeshesFromStore();
-      if (colliders.length === 0) {
-        console.warn(
-          "[NavMeshRig] No *collider* mesh synced from Blender yet.",
-        );
-      }
-      return colliders;
-    };
+    const buildColliderMeshes = () => buildWalkableMeshesFromStore();
+
+    let warnedNoCollider = false;
 
     const generateNavMesh = () => {
       if (navMeshHelper?.object) {
@@ -135,7 +129,15 @@ export function NavMeshRig() {
       }
 
       const colliders = buildColliderMeshes();
-      if (colliders.length === 0) return null;
+      if (colliders.length === 0) {
+        if (!warnedNoCollider) {
+          console.warn(
+            "[NavMeshRig] No *collider* mesh synced yet — name a Blender object 'collider'. Will retry.",
+          );
+          warnedNoCollider = true;
+        }
+        return null;
+      }
 
       // Transient meshes only feed the generator — the collider is already
       // rendered in this canvas by SyncViewer.
@@ -278,12 +280,21 @@ export function NavMeshRig() {
       console.warn("[NavMeshRig] Could not find starting position on navmesh");
     };
 
-    // Generate now; if the collider hasn't synced yet, retry briefly.
+    // Generate now; if the collider hasn't synced yet, retry for a while.
+    let retries = 0;
     if (!generateNavMesh()) {
       retryInterval = window.setInterval(() => {
         if (disposed) return;
         if (generateNavMesh()) {
           placePlayer();
+          window.clearInterval(retryInterval);
+          return;
+        }
+        retries++;
+        if (retries > 20) {
+          console.warn(
+            "[NavMeshRig] Gave up waiting for a *collider* mesh — use the GUI 'Generate NavMesh' once one is synced.",
+          );
           window.clearInterval(retryInterval);
         }
       }, 1500);

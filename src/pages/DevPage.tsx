@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   OpfsBrowser,
   Sidebar,
@@ -32,11 +32,6 @@ export function DevPage() {
   // Navmesh mode renders the character rig inside CanvasGPU (instead of the
   // live camera sync) so the Blender content is experienced in the same canvas.
   const [navmeshMode, setNavmeshMode] = useState(false);
-
-  // TEMP DEBUG — expose store for inspection
-  useEffect(() => {
-    (window as any).__blenderStore = useBlenderStore;
-  }, []);
 
   return (
     <div className="relative w-full h-full flex flex-col bg-studio-950">
