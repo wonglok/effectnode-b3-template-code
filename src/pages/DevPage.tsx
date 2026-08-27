@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   OpfsBrowser,
   Sidebar,
@@ -41,6 +41,62 @@ export function DevPage() {
   const [downloadStatus, setDownloadStatus] = useState<
     "idle" | "saving" | "done" | "empty" | "error"
   >("idle");
+
+  // Browser File System API — pick a folder to auto-export scene.zip after
+  // every snapshot.
+  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(
+    null,
+  );
+  const [exportStatus, setExportStatus] = useState<
+    "idle" | "writing" | "done" | "no-deployment" | "error"
+  >("idle");
+
+  const writeDeployment = async (dir: FileSystemDirectoryHandle) => {
+    try {
+      setExportStatus("writing");
+      const buf = await opfs.readDeployment();
+      if (!buf) {
+        setExportStatus("no-deployment");
+        return;
+      }
+      const fileHandle = await dir.getFileHandle("scene.zip", {
+        create: true,
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(new Blob([buf], { type: "application/zip" }));
+      await writable.close();
+      setExportStatus("done");
+    } catch (err) {
+      console.error("[DevPage] Failed to write scene.zip to folder:", err);
+      setExportStatus("error");
+    }
+  };
+
+  const selectFolder = async () => {
+    try {
+      // File System Access API isn't in every TS lib version — cast it.
+      const picker = (window as Window & {
+        showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+      }).showDirectoryPicker;
+      if (!picker) {
+        console.warn(
+          "[DevPage] File System Access API not supported in this browser",
+        );
+        return;
+      }
+      const handle = await picker();
+      setDirHandle(handle);
+    } catch {
+      // user cancelled the picker — no-op
+    }
+  };
+
+  // Auto-export scene.zip whenever a snapshot lands (deploymentVersion bumps
+  // after packaging) and whenever a folder is first selected.
+  useEffect(() => {
+    if (!dirHandle) return;
+    void writeDeployment(dirHandle);
+  }, [deploymentVersion, dirHandle]);
 
   const downloadDeployment = async () => {
     try {
@@ -156,6 +212,48 @@ export function DevPage() {
                           ? "Failed"
                           : "Download scene.zip"}
                 </button>
+
+                {/* Browser File System API — auto-export scene.zip on snapshot */}
+                <button
+                  onClick={selectFolder}
+                  className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${dirHandle ? "border-accent/40 text-accent" : ""}
+                  `}
+                  title="Pick a folder to auto-save scene.zip on every snapshot"
+                >
+                  {dirHandle
+                    ? `Export → ${dirHandle.name}`
+                    : "Select Export Folder"}
+                </button>
+                {dirHandle && (
+                  <div
+                    className={`
+                      text-[10px] pl-1 leading-relaxed
+                      ${
+                        exportStatus === "error"
+                          ? "text-status-red"
+                          : exportStatus === "done"
+                            ? "text-status-green"
+                            : "text-text-muted"
+                      }
+                    `}
+                  >
+                    {exportStatus === "writing"
+                      ? "Writing scene.zip…"
+                      : exportStatus === "done"
+                        ? "scene.zip exported"
+                        : exportStatus === "no-deployment"
+                          ? "No deployment to export yet"
+                          : exportStatus === "error"
+                            ? "Export failed"
+                            : "Auto-export on every snapshot"}
+                  </div>
+                )}
               </div>
             </>
           }

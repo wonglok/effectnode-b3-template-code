@@ -6,7 +6,7 @@ import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-unit
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 
-const DEPLOY_URL = "/deploy/place.zip";
+const DEPLOY_URL = "/deploy/scene.zip";
 
 /**
  * Deployed — renders a packaged deployment zip served statically.
