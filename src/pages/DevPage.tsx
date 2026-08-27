@@ -8,6 +8,7 @@ import {
   CanvasGPU,
   SyncViewer,
   CameraSync,
+  opfs,
   useBlenderStore,
 } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
@@ -36,6 +37,38 @@ export function DevPage() {
   // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
   const guiContainerRef = useRef<HTMLDivElement>(null);
 
+  // Download the current deployment zip from OPFS.
+  const [downloadStatus, setDownloadStatus] = useState<
+    "idle" | "saving" | "done" | "empty" | "error"
+  >("idle");
+
+  const downloadDeployment = async () => {
+    try {
+      setDownloadStatus("saving");
+      const buf = await opfs.readDeployment();
+      if (!buf) {
+        setDownloadStatus("empty");
+        setTimeout(() => setDownloadStatus("idle"), 2000);
+        return;
+      }
+      const blob = new Blob([buf], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "scene.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setDownloadStatus("done");
+      setTimeout(() => setDownloadStatus("idle"), 2000);
+    } catch (err) {
+      console.error("[DevPage] Failed to download deployment:", err);
+      setDownloadStatus("error");
+      setTimeout(() => setDownloadStatus("idle"), 2000);
+    }
+  };
+
   return (
     <div className="relative w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="dev" />
@@ -60,32 +93,71 @@ export function DevPage() {
         {/* Sync controls + snapshot + OPFS browser */}
         <Sidebar
           moreButtons={
-            <div className="space-y-1.5">
-              <div className="text-[10px] uppercase tracking-widest text-text-muted">
-                Experience
-              </div>
-              <button
-                onClick={() => setNavmeshMode((m) => !m)}
-                className={`
-                  w-full px-2.5 py-1.5 rounded flex items-center justify-center
-                  bg-surface-secondary border border-border
-                  text-text-secondary text-[11px] font-semibold
-                  hover:bg-surface-tertiary hover:text-text-primary
-                  transition-colors
-                  ${navmeshMode ? "border-accent/40 text-accent" : ""}
-                `}
-              >
-                {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
-              </button>
+            <>
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-text-muted">
+                  Experience
+                </div>
+                <button
+                  onClick={() => setNavmeshMode((m) => !m)}
+                  className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${navmeshMode ? "border-accent/40 text-accent" : ""}
+                  `}
+                >
+                  {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
+                </button>
 
-              {/* lil-gui mounts here when navmesh mode is active */}
-              {navmeshMode && (
-                <div
-                  ref={guiContainerRef}
-                  className="b3-gui mt-2 max-h-80 overflow-y-auto"
-                />
-              )}
-            </div>
+                {/* lil-gui mounts here when navmesh mode is active */}
+                {navmeshMode && (
+                  <div
+                    ref={guiContainerRef}
+                    className="b3-gui mt-2 max-h-80 overflow-y-auto"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-text-muted">
+                  Deployment
+                </div>
+                <button
+                  onClick={downloadDeployment}
+                  className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${
+                      downloadStatus === "done"
+                        ? "border-status-green/40 text-status-green"
+                        : ""
+                    }
+                    ${
+                      downloadStatus === "error"
+                        ? "border-status-red/40 text-status-red"
+                        : ""
+                    }
+                  `}
+                  title="Download the current deployment zip from OPFS"
+                >
+                  {downloadStatus === "saving"
+                    ? "Preparing…"
+                    : downloadStatus === "done"
+                      ? "Downloaded"
+                      : downloadStatus === "empty"
+                        ? "No deployment yet"
+                        : downloadStatus === "error"
+                          ? "Failed"
+                          : "Download scene.zip"}
+                </button>
+              </div>
+            </>
           }
           bottomRow={
             <div className="px-3.5 py-2.5 border-t border-border h-[400px] overflow-y-scroll">
