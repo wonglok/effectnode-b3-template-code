@@ -516,7 +516,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       .name("Running Speed");
 
     const cameraFolder = gui.addFolder("Camera");
-    cameraFolder.add(guiSettings, "offsetBehind", 5, 30, 1).name("Offset Behind");
+    cameraFolder
+      .add(guiSettings, "offsetBehind", 5, 30, 1)
+      .name("Offset Behind");
     cameraFolder.add(guiSettings, "offsetAbove", 2, 15, 1).name("Offset Above");
 
     // ------------------------------------------------------------------
@@ -739,9 +741,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         .add(offsetVector);
       cameraPosition.lerp(target, t / 1.1);
       camera.position.copy(cameraPosition);
-      camera.lookAt(
-        cameraLookAt.copy(cameraPosition).sub(offsetVector),
-      );
+      camera.lookAt(cameraLookAt.copy(cameraPosition).sub(offsetVector));
 
       // --- mixer + helpers ---
       if (mixer) mixer.update(clamped);
