@@ -26,10 +26,12 @@ export function HomePage() {
 
           {/* Pitch */}
           <div className="space-y-2">
-            <p className="text-lg text-ice-200">From Blender to the web, live.</p>
+            <p className="text-lg text-ice-200">
+              From Blender to the web, live.
+            </p>
             <p className="text-sm text-ice-600 max-w-md mx-auto">
-              Receive a live Blender scene, snapshot it to OPFS, then preview the
-              optimised deployment — all in the browser.
+              Receive a live Blender scene, snapshot it to OPFS, then preview
+              the optimised deployment — all in the browser.
             </p>
           </div>
 
@@ -48,6 +50,13 @@ export function HomePage() {
             >
               <MonitorIcon className="w-4 h-4" />
               Production Preview
+            </Link>
+            <Link
+              to="/deployment"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-studio-700 bg-studio-800 hover:bg-studio-700 text-ice-200 text-sm font-medium transition-colors"
+            >
+              <MonitorIcon className="w-4 h-4" />
+              Deployed Zip File
             </Link>
           </div>
 
