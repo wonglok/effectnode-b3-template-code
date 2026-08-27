@@ -75,6 +75,13 @@ export async function loadAvatar(): Promise<Avatar> {
   const scene = gltf.scene;
   const skeleton = findSkeleton(scene);
 
+  // The avatar imports lying down (Blender Z-up convention) — stand it up.
+  // Applied to a wrapper so the rig's yaw-facing logic on the parent group is
+  // left untouched.
+  const avatarRoot = new THREE.Group();
+  avatarRoot.rotation.x = -Math.PI / 2;
+  avatarRoot.add(scene);
+
   const [idleObj, walkObj, runObj] = await Promise.all([
     new FBXLoader().loadAsync(IDLE_URL),
     new FBXLoader().loadAsync(WALK_URL),
@@ -94,7 +101,12 @@ export async function loadAvatar(): Promise<Avatar> {
     });
   }
 
-  return { scene, skeleton, mixer: new THREE.AnimationMixer(scene), clips };
+  return {
+    scene: avatarRoot,
+    skeleton,
+    mixer: new THREE.AnimationMixer(scene),
+    clips,
+  };
 }
 
 /**
