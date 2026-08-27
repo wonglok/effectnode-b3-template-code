@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -101,7 +101,12 @@ interface RigFrame {
 // Component — mounts inside CanvasGPU and drives the R3F scene + camera
 // ---------------------------------------------------------------------------
 
-export function NavMeshRig() {
+interface NavMeshRigProps {
+  /** Container div (inside the sidebar) that the lil-gui mounts into. */
+  guiContainer?: RefObject<HTMLDivElement | null>;
+}
+
+export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
   const frameRef = useRef<RigFrame>({ frame: () => {} });
@@ -369,7 +374,11 @@ export function NavMeshRig() {
     // ------------------------------------------------------------------
     // GUI
     // ------------------------------------------------------------------
-    const gui = new GUI();
+    // `container` mounts the GUI into a DOM element (and skips auto-place);
+    // `parent` would be for nesting another GUI and expects a GUI, not a div.
+    const gui = new GUI({
+      container: guiContainer?.current ?? undefined,
+    });
     const navMeshFolder = gui.addFolder("Nav Mesh");
     navMeshFolder.add(guiSettings, "showNavMeshHelper").name("Show Helper");
     navMeshFolder.add(guiSettings, "showAgentHelper").name("Show Agent Helper");

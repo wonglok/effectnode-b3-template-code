@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   OpfsBrowser,
   Sidebar,
@@ -33,6 +33,9 @@ export function DevPage() {
   // live camera sync) so the Blender content is experienced in the same canvas.
   const [navmeshMode, setNavmeshMode] = useState(false);
 
+  // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
+  const guiContainerRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="relative w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="dev" />
@@ -45,7 +48,11 @@ export function DevPage() {
         <div className="flex-1 min-w-0 relative">
           <CanvasGPU>
             <SyncViewer />
-            {navmeshMode ? <NavMeshRig /> : <CameraSync />}
+            {navmeshMode ? (
+              <NavMeshRig guiContainer={guiContainerRef} />
+            ) : (
+              <CameraSync />
+            )}
             <BloomRender />
           </CanvasGPU>
         </div>
@@ -70,6 +77,14 @@ export function DevPage() {
               >
                 {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
               </button>
+
+              {/* lil-gui mounts here when navmesh mode is active */}
+              {navmeshMode && (
+                <div
+                  ref={guiContainerRef}
+                  className="b3-gui mt-2 max-h-80 overflow-y-auto"
+                />
+              )}
             </div>
           }
           bottomRow={
