@@ -7,6 +7,7 @@ import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshDemoButton } from "../components/NavMeshDemoButton";
 import { buildWalkableMeshesFromStore } from "../components/blenderWalkableMeshes";
 import { buildProceduralLevel } from "../components/NavMeshPlayground";
+import { NavMeshRig } from "../components/NavMeshRig";
 
 /**
  * Production — optimised deployment preview.
@@ -103,6 +104,7 @@ export function ProductionPage() {
         {/* Ready — render the optimised deployment */}
         {zipBuffer && (
           <ProductionViewer zipBuffer={zipBuffer}>
+            <NavMeshRig />
             <BloomRender />
           </ProductionViewer>
         )}
