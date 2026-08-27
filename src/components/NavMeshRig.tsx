@@ -433,17 +433,24 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       }
     };
 
-    // Dedicated raycaster for click-to-move — the height-correction raycaster
+    // Dedicated raycaster for pointer-to-move — the height-correction raycaster
     // keeps a short `far` plane that would cull the collider at distance.
     const clickRaycaster = new THREE.Raycaster();
 
-    const handleCanvasClick = (event: MouseEvent) => {
+    // Hold-to-move: while the mouse is held, an interval keeps re-aiming the
+    // character at the current pointer position. A quick click sets it once.
+    let pointerDown = false;
+    let followInterval = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    const updateTargetFromPointer = () => {
       // Generate on demand if the collider synced after the rig mounted
       if (!navMesh && !generateNavMesh()) return;
       const rect = gl.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        ((pointerX - rect.left) / rect.width) * 2 - 1,
+        -((pointerY - rect.top) / rect.height) * 2 + 1,
       );
       clickRaycaster.setFromCamera(ndc, camera);
       refreshColliderObjects();
@@ -451,7 +458,32 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       if (hits.length === 0) return;
       moveTo(hits[0].point);
     };
-    gl.domElement.addEventListener("click", handleCanvasClick);
+
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerDown = true;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      updateTargetFromPointer();
+      window.clearInterval(followInterval);
+      followInterval = window.setInterval(updateTargetFromPointer, 200);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!pointerDown) return;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+    };
+
+    const stopFollowing = () => {
+      pointerDown = false;
+      window.clearInterval(followInterval);
+      followInterval = 0;
+    };
+
+    gl.domElement.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", stopFollowing);
+    document.addEventListener("pointercancel", stopFollowing);
 
     // ------------------------------------------------------------------
     // GUI
@@ -735,7 +767,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keyup", handleKeyUp);
-      gl.domElement.removeEventListener("click", handleCanvasClick);
+      window.clearInterval(followInterval);
+      gl.domElement.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", stopFollowing);
+      document.removeEventListener("pointercancel", stopFollowing);
       gui.destroy();
 
       if (navMeshHelper?.object) {
