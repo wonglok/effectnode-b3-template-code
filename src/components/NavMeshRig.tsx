@@ -10,6 +10,7 @@ import {
   createFindNearestPolyResult,
   DEFAULT_QUERY_FILTER,
   findNearestPoly,
+  findPath,
   moveAlongSurface,
 } from "navcat";
 import {
@@ -109,6 +110,7 @@ interface NavMeshRigProps {
 export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
+  const gl = useThree((s) => s.gl);
   const frameRef = useRef<RigFrame>({ frame: () => {} });
 
   // Setup once: navmesh from the synced *collider* meshes, character, GUI, input
@@ -372,6 +374,86 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     document.addEventListener("keyup", handleKeyUp);
 
     // ------------------------------------------------------------------
+    // Click-to-move — click the navmesh and the character walks there
+    // ------------------------------------------------------------------
+    const targetMarker = new THREE.Mesh(
+      new THREE.RingGeometry(0.35, 0.55, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x81d8d0,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9,
+      }),
+    );
+    targetMarker.rotation.x = -Math.PI / 2;
+    targetMarker.visible = false;
+    scene.add(targetMarker);
+
+    let path: Vec3[] = [];
+    let pathIndex = 0;
+    let targetReached = false;
+
+    const moveTo = (point: THREE.Vector3) => {
+      if (!navMesh) return;
+
+      const start: Vec3 = [
+        playerGroup.position.x,
+        playerGroup.position.y,
+        playerGroup.position.z,
+      ];
+      const end: Vec3 = [point.x, point.y, point.z];
+
+      const result = findPath(
+        navMesh,
+        start,
+        end,
+        [2, 2, 2],
+        DEFAULT_QUERY_FILTER,
+      );
+      if (!result.success || result.path.length === 0) {
+        console.log("[NavMeshRig] No path to the clicked point");
+        return;
+      }
+
+      targetMarker.position.set(...result.endPosition);
+      targetMarker.visible = true;
+      path = result.path.map((p) => p.position.slice() as Vec3);
+      pathIndex = 0;
+      targetReached = false;
+
+      // Skip waypoints already underneath the player
+      while (pathIndex < path.length - 1) {
+        const w = path[pathIndex];
+        const d = Math.hypot(
+          w[0] - playerGroup.position.x,
+          w[2] - playerGroup.position.z,
+        );
+        if (d > 0.35) break;
+        pathIndex++;
+      }
+    };
+
+    // Dedicated raycaster for click-to-move — the height-correction raycaster
+    // keeps a short `far` plane that would cull the collider at distance.
+    const clickRaycaster = new THREE.Raycaster();
+
+    const handleCanvasClick = (event: MouseEvent) => {
+      // Generate on demand if the collider synced after the rig mounted
+      if (!navMesh && !generateNavMesh()) return;
+      const rect = gl.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      clickRaycaster.setFromCamera(ndc, camera);
+      refreshColliderObjects();
+      const hits = clickRaycaster.intersectObjects(colliderObjects, false);
+      if (hits.length === 0) return;
+      moveTo(hits[0].point);
+    };
+    gl.domElement.addEventListener("click", handleCanvasClick);
+
+    // ------------------------------------------------------------------
     // GUI
     // ------------------------------------------------------------------
     // `container` mounts the GUI into a DOM element (and skips auto-place);
@@ -474,17 +556,48 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // --- movement ---
       if (navMesh) {
         const { left, right, forward, back, sprint } = input;
+        const anyKey = forward || back || left || right;
+
+        // Manual keyboard input cancels click-to-move
+        if (anyKey && path.length > 0) {
+          path.length = 0;
+          targetReached = false;
+          targetMarker.visible = false;
+        }
 
         movement.vector.set(0, 0, 0);
-        if (forward) movement.vector.z -= 1;
-        if (back) movement.vector.z += 1;
-        if (left) movement.vector.x -= 1;
-        if (right) movement.vector.x += 1;
 
-        const scalar = sprint
-          ? guiSettings.runningSpeed
-          : guiSettings.walkingSpeed;
-        movement.vector.normalize().multiplyScalar(scalar * clamped);
+        if (anyKey) {
+          if (forward) movement.vector.z -= 1;
+          if (back) movement.vector.z += 1;
+          if (left) movement.vector.x -= 1;
+          if (right) movement.vector.x += 1;
+          const scalar = sprint
+            ? guiSettings.runningSpeed
+            : guiSettings.walkingSpeed;
+          movement.vector.normalize().multiplyScalar(scalar * clamped);
+        } else if (!targetReached && path.length > 0) {
+          // Steer toward the current path waypoint
+          const w = path[pathIndex];
+          const dx = w[0] - playerGroup.position.x;
+          const dz = w[2] - playerGroup.position.z;
+          const dist = Math.hypot(dx, dz);
+
+          movement.vector.set(dx, 0, dz);
+          const scalar = sprint
+            ? guiSettings.runningSpeed
+            : guiSettings.walkingSpeed;
+          movement.vector.normalize().multiplyScalar(scalar * clamped);
+
+          if (dist < 0.35) {
+            if (pathIndex < path.length - 1) {
+              pathIndex++;
+            } else {
+              targetReached = true;
+              targetMarker.visible = false;
+            }
+          }
+        }
 
         if (movement.vector.length() > 0 || firstPositionUpdate) {
           movementTarget.copy(playerGroup.position).add(movement.vector);
@@ -622,6 +735,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keyup", handleKeyUp);
+      gl.domElement.removeEventListener("click", handleCanvasClick);
       gui.destroy();
 
       if (navMeshHelper?.object) {
@@ -629,11 +743,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         disposeObject(navMeshHelper.object);
       }
       scene.remove(playerGroup);
+      scene.remove(targetMarker);
+      targetMarker.geometry.dispose();
+      targetMarker.material.dispose();
       if (characterScene) disposeObject(characterScene);
       agentHelper.geometry.dispose();
       agentHelper.material.dispose();
     };
-  }, [scene, camera]);
+  }, [scene, camera, gl]);
 
   useFrame((_, delta) => {
     frameRef.current.frame(delta);
