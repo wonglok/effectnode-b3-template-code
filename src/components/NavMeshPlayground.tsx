@@ -16,10 +16,7 @@ import {
   type SoloNavMeshInput,
   type SoloNavMeshOptions,
 } from "navcat/blocks";
-import {
-  createNavMeshHelper,
-  getPositionsAndIndices,
-} from "navcat/three";
+import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,7 +85,13 @@ function disposeObject(root: THREE.Object3D) {
       for (const m of mats) {
         if (m) {
           const m2 = m as THREE.MeshStandardMaterial;
-          for (const k of ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap"] as const) {
+          for (const k of [
+            "map",
+            "normalMap",
+            "roughnessMap",
+            "metalnessMap",
+            "emissiveMap",
+          ] as const) {
             m2[k]?.dispose();
           }
           m.dispose();
@@ -209,7 +212,9 @@ export function NavMeshPlayground({
         scene.remove(m);
         disposeMesh(m);
       }
-      levelMeshes = getWalkableMeshes ? getWalkableMeshes() : buildProceduralLevel();
+      levelMeshes = getWalkableMeshes
+        ? getWalkableMeshes()
+        : buildProceduralLevel();
       for (const m of levelMeshes) {
         if (!m.material) m.material = levelMaterial;
         if (!m.userData.walkable) m.userData.walkable = true;
@@ -295,12 +300,24 @@ export function NavMeshPlayground({
     const navMeshFolder = gui.addFolder("Nav Mesh");
     navMeshFolder.add(guiSettings, "showNavMeshHelper").name("Show Helper");
     navMeshFolder.add(guiSettings, "showAgentHelper").name("Show Agent Helper");
-    navMeshFolder.add(guiSettings, "cellSize", 0.05, 0.3, 0.01).name("Cell Size");
-    navMeshFolder.add(guiSettings, "cellHeight", 0.05, 0.3, 0.01).name("Cell Height");
-    navMeshFolder.add(guiSettings, "walkableRadius", 0.1, 1, 0.1).name("Walkable Radius");
-    navMeshFolder.add(guiSettings, "walkableSlopeAngle", 0, 90, 1).name("Walkable Slope Angle");
-    navMeshFolder.add(guiSettings, "walkableClimb", 0.1, 1, 0.1).name("Walkable Climb");
-    navMeshFolder.add(guiSettings, "walkableHeight", 0.1, 3, 0.1).name("Walkable Height");
+    navMeshFolder
+      .add(guiSettings, "cellSize", 0.05, 0.3, 0.01)
+      .name("Cell Size");
+    navMeshFolder
+      .add(guiSettings, "cellHeight", 0.05, 0.3, 0.01)
+      .name("Cell Height");
+    navMeshFolder
+      .add(guiSettings, "walkableRadius", 0.1, 1, 0.1)
+      .name("Walkable Radius");
+    navMeshFolder
+      .add(guiSettings, "walkableSlopeAngle", 0, 90, 1)
+      .name("Walkable Slope Angle");
+    navMeshFolder
+      .add(guiSettings, "walkableClimb", 0.1, 1, 0.1)
+      .name("Walkable Climb");
+    navMeshFolder
+      .add(guiSettings, "walkableHeight", 0.1, 3, 0.1)
+      .name("Walkable Height");
     navMeshFolder
       .add(
         {
@@ -314,11 +331,17 @@ export function NavMeshPlayground({
       .name("Generate NavMesh");
 
     const playerFolder = gui.addFolder("Player Speed");
-    playerFolder.add(guiSettings, "walkingSpeed", 0.1, 50, 0.1).name("Walking Speed");
-    playerFolder.add(guiSettings, "runningSpeed", 0.1, 50, 0.1).name("Running Speed");
+    playerFolder
+      .add(guiSettings, "walkingSpeed", 0.1, 50, 0.1)
+      .name("Walking Speed");
+    playerFolder
+      .add(guiSettings, "runningSpeed", 0.1, 50, 0.1)
+      .name("Running Speed");
 
     const cameraFolder = gui.addFolder("Camera");
-    cameraFolder.add(guiSettings, "offsetBehind", 5, 30, 1).name("Offset Behind");
+    cameraFolder
+      .add(guiSettings, "offsetBehind", 5, 30, 1)
+      .name("Offset Behind");
     cameraFolder.add(guiSettings, "offsetAbove", 2, 15, 1).name("Offset Above");
 
     // ------------------------------------------------------------------
@@ -361,11 +384,17 @@ export function NavMeshPlayground({
         cellSize: guiSettings.cellSize,
         cellHeight: guiSettings.cellHeight,
         walkableRadiusWorld: guiSettings.walkableRadius,
-        walkableRadiusVoxels: Math.ceil(guiSettings.walkableRadius / guiSettings.cellSize),
+        walkableRadiusVoxels: Math.ceil(
+          guiSettings.walkableRadius / guiSettings.cellSize,
+        ),
         walkableClimbWorld: guiSettings.walkableClimb,
-        walkableClimbVoxels: Math.ceil(guiSettings.walkableClimb / guiSettings.cellHeight),
+        walkableClimbVoxels: Math.ceil(
+          guiSettings.walkableClimb / guiSettings.cellHeight,
+        ),
         walkableHeightWorld: guiSettings.walkableHeight,
-        walkableHeightVoxels: Math.ceil(guiSettings.walkableHeight / guiSettings.cellHeight),
+        walkableHeightVoxels: Math.ceil(
+          guiSettings.walkableHeight / guiSettings.cellHeight,
+        ),
         walkableSlopeAngleDegrees: guiSettings.walkableSlopeAngle,
         borderSize: 4,
         minRegionArea: 12,
@@ -635,10 +664,7 @@ export function NavMeshPlayground({
       const characterRayOrigin = raycasterOrigin.copy(playerGroup.position);
       characterRayOrigin.y += 1;
 
-      raycaster.set(
-        characterRayOrigin,
-        raycasterDirection.set(0, -1, 0),
-      );
+      raycaster.set(characterRayOrigin, raycasterDirection.set(0, -1, 0));
 
       const characterRayHits = raycaster.intersectObjects(levelMeshes, false);
       const characterRayHit = characterRayHits
