@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  opfs,
-  ProductionViewer,
-  useBlenderStore,
-} from "../b3/b3-runtime/src";
+import { opfs, ProductionViewer, useBlenderStore } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshDemoButton } from "../components/NavMeshDemoButton";
@@ -98,8 +94,8 @@ export function ProductionPage() {
               <line x1="9" y1="21" x2="9" y2="9" />
             </svg>
             <span className="opacity-60">
-              No deployment yet — connect Blender and save a snapshot on the
-              Dev page.
+              No deployment yet — connect Blender and save a snapshot on the Dev
+              page.
             </span>
           </div>
         )}

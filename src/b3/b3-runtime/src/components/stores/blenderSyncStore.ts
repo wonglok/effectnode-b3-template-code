@@ -107,11 +107,21 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
 
           let uvs: Float64Array | undefined;
           if (pending.hasUVs) {
-            uvs = new Float64Array(
-              event.data,
-              vBytes + iBytes,
-              pending.vCount * 2,
-            );
+            const uvOffset = vBytes + iBytes;
+            const uvCount = pending.vCount * 2;
+            if (uvOffset % 8 === 0) {
+              // 8-byte aligned — zero-copy view keeps the underlying buffer alive
+              uvs = new Float64Array(event.data, uvOffset, uvCount);
+            } else {
+              // Misaligned offset (Float64Array requires 8-byte alignment) —
+              // copy the bytes into a fresh aligned buffer instead.
+              const uvBytes = uvCount * 8;
+              const aligned = new ArrayBuffer(uvBytes);
+              new Uint8Array(aligned).set(
+                new Uint8Array(event.data, uvOffset, uvBytes),
+              );
+              uvs = new Float64Array(aligned);
+            }
           }
 
           useBlenderStore.getState().setGeoBuffer(pending.name, {
