@@ -437,12 +437,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // keeps a short `far` plane that would cull the collider at distance.
     const clickRaycaster = new THREE.Raycaster();
 
-    // Hold-to-move: while the mouse is held, an interval keeps re-aiming the
-    // character at the current pointer position. A quick click sets it once.
+    // Hold-to-move: while the mouse is held, the per-frame loop keeps re-aiming
+    // the character at the current pointer position. A quick click sets it once.
     let pointerDown = false;
-    let followInterval = 0;
     let pointerX = 0;
     let pointerY = 0;
+    // Throttles the (expensive) findPath recompute inside the frame loop.
+    let followAccumulator = 0;
 
     const updateTargetFromPointer = () => {
       // Generate on demand if the collider synced after the rig mounted
@@ -463,9 +464,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       pointerDown = true;
       pointerX = event.clientX;
       pointerY = event.clientY;
+      followAccumulator = 0;
       updateTargetFromPointer();
-      window.clearInterval(followInterval);
-      followInterval = window.setInterval(updateTargetFromPointer, 200);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -476,8 +476,6 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
     const stopFollowing = () => {
       pointerDown = false;
-      window.clearInterval(followInterval);
-      followInterval = 0;
     };
 
     gl.domElement.addEventListener("pointerdown", handlePointerDown);
@@ -584,6 +582,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const frame = (delta: number) => {
       const clamped = Math.min(delta, 0.1);
+
+      // Hold-to-move: while the mouse is held, keep re-aiming the target from
+      // the current pointer position (throttled to ~150ms — findPath is costly).
+      if (pointerDown) {
+        followAccumulator += clamped;
+        if (followAccumulator >= 0.15) {
+          followAccumulator = 0;
+          updateTargetFromPointer();
+        }
+      }
 
       // --- movement ---
       if (navMesh) {
@@ -767,7 +775,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keyup", handleKeyUp);
-      window.clearInterval(followInterval);
+      pointerDown = false;
       gl.domElement.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", stopFollowing);
