@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GUI } from "lil-gui";
 import type { Vec3 } from "mathcat";
 import {
@@ -17,6 +16,7 @@ import {
   type SoloNavMeshOptions,
 } from "navcat/blocks";
 import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
+import { createAvatarActions, loadAvatar } from "./avatarLoader";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,8 +36,6 @@ interface NavMeshPlaygroundProps {
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
-
-const CHARACTER_URL = "/character/character.glb";
 
 const guiSettings = {
   showNavMeshHelper: true,
@@ -251,44 +249,20 @@ export function NavMeshPlayground({
       run: THREE.AnimationAction | null;
     } = { idle: null, walk: null, run: null };
 
-    new GLTFLoader().load(
-      CHARACTER_URL,
-      (gltf) => {
+    loadAvatar()
+      .then((avatar) => {
         if (disposed) return;
-        characterScene = gltf.scene;
+        characterScene = avatar.scene;
         playerGroup.add(characterScene);
-
-        mixer = new THREE.AnimationMixer(characterScene);
-        const idleClip = gltf.animations.find((c) => c.name === "Idle");
-        const walkClip = gltf.animations.find((c) => c.name === "Walk");
-        const runClip = gltf.animations.find((c) => c.name === "Run");
-
-        animations.idle = idleClip ? mixer.clipAction(idleClip) : null;
-        animations.walk = walkClip ? mixer.clipAction(walkClip) : null;
-        animations.run = runClip ? mixer.clipAction(runClip) : null;
-
-        if (animations.idle) {
-          animations.idle.loop = THREE.LoopRepeat;
-          animations.idle.weight = 1;
-          animations.idle.play();
-        }
-        if (animations.walk) {
-          animations.walk.loop = THREE.LoopRepeat;
-          animations.walk.weight = 0;
-          animations.walk.timeScale = 1.5;
-          animations.walk.play();
-        }
-        if (animations.run) {
-          animations.run.loop = THREE.LoopRepeat;
-          animations.run.weight = 0;
-          animations.run.play();
-        }
-      },
-      undefined,
-      (err) => {
-        console.warn("[NavMeshPlayground] Failed to load character:", err);
-      },
-    );
+        mixer = avatar.mixer;
+        const a = createAvatarActions(avatar);
+        animations.idle = a.idle;
+        animations.walk = a.walk;
+        animations.run = a.run;
+      })
+      .catch((err) => {
+        console.warn("[NavMeshPlayground] Failed to load avatar:", err);
+      });
 
     // ------------------------------------------------------------------
     // GUI
