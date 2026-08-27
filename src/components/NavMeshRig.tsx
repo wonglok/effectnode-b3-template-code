@@ -128,7 +128,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
      * in this scene (e.g. a deployment rendered by ProductionViewer), which the
      * scene owns and must not be disposed.
      */
-    const buildColliderMeshes = (): { meshes: THREE.Mesh[]; owned: boolean } => {
+    const buildColliderMeshes = (): {
+      meshes: THREE.Mesh[];
+      owned: boolean;
+    } => {
       const store = buildWalkableMeshesFromStore();
       if (store.length > 0) return { meshes: store, owned: true };
 
