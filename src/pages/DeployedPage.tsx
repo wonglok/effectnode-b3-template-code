@@ -14,7 +14,6 @@ import {
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
-
 /**
  * Dev — live Blender receiver.
  *
