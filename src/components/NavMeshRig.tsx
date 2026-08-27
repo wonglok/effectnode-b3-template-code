@@ -365,6 +365,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     targetMarker.visible = false;
     scene.add(targetMarker);
 
+    // Destination the marker lerps toward each frame (so it glides instead of
+    // snapping as the pointer re-aims while held).
+    const targetPosition = new THREE.Vector3();
+
     let path: Vec3[] = [];
     let pathIndex = 0;
     let targetReached = false;
@@ -391,8 +395,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         return;
       }
 
-      targetMarker.position.set(...result.endPosition);
+      const wasVisible = targetMarker.visible;
+      targetPosition.set(...result.endPosition);
       targetMarker.visible = true;
+      // Snap only the first appearance — subsequent updates lerp smoothly.
+      if (!wasVisible) targetMarker.position.copy(targetPosition);
       path = result.path.map((p) => p.position.slice() as Vec3);
       pathIndex = 0;
       targetReached = false;
@@ -567,6 +574,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           followAccumulator = 0;
           updateTargetFromPointer();
         }
+      }
+
+      // Glide the target marker toward the latest destination.
+      if (targetMarker.visible) {
+        targetMarker.position.lerp(targetPosition, 0.2);
       }
 
       // --- movement ---
