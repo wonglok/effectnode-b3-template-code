@@ -5,6 +5,7 @@ import { ProductionViewer } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { LoadObject3DAsync } from "../b3/b3-runtime/src/components/custom/LoadObject3DAsync";
 
 const DEPLOY_URL = "/deploy/scene.zip";
 

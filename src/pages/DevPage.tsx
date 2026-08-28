@@ -14,6 +14,7 @@ import {
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { LoadObject3DAsync } from "../b3/b3-runtime/src/components/custom/LoadObject3DAsync";
 
 /**
  * Dev — live Blender receiver.
@@ -161,33 +162,6 @@ export function DevPage() {
             <>
               <div className="space-y-1.5">
                 <div className="text-[10px] uppercase tracking-widest text-text-muted">
-                  Experience
-                </div>
-                <button
-                  onClick={() => setNavmeshMode((m) => !m)}
-                  className={`
-                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
-                    bg-surface-secondary border border-border
-                    text-text-secondary text-[11px] font-semibold
-                    hover:bg-surface-tertiary hover:text-text-primary
-                    transition-colors
-                    ${navmeshMode ? "border-accent/40 text-accent" : ""}
-                  `}
-                >
-                  {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
-                </button>
-
-                {/* lil-gui mounts here when navmesh mode is active */}
-                {navmeshMode && (
-                  <div
-                    ref={guiContainerRef}
-                    className="b3-gui mt-2 max-h-80 overflow-y-auto"
-                  />
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest text-text-muted">
                   Deployment
                 </div>
                 <button
@@ -262,6 +236,33 @@ export function DevPage() {
                             ? "Export failed"
                             : "Auto-export on every snapshot"}
                   </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-text-muted">
+                  Experience
+                </div>
+                <button
+                  onClick={() => setNavmeshMode((m) => !m)}
+                  className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${navmeshMode ? "border-accent/40 text-accent" : ""}
+                  `}
+                >
+                  {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
+                </button>
+
+                {/* lil-gui mounts here when navmesh mode is active */}
+                {navmeshMode && (
+                  <div
+                    ref={guiContainerRef}
+                    className="b3-gui mt-2 max-h-80 overflow-y-auto"
+                  />
                 )}
               </div>
             </>

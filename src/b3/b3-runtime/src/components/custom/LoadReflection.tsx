@@ -1,0 +1,79 @@
+import { useThree } from "@react-three/fiber";
+import { useEffect } from "react";
+import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
+import { Fn, vec2, vec4, texture, uv, textureBicubic, rangeFogFactor, reflector, time } from 'three/tsl';
+import { MeshStandardNodeMaterial } from "three/webgpu";
+
+export function LoadReflection ({  objects = [] }) {
+    const scene = useThree((r) => r.scene);
+
+    useEffect(() => {
+        let cleans: (() => void)[] = []
+        let onClean = (v: () => void) => {
+            cleans.push(v)
+        }
+        let run = async () =>{
+            //
+            let object3D = await new Promise<Mesh>((resolve, reject) => {
+                let interval = setInterval(() => {
+                    let obj = scene.getObjectByName("collider")
+                    if(obj){
+                        clearInterval(interval)
+                        resolve(obj as Mesh)
+                    }
+                }, 100)
+            })
+
+            if(object3D){
+
+
+                const reflection = reflector( { resolutionScale: .5, bounces: false, generateMipmaps: true } ); // 0.5 is half of the rendering view
+				reflection.target.rotateX( - Math.PI / 2 );
+				scene.add( reflection.target );
+
+                onClean(() =>{
+                    reflection.target.removeFromParent()
+                })
+
+				const animatedUV = uv().mul( 10 ).add( vec2( time.mul( .1 ), 0 ) );
+				const textureLoader = new TextureLoader();
+
+				const perlinMap = textureLoader.load( './textures/noises/perlin/rgb-256x256.png' );
+				perlinMap.wrapS = RepeatWrapping;
+				perlinMap.wrapT = RepeatWrapping;
+				perlinMap.colorSpace = SRGBColorSpace;
+
+				const roughness = texture( perlinMap, animatedUV ).r.mul( 1 ).saturate();
+
+				const floorMaterial = new MeshStandardNodeMaterial()
+				floorMaterial.transparent = true;
+				floorMaterial.metalness = 0;
+				floorMaterial.roughnessNode = roughness.mul( 1.0 );
+				floorMaterial.colorNode = Fn( () => {
+
+					// blur reflection using textureBicubic()
+					const dirtyReflection = textureBicubic( reflection, roughness.mul( .9 ) );
+
+					// falloff opacity by distance like an opacity-fog
+					const opacity = rangeFogFactor( 7, 25 ).oneMinus();
+
+					return vec4( dirtyReflection.rgb, opacity );
+
+				} )();
+
+                object3D.material = floorMaterial
+
+            }
+
+        }
+        run()
+        return () =>{
+            cleans.forEach(cl =>{
+                cl()
+            })
+        }
+    }, [objects, scene]);
+
+    return <>
+    </>;
+}

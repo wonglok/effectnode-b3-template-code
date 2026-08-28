@@ -8,6 +8,7 @@ import { NavMeshDemoButton } from "../components/NavMeshDemoButton";
 import { buildWalkableMeshesFromStore } from "../components/blenderWalkableMeshes";
 import { buildProceduralLevel } from "../components/NavMeshPlayground";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { LoadObject3DAsync } from "../b3/b3-runtime/src/components/custom/LoadObject3DAsync";
 
 /**
  * Production — optimised deployment preview.

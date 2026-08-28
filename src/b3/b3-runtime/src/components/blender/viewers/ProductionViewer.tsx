@@ -24,6 +24,7 @@ import {
   type TexKind,
 } from "../../utils/meshBuilder";
 import { CanvasGPU } from "../CanvasGPU";
+import { LoadObject3DAsync } from "../../custom/LoadObject3DAsync";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -326,6 +327,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
+  
   // Apply HDR environment map (shared hook — same as SyncViewer)
   useEnvironmentMap({
     scene: threeScene,
@@ -401,6 +403,10 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 
   return (
     <>
+
+      <LoadObject3DAsync objects={scene.objects as []}></LoadObject3DAsync>
+ 
+   
       {/* Lights from Blender */}
       {scene.lights.map((light) => (
         <LightFromData key={light.name} light={light} />

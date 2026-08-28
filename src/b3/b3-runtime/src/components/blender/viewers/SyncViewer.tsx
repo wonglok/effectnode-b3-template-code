@@ -21,6 +21,7 @@ import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
 
 import { useBlenderSyncStore } from "../../stores/blenderSyncStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { LoadObject3DAsync } from "../../custom/LoadObject3DAsync";
 
 export function RefreshButton({
   className = "block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1",
@@ -30,7 +31,6 @@ export function RefreshButton({
     <>
       <button
         onClick={() => {
-          //
           useBlenderSyncStore.getState().refresh();
         }}
         className={className}
@@ -182,6 +182,9 @@ export function SyncViewer() {
 
   return (
     <group>
+     
+      <LoadObject3DAsync objects={sceneData.objects as []}></LoadObject3DAsync>
+
       {/* Lights from Blender — declarative via shared LightFromData */}
       {lights.map((light) => (
         <LightFromData
