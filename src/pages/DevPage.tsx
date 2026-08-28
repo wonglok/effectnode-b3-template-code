@@ -32,7 +32,7 @@ export function DevPage() {
 
   // Navmesh mode renders the character rig inside CanvasGPU (instead of the
   // live camera sync) so the Blender content is experienced in the same canvas.
-  const [navmeshMode, setNavmeshMode] = useState(false);
+  const [navmeshMode, setNavmeshMode] = useState(true);
 
   // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
   const guiContainerRef = useRef<HTMLDivElement>(null);

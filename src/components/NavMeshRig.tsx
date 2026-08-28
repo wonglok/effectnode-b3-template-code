@@ -18,6 +18,7 @@ import {
   type SoloNavMeshOptions,
 } from "navcat/blocks";
 import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
+import { useBlenderStore } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
 
@@ -86,6 +87,30 @@ function computeStartPosition(meshes: THREE.Mesh[]): Vec3 {
   const center = box.getCenter(new THREE.Vector3());
   const maxY = box.max.y;
   return [center.x, maxY + 2, center.z];
+}
+
+/**
+ * World-space position of the "birthplace" marker — the first object whose
+ * name contains "birthplace", from the live Blender sync or the rendered
+ * scene. Returns null when no such object exists.
+ */
+function findBirthplacePosition(scene: THREE.Scene): THREE.Vector3 | null {
+  // Live Blender sync — any object type (EMPTY, MESH, …) with a world transform.
+  const { sceneData } = useBlenderStore.getState();
+  for (const obj of sceneData.objects) {
+    if (obj.name.toLowerCase().includes("birthplace")) {
+      return new THREE.Vector3(...obj.position);
+    }
+  }
+
+  // Rendered scene (deployment / SyncViewer copies) — keeps the Blender name.
+  const markers: THREE.Object3D[] = [];
+  scene.traverse((obj) => {
+    if (obj.name.toLowerCase().includes("birthplace")) markers.push(obj);
+  });
+  return markers.length > 0
+    ? markers[0].getWorldPosition(new THREE.Vector3())
+    : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +277,27 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const placePlayer = () => {
       if (!navMesh) return;
+
+      // Prefer a named *birthplace* marker — snap the player onto the navmesh
+      // at that location; otherwise fall back to auto-placement below.
+      const birthplace = findBirthplacePosition(scene);
+      if (birthplace) {
+        const result = findNearestPoly(
+          createFindNearestPolyResult(),
+          navMesh,
+          [birthplace.x, birthplace.y, birthplace.z],
+          [50, 50, 50],
+          DEFAULT_QUERY_FILTER,
+        );
+        if (result.success) {
+          playerGroup.position.fromArray(result.position);
+          console.log("[NavMeshRig] Positioned player at birthplace:", result.position);
+          return;
+        }
+        console.warn(
+          "[NavMeshRig] Birthplace not on navmesh — falling back to auto placement",
+        );
+      }
 
       const { meshes: colliders, owned } = buildColliderMeshes();
       if (colliders.length === 0) return;
