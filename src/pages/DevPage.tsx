@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import * as localforage from "localforage";
 import {
   OpfsBrowser,
   Sidebar,
