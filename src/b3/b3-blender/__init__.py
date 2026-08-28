@@ -431,6 +431,9 @@ def get_scene_data():
         opacity = 1.0
         transparent = False
         alpha_test = 0.0
+        # Double-sided by default — Blender renders both sides of a face unless
+        # "Backface Culling" is enabled on the material.
+        double_sided = True
 
         mat = obj.active_material
         if mat and mat.use_nodes:
@@ -500,6 +503,13 @@ def get_scene_data():
             elif blend_method == 'CLIP':
                 alpha_test = getattr(mat, 'alpha_threshold', 0.5)
 
+        # Double-sided — Blender renders both sides by default (backface culling
+        # off). Enabling "Backface Culling" on the material exports a single-sided
+        # surface (THREE.FrontSide). `use_backface_culling` is the render-time
+        # property behind that checkbox across Blender 4.x / 5.x.
+        if mat is not None:
+            double_sided = not bool(getattr(mat, 'use_backface_culling', False))
+
         # --- Shader node graph checksum (for realtime graph sync) ---
         graph_hash = "0"
         try:
@@ -528,6 +538,7 @@ def get_scene_data():
             f"_nm{normal_map or 'none'}"
             f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
             f"_fl{'1' if flat_shading else '0'}"
+            f"_ds{'1' if double_sided else '0'}"
             # "_uvd" marks float64 UVs — distinct from the old "_uv" (float32) so
             # cached float32 geometry is invalidated and re-sent after an upgrade.
             f"_uvd{uv_cksum}"
@@ -559,6 +570,7 @@ def get_scene_data():
             "opacity":           opacity,
             "alphaTest":         alpha_test,
             "flatShading":       flat_shading,
+            "doubleSided":       double_sided,
             "version":           version,
         })
         if texture:

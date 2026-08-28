@@ -372,7 +372,7 @@ async function buildDocument(): Promise<any | null> {
         roughnessFactor: obj.roughness ?? 0.5,
       },
       alphaMode: obj.transparent && (obj.opacity ?? 1) < 1 ? "BLEND" : "OPAQUE",
-      doubleSided: false,
+      doubleSided: obj.doubleSided ?? true,
     };
     const baseTex = getTexIdx(obj.texture);
     if (baseTex !== undefined) {

@@ -61,6 +61,8 @@ export interface TSLMaterialParams {
   opacity: number;
   alphaTest: number;
   flatShading: boolean;
+  /** True (default) renders both sides — matches Blender's double-sided default. */
+  doubleSided?: boolean;
   // Physical material properties
   transmission: number;
   transmissionMap: THREE.Texture | null;
@@ -443,6 +445,8 @@ function _setStandardProperties(
   if (params.opacity < 1.0) mat.opacity = params.opacity;
   if (params.alphaTest > 0) mat.alphaTest = params.alphaTest;
   mat.flatShading = params.flatShading;
+  // Blender renders both sides by default; honour "Backface Culling" → FrontSide.
+  mat.side = (params.doubleSided ?? true) ? THREE.DoubleSide : THREE.FrontSide;
 
   // Physical material properties
   mat.transmission = params.transmission;

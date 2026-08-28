@@ -157,6 +157,7 @@ export function SyncViewer() {
           opacity: obj.opacity,
           alphaTest: obj.alphaTest,
           flatShading: obj.flatShading,
+          doubleSided: obj.doubleSided,
           graph: obj.graph,
         }) as any;
         _geoMaterialCache.set(cacheKey, geoMat as any);

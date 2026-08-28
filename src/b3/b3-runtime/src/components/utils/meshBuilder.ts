@@ -62,6 +62,8 @@ export interface BuildGeometryParams {
   opacity?: number;
   alphaTest?: number;
   flatShading?: boolean;
+  /** True (default) renders both sides — matches Blender's double-sided default. */
+  doubleSided?: boolean;
   graph?: ShaderGraph;
   // Physical material properties
   transmission?: number;
@@ -118,6 +120,7 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     opacity = 1.0,
     alphaTest = 0.0,
     flatShading = false,
+    doubleSided = true,
     graph,
     // Physical properties
     transmission = 0,
@@ -191,6 +194,7 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     opacity,
     alphaTest,
     flatShading,
+    doubleSided,
     // Physical properties
     transmission,
     transmissionMap,

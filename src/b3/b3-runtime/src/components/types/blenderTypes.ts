@@ -33,6 +33,8 @@ export interface BlenderObject {
   alphaTest?: number;
   /** True when all mesh faces are flat-shaded (Blender "Shade Flat"). */
   flatShading?: boolean;
+  /** True when the material renders both sides (Blender "Backface Culling" off). */
+  doubleSided?: boolean;
   /** Serialised Blender shader node graph for TSL material reconstruction. */
   graph?: ShaderGraph;
   /** Geometry version — matched against GeoBuffer.version for cache invalidation. */

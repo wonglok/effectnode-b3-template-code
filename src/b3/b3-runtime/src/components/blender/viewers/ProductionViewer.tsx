@@ -387,6 +387,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         opacity: obj.opacity,
         alphaTest: obj.alphaTest,
         flatShading: obj.flatShading,
+        doubleSided: obj.doubleSided,
         graph: obj.graph,
       });
     },
