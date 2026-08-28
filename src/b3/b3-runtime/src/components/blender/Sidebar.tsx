@@ -103,9 +103,12 @@ function SaveIcon() {
 export function Sidebar({
   bottomRow = null,
   moreButtons = null,
+  onSnapshotComplete = null,
 }: {
   bottomRow?: ReactNode;
   moreButtons?: ReactNode;
+  /** Called after a snapshot is packaged — e.g. to export scene.zip to a folder. */
+  onSnapshotComplete?: (() => void | Promise<void>) | null;
 }) {
   const connectionState = useBlenderStore((s) => s.connectionState);
   const objectCount = useBlenderStore((s) => s.sceneData.objects.length);
@@ -175,6 +178,9 @@ export function Sidebar({
 
       setSnapshotStatus("packaging");
       await opfsOptimiser.packageDeployment();
+
+      // Let the host export the fresh deployment (e.g. scene.zip to a folder).
+      await onSnapshotComplete?.();
 
       setSnapshotStatus("done");
       useBlenderStore.getState().bumpDeploymentVersion();

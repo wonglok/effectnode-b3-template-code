@@ -93,12 +93,12 @@ export function DevPage() {
     }
   };
 
-  // Auto-export scene.zip whenever a snapshot lands (deploymentVersion bumps
-  // after packaging) and whenever a folder is first selected.
+  // When a folder is selected, write the current deployment there immediately.
+  // Later snapshots export via the Sidebar's onSnapshotComplete callback.
   useEffect(() => {
     if (!dirHandle) return;
     void writeDeployment(dirHandle);
-  }, [deploymentVersion, dirHandle]);
+  }, [dirHandle]);
 
   const downloadDeployment = async () => {
     try {
@@ -127,6 +127,12 @@ export function DevPage() {
     }
   };
 
+  // Save Snapshot in the sidebar also writes scene.zip to the selected folder.
+  const onSnapshotComplete = (): Promise<void> => {
+    if (!dirHandle) return Promise.resolve();
+    return writeDeployment(dirHandle);
+  };
+
   return (
     <div className="relative w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="dev" />
@@ -150,6 +156,7 @@ export function DevPage() {
 
         {/* Sync controls + snapshot + OPFS browser */}
         <Sidebar
+          onSnapshotComplete={onSnapshotComplete}
           moreButtons={
             <>
               <div className="space-y-1.5">
