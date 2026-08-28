@@ -1,8 +1,59 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import JSZip from "jszip";
 import { SiteMenu } from "../components/SiteMenu";
-import { CubeIcon, RadioIcon, MonitorIcon } from "../components/Icons";
+import {
+  CubeIcon,
+  RadioIcon,
+  MonitorIcon,
+  DownloadIcon,
+} from "../components/Icons";
+
+// Bundle the Blender add-on source into the app at build time so the zip can
+// be assembled on the client without a server. Vite's `?raw` suffix returns
+// the file contents as a plain string.
+import b3PluginInit from "../b3/b3-blender/__init__.py?raw";
+import b3PluginLicense from "../b3/b3-blender/LICENSE.md?raw";
+
+/** Build a Blender-installable zip (folder + files) and trigger a download. */
+function downloadBlenderPlugin(
+  setState: (s: "idle" | "busy" | "done") => void,
+): void {
+  setState("busy");
+  const zip = new JSZip();
+  // A single top-level folder installs cleanly via
+  // Edit → Preferences → Add-ons → Install.
+  zip.file("b3-sync/__init__.py", b3PluginInit);
+  zip.file("b3-sync/LICENSE.md", b3PluginLicense);
+  zip
+    .generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    })
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "b3-sync.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setState("done");
+      setTimeout(() => setState("idle"), 2000);
+    })
+    .catch((err) => {
+      console.error("[HomePage] Failed to build plugin zip:", err);
+      setState("idle");
+    });
+}
 
 export function HomePage() {
+  const [downloadState, setDownloadState] = useState<
+    "idle" | "busy" | "done"
+  >("idle");
+
   return (
     <div className="relative min-h-screen bg-studio-900 text-ice-50 flex flex-col overflow-hidden">
       <SiteMenu active="home" />
@@ -58,6 +109,17 @@ export function HomePage() {
               <MonitorIcon className="w-4 h-4" />
               Deployed Zip File
             </Link>
+            <button
+              onClick={() => downloadBlenderPlugin(setDownloadState)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-studio-700 bg-studio-800 hover:bg-studio-700 text-ice-200 text-sm font-medium transition-colors"
+            >
+              <DownloadIcon className="w-4 h-4" />
+              {downloadState === "done"
+                ? "Plugin Downloaded"
+                : downloadState === "busy"
+                  ? "Packaging…"
+                  : "Download Blender Plugin"}
+            </button>
           </div>
 
           {/* Footer */}
