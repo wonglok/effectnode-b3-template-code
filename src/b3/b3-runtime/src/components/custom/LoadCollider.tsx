@@ -1,11 +1,10 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { Mesh,  RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from "three";
+import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
 import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, float, vec3 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
-import { getOrCreateTexture } from "../utils/meshBuilder";
 
-export function LoadReflection ({ texData = new Map(), objects = [] }) {
+export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
 
     const done = useMemo(() =>{
@@ -92,7 +91,7 @@ export function LoadReflection ({ texData = new Map(), objects = [] }) {
         }
     }, [objects, texData]);
 
-     useEffect(() => {
+    useEffect(() => {
         let cleans: (() => void)[] = []
         let onClean = (v: () => void) => {
             cleans.push(v)
@@ -117,7 +116,6 @@ export function LoadReflection ({ texData = new Map(), objects = [] }) {
 
             if(edge){
                 const edgeMat = new MeshPhysicalNodeMaterial()
-               
                 edgeMat.emissiveNode = Fn( () => {
                     return vec3(1.0,1.0,0.0).mul(0.15)
                 } )();
@@ -128,8 +126,6 @@ export function LoadReflection ({ texData = new Map(), objects = [] }) {
                 
                 edge.material = edgeMat
             }
-
-
         }
 
 

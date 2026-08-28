@@ -1,7 +1,7 @@
-import { LoadReflection } from "./LoadReflection";
+import { LoadCollider } from "./LoadCollider";
 
 export function LoadObject3DAsync ({ texData = new Map(), objects = [] }) {
     return <>
-        <LoadReflection texData={texData} objects={objects}></LoadReflection>
+        <LoadCollider texData={texData} objects={objects}></LoadCollider>
     </>;
 }
