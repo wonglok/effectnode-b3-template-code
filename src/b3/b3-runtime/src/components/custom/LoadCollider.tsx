@@ -17,11 +17,15 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
             cleans.push(v)
         }
         let run = async () =>{
+            let colliderInfo = objects.find((r: any)=>{
+                return r.name ==='collider'
+            }) as any;
 
-            if (done.get("collider")) {
+            if (done.get("collider") === colliderInfo?.version) {
                 return
             }            
-            //
+
+            // console.log()
             let collider = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
                     let obj = scene.getObjectByName("collider")
@@ -78,7 +82,9 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                 collider.material = materail
 
-                done.set('collider', true)
+
+
+                done.set('collider', colliderInfo?.version)
             }
         }
 

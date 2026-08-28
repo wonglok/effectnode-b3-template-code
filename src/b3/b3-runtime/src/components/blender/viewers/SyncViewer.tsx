@@ -14,6 +14,7 @@ import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
 import { useEmptySync } from "../canvas-units/useEmptySync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
+import { ZoomControls } from "../canvas-units/ZoomControls";
 
 // ---------------------------------------------------------------------------
 // Viewer
@@ -182,7 +183,9 @@ export function SyncViewer() {
 
   return (
     <group>
-     
+      {/* Wheel / pinch zoom — FOV-based so it survives CameraSync + NavMeshRig */}
+      <ZoomControls />
+
       <LoadObject3DAsync texData={texData} objects={sceneData.objects as []}></LoadObject3DAsync>
 
       {/* Lights from Blender — declarative via shared LightFromData */}

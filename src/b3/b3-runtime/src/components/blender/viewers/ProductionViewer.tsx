@@ -18,6 +18,7 @@ import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
 import { useEmptySync } from "../canvas-units/useEmptySync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
+import { ZoomControls } from "../canvas-units/ZoomControls";
 import {
   buildGeometryFromBuffer,
   computeMeshCacheKey,
@@ -557,6 +558,8 @@ export function ProductionViewer({
     <div className="h-full w-full relative">
       <CanvasGPU>
         <Suspense fallback={null}>
+          {/* Wheel / pinch zoom — FOV-based so it composes with NavMeshRig */}
+          <ZoomControls />
           <SceneContent scene={state.scene!} />
           {children}
         </Suspense>
