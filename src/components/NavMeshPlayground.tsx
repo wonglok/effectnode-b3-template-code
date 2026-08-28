@@ -40,8 +40,8 @@ interface NavMeshPlaygroundProps {
 const guiSettings = {
   showNavMeshHelper: false,
   showAgentHelper: false,
-  cellSize: 0.1,
-  cellHeight: 0.1,
+  cellSize: 0.05,
+  cellHeight: 0.05,
   walkableRadius: 0.3,
   walkableSlopeAngle: 45,
   walkableClimb: 0.4,
