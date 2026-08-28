@@ -75,9 +75,11 @@ export function DevPage() {
   const selectFolder = async () => {
     try {
       // File System Access API isn't in every TS lib version — cast it.
-      const picker = (window as Window & {
-        showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
-      }).showDirectoryPicker;
+      const picker = (
+        window as Window & {
+          showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+        }
+      ).showDirectoryPicker;
       if (!picker) {
         console.warn(
           "[DevPage] File System Access API not supported in this browser",
