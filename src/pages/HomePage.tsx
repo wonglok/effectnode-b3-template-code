@@ -50,9 +50,9 @@ function downloadBlenderPlugin(
 }
 
 export function HomePage() {
-  const [downloadState, setDownloadState] = useState<
-    "idle" | "busy" | "done"
-  >("idle");
+  const [downloadState, setDownloadState] = useState<"idle" | "busy" | "done">(
+    "idle",
+  );
 
   return (
     <div className="relative min-h-screen bg-studio-900 text-ice-50 flex flex-col overflow-hidden">
