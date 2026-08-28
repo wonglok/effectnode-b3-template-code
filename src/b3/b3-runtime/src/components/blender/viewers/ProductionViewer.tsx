@@ -332,8 +332,8 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     renderer: gl,
     hdrPixels: scene.hdrBytes,
     intensity: scene.hdrIntensity,
-    background: true,
-    fallbackColor: "#f4f4f4",
+    background: false,
+    fallbackColor: "#000000",
   });
 
   // Sync meshes via the shared hook — handles caching, InstancedMesh
