@@ -16,19 +16,20 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
         let onClean = (v: () => void) => {
             cleans.push(v)
         }
-        let run = async () =>{
+        let run = async () => {
+            const name = 'collider'
             let colliderInfo = objects.find((r: any)=>{
-                return r.name ==='collider'
+                return r.name === name
             }) as any;
 
-            if (done.get("collider") === colliderInfo?.version) {
+            if (done.get(name) === colliderInfo?.version) {
                 return
             }            
 
             // console.log()
             let collider = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
-                    let obj = scene.getObjectByName("collider")
+                    let obj = scene.getObjectByName(name)
                     if(obj){
                         clearInterval(interval)
                         resolve(obj as Mesh)
@@ -74,7 +75,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                 materail.colorNode = Fn( () => {
                     const dirtyReflection = textureBicubic( reflection, roughness.rrr.mul( 1.5 ) );
-                    const opacity = 0.99;
+                    const opacity = 0.8;
 
                     return vec4( dirtyReflection.rgb, opacity );
 
@@ -82,9 +83,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                 collider.material = materail
 
-
-
-                done.set('collider', colliderInfo?.version)
+                done.set(name, colliderInfo?.version)
             }
         }
 
@@ -103,14 +102,19 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
             cleans.push(v)
         }
         let run = async () =>{
+            const name = 'edge'
 
-            if (done.get("edge")) {
+            let colliderInfo = objects.find((r: any)=>{
+                return r.name === name
+            }) as any;
+
+            if (done.get(name) === colliderInfo?.version) {
                 return
-            }            
+            }             
 
             let edge = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
-                    let obj = scene.getObjectByName("edge")
+                    let obj = scene.getObjectByName(name)
                     if(obj){
                         clearInterval(interval)
                         resolve(obj as Mesh)
@@ -131,7 +135,8 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 })
                 
                 edge.material = edgeMat
-            }
+                done.set(name, colliderInfo?.version)
+        }
         }
 
 

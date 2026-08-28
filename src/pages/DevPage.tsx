@@ -113,8 +113,11 @@ export function DevPage() {
     }
   };
 
-  // Restore the persisted export folder after a reload — the write effect below
-  // then re-exports the current deployment into it.
+  // Restore the persisted export folder after a reload so the sidebar keeps
+  // showing it. Deliberately does NOT re-export here: if the folder lives inside
+  // the vite project (e.g. public/deploy), writing scene.zip triggers a
+  // full page reload, which re-runs this effect and re-writes — an infinite
+  // reload loop. Exports happen only on snapshot (onSnapshotComplete below).
   useEffect(() => {
     let cancelled = false;
     void loadDirHandle().then((handle) => {
@@ -124,13 +127,6 @@ export function DevPage() {
       cancelled = true;
     };
   }, []);
-
-  // When a folder is selected, write the current deployment there immediately.
-  // Later snapshots export via the Sidebar's onSnapshotComplete callback.
-  useEffect(() => {
-    if (!dirHandle) return;
-    void writeDeployment(dirHandle);
-  }, [dirHandle]);
 
   const downloadDeployment = async () => {
     try {

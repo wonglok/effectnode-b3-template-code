@@ -3,54 +3,62 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
-import { useBlenderStore } from "../../stores/blenderStore";
 
 // ---------------------------------------------------------------------------
 // ZoomControls — wheel / pinch zoom for the viewers.
 //
-// Zoom is applied to the camera FOV rather than the camera position: CameraSync
-// and NavMeshRig overwrite `camera.position` every frame, so a dolly would be
-// undone the moment it's applied. FOV zoom composes with any camera controller,
-// and the Blender-synced FOV is used as the base when present so it still
-// follows the viewport (mirroring CameraSync). Runs at a later frame priority
-// than the controllers so the zoom always wins.
+// Zoom dollies the *camera position* along its view direction using a
+// THREE.Spherical (radius accumulates the signed dolly distance, phi/theta
+// track the current view direction). It does not touch FOV.
+//
+// CameraSync and NavMeshRig both overwrite `camera.position` every frame, so a
+// one-shot dolly would be wiped. Instead, while a zoom is active the position
+// is re-applied each frame (later priority) as a pivot around an anchor point:
+//
+//   position = anchor + forward * radius        (radius > 0 = zoomed in)
+//
+// The anchor is captured from the camera when the zoom first engages, so the
+// view lifts off from wherever the controller had it. Dollying back through a
+// radius of 0 (or back up to it) hands full control back to the controller,
+// keeping sync / character-follow seamless.
 // ---------------------------------------------------------------------------
 
-const MIN_FOV = 5;
-const MAX_FOV = 160;
+const MAX_RADIUS = 500;
 
 export function ZoomControls() {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
 
-  // Blender's synced camera wins when present — same selection as CameraSync.
-  const selectedCamera = useBlenderStore((s) => s.selectedCamera);
-  const cameraData = useBlenderStore((s) => s.cameraData);
-
-  const scaleRef = useRef(1); // 1 = no zoom
-  const baseFovRef = useRef<number | null>(null); // captured when no sync data
+  const sphericalRef = useRef(new THREE.Spherical(0, Math.PI / 2, 0));
+  const anchorRef = useRef(new THREE.Vector3());
+  const forwardRef = useRef(new THREE.Vector3());
+  const offsetRef = useRef(new THREE.Vector3());
   const lastPinchDist = useRef<number | null>(null);
 
-  const applyZoom = (factor: number) => {
-    scaleRef.current = THREE.MathUtils.clamp(
-      scaleRef.current * factor,
-      0.05,
-      20,
-    );
+  // Move the dolly distance by `delta` world units along the view direction.
+  // Passing through 0 releases the camera back to the controller.
+  const dolly = (delta: number) => {
+    const r = sphericalRef.current.radius;
+    if (r === 0 && delta !== 0) anchorRef.current.copy(camera.position);
+    const next = r + delta;
+    sphericalRef.current.radius =
+      r !== 0 && r * next <= 0
+        ? 0
+        : THREE.MathUtils.clamp(next, -MAX_RADIUS, MAX_RADIUS);
   };
 
-  // Wheel → zoom
+  // Wheel → dolly. Scroll up (deltaY < 0) zooms in: radius increases.
   useEffect(() => {
     const el = gl.domElement;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      applyZoom(Math.exp(e.deltaY * 0.001));
+      dolly(-e.deltaY * 0.015);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [gl]);
 
-  // Two-finger pinch → zoom
+  // Two-finger pinch → dolly. Spreading (distance grows) zooms in.
   useEffect(() => {
     const el = gl.domElement;
     const pinchDist = (t: TouchList) => {
@@ -66,8 +74,8 @@ export function ZoomControls() {
       if (e.touches.length !== 2) return;
       e.preventDefault(); // keep the browser from panning mid-pinch
       const d = pinchDist(e.touches);
-      if (lastPinchDist.current != null && lastPinchDist.current > 0) {
-        applyZoom(lastPinchDist.current / d);
+      if (lastPinchDist.current != null) {
+        dolly((d - lastPinchDist.current) * 0.03);
       }
       lastPinchDist.current = d;
     };
@@ -87,27 +95,29 @@ export function ZoomControls() {
     };
   }, [gl]);
 
-  // Apply the zoom every frame, after CameraSync / NavMeshRig (priority 0).
+  // Apply the dolly every frame, after CameraSync / NavMeshRig (priority 0).
   useFrame(() => {
-    if (!(camera instanceof THREE.PerspectiveCamera)) return; // ortho — no fov
+    const radius = sphericalRef.current.radius;
 
-    // Until the user zooms, leave the FOV to the camera controller (CameraSync
-    // follows the Blender viewport, NavMeshRig keeps its default framing).
-    if (scaleRef.current === 1) {
-      baseFovRef.current = camera.fov;
+    // Neutral → leave the position to the camera controller (live sync or the
+    // navmesh follow). Keep the anchor fresh so the next zoom lifts off from
+    // wherever the controller currently has the camera.
+    if (radius === 0) {
+      anchorRef.current.copy(camera.position);
       return;
     }
 
-    // Base FOV = the Blender-synced camera when present (so zoom still follows
-    // the viewport, mirroring CameraSync), else the pre-zoom FOV captured above.
-    const syncCam = selectedCamera ?? cameraData;
-    const base =
-      syncCam && !syncCam.ortho
-        ? syncCam.fov
-        : (baseFovRef.current ?? camera.fov);
-
-    camera.fov = THREE.MathUtils.clamp(base * scaleRef.current, MIN_FOV, MAX_FOV);
-    camera.updateProjectionMatrix();
+    // Dolly along the current view direction, pivoting around the anchor.
+    camera.getWorldDirection(forwardRef.current);
+    sphericalRef.current.setFromVector3(forwardRef.current); // phi/theta = view dir
+    sphericalRef.current.radius = radius; // keep the accumulated dolly distance
+    camera.position.copy(anchorRef.current).add(
+      offsetRef.current.setFromSphericalCoords(
+        sphericalRef.current.radius,
+        sphericalRef.current.phi,
+        sphericalRef.current.theta,
+      ),
+    );
   }, 10);
 
   return null;
