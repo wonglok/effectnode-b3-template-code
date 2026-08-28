@@ -47,9 +47,6 @@ export function LoadReflection ({  objects = [] }) {
 
 				const floorMaterial = new MeshPhysicalNodeMaterial().copy(object3D.material as MeshPhysicalNodeMaterial)
 				floorMaterial.transparent = true;
-				floorMaterial.metalness = 0;
-                floorMaterial.transmission = 0.0;
-				floorMaterial.roughnessNode = roughness.mul( 1.0 );
 				floorMaterial.colorNode = Fn( () => {
 
 					// blur reflection using textureBicubic()
