@@ -38,7 +38,7 @@ interface NavMeshPlaygroundProps {
 // ---------------------------------------------------------------------------
 
 const guiSettings = {
-  showNavMeshHelper: true,
+  showNavMeshHelper: false,
   showAgentHelper: false,
   cellSize: 0.1,
   cellHeight: 0.1,
