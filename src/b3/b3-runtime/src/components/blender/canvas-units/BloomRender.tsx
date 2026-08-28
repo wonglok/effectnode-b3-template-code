@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
-import { pass, mrt, output, emissive, vec4, float } from "three/tsl";
+import { pass, mrt, output, emissive, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 
 // ---------------------------------------------------------------------------

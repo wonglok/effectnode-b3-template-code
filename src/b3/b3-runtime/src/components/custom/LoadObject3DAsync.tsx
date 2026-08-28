@@ -1,7 +1,7 @@
 import { LoadReflection } from "./LoadReflection";
 
-export function LoadObject3DAsync ({  objects = [] }) {
+export function LoadObject3DAsync ({ texData = new Map(), objects = [] }) {
     return <>
-        <LoadReflection objects={objects}></LoadReflection>
+        <LoadReflection texData={texData} objects={objects}></LoadReflection>
     </>;
 }

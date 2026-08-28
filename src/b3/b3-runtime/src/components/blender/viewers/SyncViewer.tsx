@@ -183,7 +183,7 @@ export function SyncViewer() {
   return (
     <group>
      
-      <LoadObject3DAsync objects={sceneData.objects as []}></LoadObject3DAsync>
+      <LoadObject3DAsync texData={texData} objects={sceneData.objects as []}></LoadObject3DAsync>
 
       {/* Lights from Blender — declarative via shared LightFromData */}
       {lights.map((light) => (

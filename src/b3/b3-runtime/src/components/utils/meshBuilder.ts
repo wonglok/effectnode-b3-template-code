@@ -20,7 +20,7 @@ export type TexKind = "color" | "noncolor";
 export function getOrCreateTexture(
   name: string,
   texData: Map<string, TextureData>,
-  kind: TexKind,
+  kind: TexKind = "color",
 ): THREE.Texture | null {
   const cacheKey = `${name}:${kind}`;
   const existing = _textureCache.get(cacheKey);

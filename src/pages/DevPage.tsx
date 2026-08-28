@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as localforage from "localforage";
+import localforage from "localforage";
 import {
   OpfsBrowser,
   Sidebar,
@@ -15,7 +15,6 @@ import {
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
-import { LoadObject3DAsync } from "../b3/b3-runtime/src/components/custom/LoadObject3DAsync";
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the

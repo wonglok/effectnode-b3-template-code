@@ -404,7 +404,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
   return (
     <>
 
-      <LoadObject3DAsync objects={scene.objects as []}></LoadObject3DAsync>
+      <LoadObject3DAsync texData={scene.textureData} objects={scene.objects as []}></LoadObject3DAsync>
  
    
       {/* Lights from Blender */}
