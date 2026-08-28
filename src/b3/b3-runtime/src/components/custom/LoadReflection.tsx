@@ -58,7 +58,7 @@ export function LoadReflection ({  objects = [] }) {
 					const dirtyReflection = textureBicubic( reflection, roughness.mul( .9 ) );
 
 
-					const opacity = rangeFogFactor( 7, 25 ).oneMinus();
+					const opacity = rangeFogFactor( 5, 35 ).oneMinus();
 
 					return vec4( dirtyReflection.rgb, opacity );
 
