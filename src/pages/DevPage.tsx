@@ -17,6 +17,24 @@ import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { LoadObject3DAsync } from "../b3/b3-runtime/src/components/custom/LoadObject3DAsync";
 
+// Export folder (File System Access API) handle persisted in IndexedDB via
+// localForage so the chosen folder survives page reloads. IndexedDB stores the
+// handle through structured clone, so it comes back as a live handle.
+const EXPORT_FOLDER_KEY = "b3:export-folder-handle";
+
+const exportFolderStore = localforage.createInstance({
+  name: "effectnode-b3",
+  storeName: "b3_export",
+  driver: localforage.INDEXEDDB,
+});
+
+const saveDirHandle = (handle: FileSystemDirectoryHandle) =>
+  exportFolderStore.setItem(EXPORT_FOLDER_KEY, handle);
+
+const loadDirHandle = async (): Promise<FileSystemDirectoryHandle | null> =>
+  (await exportFolderStore.getItem<FileSystemDirectoryHandle>(EXPORT_FOLDER_KEY)) ??
+  null;
+
 /**
  * Dev — live Blender receiver.
  *
@@ -90,10 +108,23 @@ export function DevPage() {
       }
       const handle = await picker();
       setDirHandle(handle);
+      void saveDirHandle(handle);
     } catch {
       // user cancelled the picker — no-op
     }
   };
+
+  // Restore the persisted export folder after a reload — the write effect below
+  // then re-exports the current deployment into it.
+  useEffect(() => {
+    let cancelled = false;
+    void loadDirHandle().then((handle) => {
+      if (!cancelled && handle) setDirHandle(handle);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // When a folder is selected, write the current deployment there immediately.
   // Later snapshots export via the Sidebar's onSnapshotComplete callback.
