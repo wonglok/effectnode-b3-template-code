@@ -12,6 +12,7 @@ import {
 import type { BlenderObject } from "../../types/blenderTypes";
 import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
+import { useEmptySync } from "../canvas-units/useEmptySync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,14 @@ export function SyncViewer() {
 
       return geoMat as any;
     },
+  });
+
+  // ------------------------------------------------------------------
+  // Sync empty objects (named transform nodes — no geometry)
+  // ------------------------------------------------------------------
+  useEmptySync({
+    scene: scene!,
+    objects: sceneData.objects,
   });
 
   // Blender energy (Watts) → Three.js intensity conversion.

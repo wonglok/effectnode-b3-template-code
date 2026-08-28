@@ -16,6 +16,7 @@ import type {
 } from "../../types/blenderTypes";
 import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
+import { useEmptySync } from "../canvas-units/useEmptySync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
 import {
   buildGeometryFromBuffer,
@@ -389,6 +390,12 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         graph: obj.graph,
       });
     },
+  });
+
+  // Sync empty objects (named transform nodes — no geometry)
+  useEmptySync({
+    scene: threeScene,
+    objects: scene.objects,
   });
 
   return (

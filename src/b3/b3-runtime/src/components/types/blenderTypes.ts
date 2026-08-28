@@ -8,6 +8,10 @@ import type { ShaderGraph } from "../utils/tslMaterialBuilder";
 
 export interface BlenderObject {
   name: string;
+  /** Blender object type — 'MESH' | 'EMPTY' | 'LIGHT' | 'CAMERA' | … */
+  objectType?: string;
+  /** Blender empty display type — 'PLAIN_AXES' | 'ARROWS' | 'CUBE' | 'SPHERE' | … (EMPTY only). */
+  emptyDisplayType?: string;
   position: [number, number, number];
   quaternion: [number, number, number, number];
   scale: [number, number, number];
