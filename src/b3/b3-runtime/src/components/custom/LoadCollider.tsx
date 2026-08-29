@@ -1,11 +1,16 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, smoothstep, step, length, sin, pow } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 //
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 //
+
+
+import { color, 
+         floor, fract, abs, max, dot, min, 
+         mix } from 'three/tsl';
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
@@ -86,12 +91,26 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 floorMaterial.transparent = true;
 				floorMaterial.metalnessNode = float(normlTexture);
 				floorMaterial.roughnessNode = roughnessTexture;
+
+                let createHexGrid = (options: any = {}) =>{
+
+                    return vec4(1.0);
+                }
+
+                let finalColor = createHexGrid({
+                    scale: 12.0,
+                    lineThickness: 0.04,
+                    gridColor: [0.0, 0.9, 1.0], // Cyan lines
+                    cellColor: [0.02, 0.02, 0.08] // Dark background
+                })
                 
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
 
-					return vec4( dirtyReflection.rgb, 0.95 );
+					return vec4( dirtyReflection.rgb.mul(finalColor), 0.95 );
 				} )();
+
+                floorMaterial.transparent = true
 
                 collider.material = floorMaterial
                 
