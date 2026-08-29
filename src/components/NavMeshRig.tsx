@@ -507,6 +507,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       refreshColliderObjects();
       const hits = clickRaycaster.intersectObjects(colliderObjects, false);
       if (hits.length === 0) return;
+
+    
       moveTo(hits[0].point);
     };
 
@@ -527,6 +529,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const stopFollowing = () => {
       pointerDown = false;
     };
+
 
     gl.domElement.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("pointermove", handlePointerMove);
