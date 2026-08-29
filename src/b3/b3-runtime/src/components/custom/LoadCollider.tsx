@@ -1,9 +1,11 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, rangeFogFactor } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, rangeFogFactor, float } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
+//
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
+//
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
@@ -11,6 +13,14 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const done = useMemo(() =>{
         return new Map()
     }, [])
+
+    const normalMapData = useMemo(() => {
+        return texData.get("Chip005_4K-PNG_NormalGL.png")
+    }, [texData])
+
+    const roughnessMapData = useMemo(() => {
+        return texData.get("Chip003_4K-PNG_Roughness.png")
+    }, [texData])
 
     useEffect(() => {
         let cleans: (() => void)[] = []
@@ -28,7 +38,6 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 return
             }            
 
-            // console.log()
             let collider = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
                     let obj = scene.getObjectByName(name)
@@ -39,7 +48,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 }, 1)
             });
 
-            if(collider?.material){
+            if(collider?.material && normalMapData && roughnessMapData){
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial =  collider.material
                 }
@@ -51,31 +60,38 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 })
 
                 const textureLoader = new TextureLoader();
-                const perlinMap = textureLoader.load( '/texture/perlin.png' );
-				perlinMap.wrapS = RepeatWrapping;
-				perlinMap.wrapT = RepeatWrapping;
-				perlinMap.colorSpace = SRGBColorSpace;
+
+                const normalMap = textureLoader.load(
+                    URL.createObjectURL(new Blob([normalMapData.bytes], {type: normalMapData.mime})) 
+                );
+				normalMap.wrapS = RepeatWrapping;
+				normalMap.wrapT = RepeatWrapping;
+				normalMap.colorSpace = SRGBColorSpace;
 
 
-                const animatedUV = uv().mul( 2 ).add( vec2( time.mul( .1 ), 0 ) );
-				const roughness = texture( perlinMap, animatedUV ).r.mul( 2 ).saturate();
+                const roughnessMap = textureLoader.load(
+                    URL.createObjectURL(new Blob([roughnessMapData.bytes], {type: roughnessMapData.mime})) 
+                );
+				roughnessMap.wrapS = RepeatWrapping;
+				roughnessMap.wrapT = RepeatWrapping;
+				roughnessMap.colorSpace = SRGBColorSpace;
+
+                const animatedUV = uv().mul( 1 ).add( vec2( 0, time.mul( -0.01 ) ) );
+
+				const normlTexture = texture( normalMap, animatedUV ).r.mul( 1.0 ).saturate();
+				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
-                floorMaterial.copy(collider.userData.oMaterial)
 
                 floorMaterial.transparent = true;
-				floorMaterial.metalness = 0.5;
-				floorMaterial.roughnessNode = roughness.mul( 1.0 );
+				floorMaterial.metalnessNode = float(normlTexture);
+				floorMaterial.roughnessNode = roughnessTexture;
+                
 				floorMaterial.colorNode = Fn( () => {
+					const dirtyReflection = textureBicubic( reflection, normlTexture );
+					const opacity = rangeFogFactor( 3, 25 ).mul(roughnessTexture);
 
-					// blur reflection using textureBicubic()
-					const dirtyReflection = textureBicubic( reflection, roughness.mul( 1.9 ) );
-
-					// falloff opacity by distance like an opacity-fog
-					const opacity = rangeFogFactor( 3, 25 ).oneMinus();
-
-					return vec4( dirtyReflection.rgb, opacity );
-
+					return vec4( dirtyReflection.rgb, 0.95 );
 				} )();
 
                 collider.material = floorMaterial
@@ -91,7 +107,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [objects, texData]);
+    }, [objects, normalMapData, roughnessMapData]);
 
     useEffect(() => {
         let cleans: (() => void)[] = []
@@ -119,8 +135,6 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 }, 1)
             });
 
-
-
             if(edge){
                 const edgeMat = new MeshPhysicalNodeMaterial()
                 edgeMat.emissiveNode = Fn( () => {
@@ -133,7 +147,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 
                 edge.material = edgeMat
                 done.set(name, colliderInfo?.version)
-        }
+            }
         }
 
 

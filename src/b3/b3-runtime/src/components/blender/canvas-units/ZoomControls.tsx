@@ -1,26 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
 
 // ---------------------------------------------------------------------------
 // ZoomControls — wheel / pinch zoom for the viewers.
 //
-// Zoom dollies the *camera position* along its view direction using a
-// THREE.Spherical (radius accumulates the signed dolly distance, phi/theta
-// track the current view direction). It does not touch FOV.
+// Follows the navmesh player (an object named "player", added by NavMeshRig)
+// with an overhead-behind offset and lets wheel / pinch dolly the camera in
+// and out along that axis:
 //
-// CameraSync and NavMeshRig both overwrite `camera.position` every frame, so a
-// one-shot dolly would be wiped. Instead, while a zoom is active the position
-// is re-applied each frame (later priority) as a pivot around an anchor point:
+//   camera = playerPosition + offsetPosition
+//   offset = normalize(initPosition) * (initDistance - radius)
 //
-//   position = anchor + forward * radius        (radius > 0 = zoomed in)
+// The zoom radius accumulates the signed dolly distance (radius > 0 = zoomed
+// in, camera pulled toward the player). It does not touch FOV.
 //
-// The anchor is captured from the camera when the zoom first engages, so the
-// view lifts off from wherever the controller had it. Dollying back through a
-// radius of 0 (or back up to it) hands full control back to the controller,
-// keeping sync / character-follow seamless.
+// Runs at frame priority 10 so it wins over CameraSync / NavMeshRig. When no
+// player object exists (e.g. CameraSync mode), it leaves the camera to its
+// controller.
 // ---------------------------------------------------------------------------
 
 const MAX_RADIUS = 500;
@@ -28,12 +27,20 @@ const MAX_RADIUS = 500;
 export function ZoomControls() {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
 
   const sphericalRef = useRef(new THREE.Spherical(0, Math.PI / 2, 0));
-  const anchorRef = useRef(new THREE.Vector3());
-  const forwardRef = useRef(new THREE.Vector3());
+  const anchorRef = useRef(new THREE.Vector3(0, 15, 15));
   const offsetRef = useRef(new THREE.Vector3());
+  const tmpRef = useRef(new THREE.Vector3());
   const lastPinchDist = useRef<number | null>(null);
+
+  const initPosition = useMemo(() =>{
+    return new THREE.Vector3(0,15,15)
+  }, [])
+  const playerPosition = useMemo(() =>{
+    return new THREE.Vector3(0,0,0)
+  }, [])
 
   // Move the dolly distance by `delta` world units along the view direction.
   // Passing through 0 releases the camera back to the controller.
@@ -95,30 +102,28 @@ export function ZoomControls() {
     };
   }, [gl]);
 
-  // Apply the dolly every frame, after CameraSync / NavMeshRig (priority 0).
+
+  // Follow the player with an overhead-behind offset; wheel / pinch dolly the
+  // camera along that axis. No player object → leave the camera to its controller.
   useFrame(() => {
+    // 1. compute player position (world space)
+    const player = scene.getObjectByName("player");
+    if (!player) return;
+
+    playerPosition.copy(player.getWorldPosition(tmpRef.current));
+
+    // 2. compute offset position — baseline overhead-behind offset, pulled
+    //    toward the player as you zoom in (radius > 0), pushed out as you zoom out.
     const radius = sphericalRef.current.radius;
+    offsetRef.current
+      .copy(initPosition)
+      .normalize()
+      .multiplyScalar(Math.max(1, initPosition.length() - radius));
 
-    // Neutral → leave the position to the camera controller (live sync or the
-    // navmesh follow). Keep the anchor fresh so the next zoom lifts off from
-    // wherever the controller currently has the camera.
-    if (radius === 0) {
-      anchorRef.current.copy(camera.position);
-      return;
-    }
-
-    // Dolly along the current view direction, pivoting around the anchor.
-    camera.getWorldDirection(forwardRef.current);
-    sphericalRef.current.setFromVector3(forwardRef.current); // phi/theta = view dir
-    sphericalRef.current.radius = radius; // keep the accumulated dolly distance
-    camera.position.copy(anchorRef.current).add(
-      offsetRef.current.setFromSphericalCoords(
-        sphericalRef.current.radius,
-        sphericalRef.current.phi,
-        sphericalRef.current.theta,
-      ),
-    );
-  }, 10);
+    // 3. camera = player position + offset position
+    camera.position.copy(playerPosition).add(offsetRef.current);
+    camera.lookAt(playerPosition);
+  }, 10); // frame priority 10 — wins over CameraSync / NavMeshRig (both priority 0)
 
   return null;
 }

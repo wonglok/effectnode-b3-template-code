@@ -236,6 +236,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // Player + character
     // ------------------------------------------------------------------
     const playerGroup = new THREE.Group();
+    playerGroup.name = "player"; // ZoomControls follows this group
     playerGroup.position.set(0, 2, 0);
     scene.add(playerGroup);
 

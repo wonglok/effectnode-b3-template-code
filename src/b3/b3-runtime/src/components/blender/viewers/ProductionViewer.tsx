@@ -558,7 +558,8 @@ export function ProductionViewer({
     <div className="h-full w-full relative">
       <CanvasGPU>
         <Suspense fallback={null}>
-          {/* Wheel / pinch zoom — FOV-based so it composes with NavMeshRig */}
+          {/* Wheel / pinch zoom — dollies the camera position so it composes
+              with NavMeshRig (runs at a later frame priority) */}
           <ZoomControls />
           <SceneContent scene={state.scene!} />
           {children}
