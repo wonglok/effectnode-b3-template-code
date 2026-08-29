@@ -1,8 +1,9 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, float, vec3 } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, float, vec3, blur, uniform, mix, sample, rangeFogFactor } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
@@ -20,7 +21,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
             const name = 'collider'
             let colliderInfo = objects.find((r: any)=>{
                 return r.name === name
-            }) as any;
+            }) as any || {version: '0'};
 
             if (done.get(name) === colliderInfo?.version) {
                 return
@@ -41,48 +42,42 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial =  collider.material
                 }
-
                 const reflection = reflector( { resolutionScale: .5, bounces: false, generateMipmaps: true } ); // 0.5 is half of the rendering view
-				reflection.target.rotateX( -Math.PI / 2 );
+				reflection.target.rotateX( - Math.PI / 2 );
 				scene.add( reflection.target );
-
-                onClean(() =>{
-                    reflection.dispose()
-                })
-
                 onClean(() =>{
                     reflection.target.removeFromParent()
                 })
 
-				const animatedUV = uv().mul( 2 ).add( vec2( time.mul( .1 ), 0 ) );
+                const textureLoader = new TextureLoader();
+                const perlinMap = textureLoader.load( '/texture/perlin.png' );
+				perlinMap.wrapS = RepeatWrapping;
+				perlinMap.wrapT = RepeatWrapping;
+				perlinMap.colorSpace = SRGBColorSpace;
 
-                const roughnessMap = await new TextureLoader().loadAsync(`/texture/perlin.png`)
-                roughnessMap.repeat.set(0.2,0.2)
-                roughnessMap.wrapS = RepeatWrapping;
-                roughnessMap.wrapT = RepeatWrapping;
-                roughnessMap.colorSpace = SRGBColorSpace;
 
-                const roughness = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
+                const animatedUV = uv().mul( 2 ).add( vec2( time.mul( .1 ), 0 ) );
+				const roughness = texture( perlinMap, animatedUV ).r.mul( 2 ).saturate();
 
-                const materail = new MeshPhysicalNodeMaterial().copy(collider.userData.oMaterial as MeshPhysicalNodeMaterial)
-                materail.transparent = true;
-                materail.metalnessNode = float(1.0)
-                materail.roughnessNode = roughness.r.mul( .2 );
+				const floorMaterial = new MeshPhysicalNodeMaterial();
 
-                onClean(() => {
-                    materail.dispose()
-                })
+                floorMaterial.transparent = true;
+				floorMaterial.metalness = 1;
+				floorMaterial.roughnessNode = roughness.mul( .2 );
+				floorMaterial.colorNode = Fn( () => {
 
-                materail.colorNode = Fn( () => {
-                    const dirtyReflection = textureBicubic( reflection, roughness.rrr.mul( 1.5 ) );
-                    const opacity = 0.8;
+					// blur reflection using textureBicubic()
+					const dirtyReflection = textureBicubic( reflection, roughness.mul( 1.9 ) );
 
-                    return vec4( dirtyReflection.rgb, opacity );
+					// falloff opacity by distance like an opacity-fog
+					const opacity = rangeFogFactor( 3, 25 ).oneMinus();
 
-                } )();
+					return vec4( dirtyReflection.rgb, opacity );
 
-                collider.material = materail
+				} )();
 
+                collider.material = floorMaterial
+                
                 done.set(name, colliderInfo?.version)
             }
         }
