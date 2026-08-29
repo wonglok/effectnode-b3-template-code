@@ -123,7 +123,7 @@ export function ZoomControls() {
     // 3. camera = player position + offset position
     camera.position.copy(playerPosition).add(offsetRef.current);
     camera.lookAt(playerPosition);
-  }, 10); // frame priority 10 — wins over CameraSync / NavMeshRig (both priority 0)
+  }); // frame priority 10 — wins over CameraSync / NavMeshRig (both priority 0)
 
   return null;
 }

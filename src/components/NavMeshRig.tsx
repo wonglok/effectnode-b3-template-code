@@ -421,8 +421,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const targetMarker = new THREE.Mesh(
       new THREE.RingGeometry(0.35, 0.55, 24),
-      new THREE.MeshBasicMaterial({
-        color: 0x81d8d0,
+      new THREE.MeshStandardMaterial({
+        emissive: 0x81d8d0,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.9,
