@@ -318,6 +318,88 @@ def _pack_geometry(vertices, indices, uvs):
     return v_bytes + i_bytes + u_bytes
 
 
+def _same_point(a, b, eps=1e-6):
+    """Element-wise equality for two [x, y, z] lists."""
+    return (
+        abs(a[0] - b[0]) < eps
+        and abs(a[1] - b[1]) < eps
+        and abs(a[2] - b[2]) < eps
+    )
+
+
+def _sample_curve_splines(curve_data, steps_per_segment=10):
+    """Sample a bpy.types.Curve into dense local-space points (Three.js Y-up).
+
+    Returns (splines, closed_flags, bevel_depth, version):
+      splines      - list of list of [x, y, z] — one point list per spline
+      closed_flags - list of bool, one per spline (spline.use_cyclic_u)
+      bevel_depth  - float tube radius (curve_data.bevel_depth, 0 when unset)
+      version      - md5 checksum of the sampled payload
+    """
+    splines = []
+    closed_flags = []
+    bevel_depth = getattr(curve_data, "bevel_depth", 0.0) or 0.0
+
+    for spline in curve_data.splines:
+        pts = []
+
+        if spline.type == 'BEZIER':
+            bez = spline.bezier_points
+            n = len(bez)
+            if n == 1:
+                c = bez[0].co
+                pts.append([round(c.x, 6), round(c.z, 6), round(-c.y, 6)])
+            elif n >= 2:
+                pairs = list(zip(bez, bez[1:]))
+                if spline.use_cyclic_u:
+                    pairs.append((bez[-1], bez[0]))
+                for i, (p0, p1) in enumerate(pairs):
+                    seg = mathutils.geometry.interpolate_bezier(
+                        p0.co, p0.handle_right, p1.handle_left, p1.co,
+                        steps_per_segment,
+                    )
+                    # interpolate_bezier returns points INCLUDING both knots.
+                    # Skip the first point of every segment except the first to
+                    # avoid duplicating joint knots; distance-dedup as a safety
+                    # net (the docs are ambiguous about the returned length).
+                    start = 1 if i > 0 else 0
+                    for v in seg[start:]:
+                        xyz = [round(v.x, 6), round(v.z, 6), round(-v.y, 6)]
+                        if pts and _same_point(xyz, pts[-1]):
+                            continue
+                        pts.append(xyz)
+        else:
+            # POLY / NURBS control points — SplinePoint.co is 4D (x, y, z, w).
+            for p in spline.points:
+                c = p.co
+                xyz = [round(c[0], 6), round(c[2], 6), round(-c[1], 6)]
+                if pts and _same_point(xyz, pts[-1]):
+                    continue
+                pts.append(xyz)
+            # Explicitly close the ring for cyclic POLY/NURBS.
+            if (
+                spline.use_cyclic_u
+                and len(pts) > 1
+                and not _same_point(pts[0], pts[-1])
+            ):
+                pts.append(list(pts[0]))
+
+        splines.append(pts)
+        closed_flags.append(bool(spline.use_cyclic_u))
+
+    # Version checksum — changes when the sampled geometry changes. Points are
+    # rounded above so the payload is stable across 5 Hz ticks.
+    import hashlib
+    payload = json.dumps({
+        "s": splines,
+        "c": closed_flags,
+        "b": round(bevel_depth, 6),
+    }, sort_keys=True, separators=(",", ":"))
+    version = hashlib.md5(payload.encode()).hexdigest()[:8]
+
+    return splines, closed_flags, bevel_depth, version
+
+
 # ---------------------------------------------------------------------------
 # Scene data extraction (Blender Z-up → Three.js Y-up)
 # ---------------------------------------------------------------------------
@@ -363,6 +445,39 @@ def get_scene_data():
         # --- Empty-specific metadata ---
         if obj.type == 'EMPTY':
             obj_data["emptyDisplayType"] = obj.empty_display_type  # 'PLAIN_AXES', 'CUBE', 'SPHERE', etc.
+
+        # --- Curve objects: sample splines into dense local-space points ---
+        if obj.type == 'CURVE':
+            eval_obj = obj.evaluated_get(depsgraph)
+            try:
+                # to_curve() requires an explicit depsgraph on Blender ≥ 5.2
+                # (unlike to_mesh(), which still defaults it).
+                curve_data = eval_obj.to_curve(depsgraph)
+            except RuntimeError:
+                # Curve failed to evaluate (e.g. a modifier outputs a mesh) —
+                # still include transform-only data
+                data["objects"].append(obj_data)
+                continue
+            try:
+                splines, closed_flags, bevel_depth, version = _sample_curve_splines(
+                    curve_data
+                )
+            finally:
+                eval_obj.to_curve_clear()
+
+            if not any(splines):
+                # No usable spline points — transform-only entry
+                data["objects"].append(obj_data)
+                continue
+
+            obj_data.update({
+                "curveSplines": splines,
+                "curveClosed":  closed_flags,
+                "bevelDepth":   bevel_depth,
+                "curveVersion": version,
+            })
+            data["objects"].append(obj_data)
+            continue
 
         # ------------------------------------------------------------------
         # Non-mesh objects: just transforms + type marker, no geometry

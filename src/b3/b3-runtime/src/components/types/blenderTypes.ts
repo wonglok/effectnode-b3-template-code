@@ -37,6 +37,14 @@ export interface BlenderObject {
   doubleSided?: boolean;
   /** Serialised Blender shader node graph for TSL material reconstruction. */
   graph?: ShaderGraph;
+  /** Dense local-space curve points (Three.js Y-up), one array per spline. */
+  curveSplines?: number[][][];
+  /** Per-spline cyclic flag — mirrors Blender spline.use_cyclic_u. */
+  curveClosed?: boolean[];
+  /** Curve bevel radius — Blender curve.bevel_depth (0 when the curve isn't bevelled). */
+  bevelDepth?: number;
+  /** Curve sampling checksum — changes when splines/bevel depth change. */
+  curveVersion?: string;
   /** Geometry version — matched against GeoBuffer.version for cache invalidation. */
   version: string;
 }
