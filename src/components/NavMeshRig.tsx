@@ -504,6 +504,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         -((pointerY - rect.top) / rect.height) * 2 + 1,
       );
 
+      // The camera is moved every frame by NavMeshRig + ZoomControls, which
+      // write position/quaternion directly — so matrixWorld is stale here and
+      // setFromCamera would cast a ray that doesn't match the rendered view.
+      // Recompute the matrices from the live pose first.
+      camera.updateMatrixWorld();
+      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
       clickRaycaster.setFromCamera(ndc, camera);
       refreshColliderObjects();
       const hits = clickRaycaster.intersectObjects(colliderObjects, false);

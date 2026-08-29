@@ -1,7 +1,7 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, rangeFogFactor, float } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 //
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
@@ -89,7 +89,6 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, normlTexture );
-					const opacity = rangeFogFactor( 3, 25 ).mul(roughnessTexture);
 
 					return vec4( dirtyReflection.rgb, 0.95 );
 				} )();
