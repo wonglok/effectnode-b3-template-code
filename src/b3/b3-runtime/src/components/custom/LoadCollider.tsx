@@ -1,14 +1,13 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, smoothstep, step, length, sin, pow } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, smoothstep, length, sin, cos, pow, exp, atan, mix } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 //
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 //
 
 
-import { abs, dot, min, mix, mod, select, clamp, sign } from 'three/tsl';
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
@@ -93,9 +92,39 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
 
-                    const galaxy = vec3(0.0);
-                    
-					return vec4( dirtyReflection.rgb.add(galaxy), 0.95 );
+                    // // Galaxy disc across the floor UVs, centred at (0.5, 0.5) and mapped to -1..1.
+                    // const p = uv().sub(0.5).mul(2.0);
+
+                    // // Slow rotation so the arms drift over time.
+                    // const rot = time.mul(0.05);
+                    // const c = cos(rot);
+                    // const s = sin(rot);
+                    // const pr = vec2(p.x.mul(c).sub(p.y.mul(s)), p.x.mul(s).add(p.y.mul(c)));
+
+                    // const r = length(pr);
+                    // const a = atan(pr.y, pr.x);
+
+                    // // 3 spiral arms: wrapping the angle by radius creates the swirl.
+                    // const arms = float(3.0);
+                    // const spiral = sin(a.mul(arms).add(r.mul(4.0)));
+                    // const armMask = pow(spiral.mul(0.5).add(0.5), float(2.0));
+
+                    // // Arms fade out toward the core; disc/profile falloff outward.
+                    // const armFade = smoothstep(0.05, 0.35, r);
+                    // const core = exp(r.mul(-6.0));
+                    // const disc = exp(r.mul(-2.0));
+
+                    // // Palette: warm core -> teal arms -> magenta dust lanes.
+                    // const coreCol = vec3(1.0, 0.85, 0.6);
+                    // const armTeal = vec3(0.35, 0.75, 1.2);
+                    // const dustMag = vec3(0.6, 0.25, 0.85);
+
+                    // const armCol = mix(armTeal, dustMag, armMask);
+                    // const galaxy = mix(coreCol, armCol, armMask.mul(armFade))
+                    //     .mul(disc)
+                    //     .add(coreCol.mul(core).mul(0.5));
+
+					return vec4( dirtyReflection.rgb, 0.85 );
 				} )();
 
                 floorMaterial.transparent = true
