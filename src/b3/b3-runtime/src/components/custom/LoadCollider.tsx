@@ -8,9 +8,7 @@ import { MeshPhysicalNodeMaterial } from "three/webgpu";
 //
 
 
-import { color, 
-         floor, fract, abs, max, dot, min, 
-         mix } from 'three/tsl';
+import { abs, dot, min, mix, mod, select, clamp, sign } from 'three/tsl';
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene);
@@ -92,22 +90,12 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.metalnessNode = float(normlTexture);
 				floorMaterial.roughnessNode = roughnessTexture;
 
-                let createHexGrid = (options: any = {}) =>{
-
-                    return vec4(1.0);
-                }
-
-                let finalColor = createHexGrid({
-                    scale: 12.0,
-                    lineThickness: 0.04,
-                    gridColor: [0.0, 0.9, 1.0], // Cyan lines
-                    cellColor: [0.02, 0.02, 0.08] // Dark background
-                })
-                
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
 
-					return vec4( dirtyReflection.rgb.mul(finalColor), 0.95 );
+                    const galaxy = vec3(0.0);
+                    
+					return vec4( dirtyReflection.rgb.add(galaxy), 0.95 );
 				} )();
 
                 floorMaterial.transparent = true
