@@ -76,7 +76,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				roughnessMap.wrapT = RepeatWrapping;
 				roughnessMap.colorSpace = SRGBColorSpace;
 
-                const animatedUV = uv().mul( 1 ).add( vec2( 0, time.mul( -0.01 ) ) );
+                const animatedUV = uv().mul( 1 ).add( vec2( 0, time.mul( 0.0 ) ) );
 
 				const normlTexture = texture( normalMap, animatedUV ).r.mul( 1.0 ).saturate();
 				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
