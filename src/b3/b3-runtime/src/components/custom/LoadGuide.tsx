@@ -13,7 +13,7 @@ texArrow.wrapS = texArrow.wrapT = RepeatWrapping
 const colorNode = texture(texArrow, uv().add(vec2(float(0.0).add(time.mul(-0.5)), float(0.25))));
 
 
-export function LoadWalker ({ texData = new Map(), objects = [] }) {
+export function LoadGuide ({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene); 
 
     const idVersion = useMemo(() =>{
