@@ -23,12 +23,13 @@ import type { BlenderObject } from "../types/blenderTypes";
 
 // Shared red material — matches the reference recipe. Module-level so all
 // curve lines share one program (never disposed per entry).
-const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
+// const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
+const MESH_MATERAIL = new THREE.MeshStandardMaterial({ color: 0xffffff });
 
 // Subdivision count for getPoints() — the recipe uses 50; scale up for longer
 // splines so they stay smooth.
 function subdivisionsFor(count: number): number {
-  return Math.max(50, count * 2);
+  return Math.max(250, count * 2);
 }
 
 interface CurveEntry {
@@ -59,12 +60,16 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
     const closed = obj.curveClosed?.[i] ?? false;
 
     const curve = new THREE.CatmullRomCurve3(vecs, closed, "catmullrom", 0.5);
-    const sampled = curve.getPoints(subdivisionsFor(vecs.length));
-    const geometry = new THREE.BufferGeometry().setFromPoints(sampled);
+    // const sampled = curve.getPoints(subdivisionsFor(vecs.length));
+    // const geometry = new THREE.BufferGeometry().setFromPoints(sampled);
 
-    const line = new THREE.Line(geometry, LINE_MATERIAL);
+    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 2.5, 8, closed)
+    geometry2.scale(1.0, 0.01, 1.0)
+
+    const line = new THREE.Mesh(geometry2, MESH_MATERAIL);
+    // line.name = `${obj.name}`
     group.add(line);
-    geometries.push(geometry);
+    geometries.push(geometry2);
   });
 
   // Object transform — local-space points + object transform, same convention
