@@ -88,7 +88,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.roughnessNode = roughnessTexture;
                 
 				floorMaterial.colorNode = Fn( () => {
-					const dirtyReflection = textureBicubic( reflection, normlTexture );
+					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
 
 					return vec4( dirtyReflection.rgb, 0.95 );
 				} )();

@@ -10,11 +10,11 @@ const texArrow = new TextureLoader().load(`/texture/arrows@1x.png`);
 texArrow.generateMipmaps = false
 texArrow.colorSpace= SRGBColorSpace
 texArrow.wrapS = texArrow.wrapT = RepeatWrapping
-const colorNode = texture(texArrow, uv().add(vec2(float(0.0).add(time.mul(-0.1)), float(0.25))));
+const colorNode = texture(texArrow, uv().add(vec2(float(0.0).add(time.mul(-0.5)), float(0.25))));
 
 
 export function LoadWalker ({ texData = new Map(), objects = [] }) {
-    const scene = useThree((r) => r.scene);
+    const scene = useThree((r) => r.scene); 
 
     const idVersion = useMemo(() =>{
         return new Map()
@@ -47,7 +47,6 @@ export function LoadWalker ({ texData = new Map(), objects = [] }) {
             if(found){
                 found.traverse((it: Object3D | Mesh | any) => {
                     if(it && it?.material) {
-                      
                         it.material = new MeshStandardNodeMaterial({
                             colorNode: colorNode,
                             transparent: true
