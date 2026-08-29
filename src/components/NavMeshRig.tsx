@@ -18,28 +18,9 @@ import {
   type SoloNavMeshOptions,
 } from "navcat/blocks";
 import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
-import { useBlenderStore } from "../b3/b3-runtime/src";
+import { useBlenderStore, useNavRigStore } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
-
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-
-const guiSettings = {
-  showNavMeshHelper: false,
-  showAgentHelper: false,
-  cellSize: 0.05,
-  cellHeight: 0.05,
-  walkableRadius: 0.3,
-  walkableSlopeAngle: 45,
-  walkableClimb: 0.2,
-  walkableHeight: 1.5,
-  walkingSpeed: 4,
-  runningSpeed: 8,
-  offsetAbove: 15,
-  offsetBehind: 10,
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -141,6 +122,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     let disposed = false;
     let retryInterval = 0;
 
+    // Mutable settings shared with the lil-gui controls (which write in place).
+    const settings = useNavRigStore.getState().settings;
+
     // ------------------------------------------------------------------
     // Navmesh
     // ------------------------------------------------------------------
@@ -196,21 +180,21 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
       const input: SoloNavMeshInput = { positions, indices };
       const config: SoloNavMeshOptions = {
-        cellSize: guiSettings.cellSize,
-        cellHeight: guiSettings.cellHeight,
-        walkableRadiusWorld: guiSettings.walkableRadius,
+        cellSize: settings.cellSize,
+        cellHeight: settings.cellHeight,
+        walkableRadiusWorld: settings.walkableRadius,
         walkableRadiusVoxels: Math.ceil(
-          guiSettings.walkableRadius / guiSettings.cellSize,
+          settings.walkableRadius / settings.cellSize,
         ),
-        walkableClimbWorld: guiSettings.walkableClimb,
+        walkableClimbWorld: settings.walkableClimb,
         walkableClimbVoxels: Math.ceil(
-          guiSettings.walkableClimb / guiSettings.cellHeight,
+          settings.walkableClimb / settings.cellHeight,
         ),
-        walkableHeightWorld: guiSettings.walkableHeight,
+        walkableHeightWorld: settings.walkableHeight,
         walkableHeightVoxels: Math.ceil(
-          guiSettings.walkableHeight / guiSettings.cellHeight,
+          settings.walkableHeight / settings.cellHeight,
         ),
-        walkableSlopeAngleDegrees: guiSettings.walkableSlopeAngle,
+        walkableSlopeAngleDegrees: settings.walkableSlopeAngle,
         borderSize: 4,
         minRegionArea: 12,
         mergeRegionArea: 20,
@@ -242,8 +226,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
     const agentHelper = new THREE.Mesh(
       new THREE.CapsuleGeometry(
-        guiSettings.walkableRadius,
-        guiSettings.walkableHeight,
+        settings.walkableRadius,
+        settings.walkableHeight,
       ),
       new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true }),
     );
@@ -504,15 +488,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         -((pointerY - rect.top) / rect.height) * 2 + 1,
       );
 
-      // The camera is moved every frame by NavMeshRig + ZoomControls, which
-      // write position/quaternion directly — so matrixWorld is stale here and
-      // setFromCamera would cast a ray that doesn't match the rendered view.
-      // Recompute the matrices from the live pose first.
+      // The camera is written directly by the frame loop (position + lookAt),
+      // so matrixWorld lags here — setFromCamera would cast a ray that doesn't
+      // match the rendered view. Recompute the matrices from the live pose.
       camera.updateMatrixWorld();
       camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
       clickRaycaster.setFromCamera(ndc, camera);
       refreshColliderObjects();
       const hits = clickRaycaster.intersectObjects(colliderObjects, false);
+
       if (hits.length === 0) return;
 
       moveTo(hits[0].point);
@@ -551,25 +535,25 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       container: guiContainer?.current ?? undefined,
     });
     const navMeshFolder = gui.addFolder("Nav Mesh");
-    navMeshFolder.add(guiSettings, "showNavMeshHelper").name("Show Helper");
-    navMeshFolder.add(guiSettings, "showAgentHelper").name("Show Agent Helper");
+    navMeshFolder.add(settings, "showNavMeshHelper").name("Show Helper");
+    navMeshFolder.add(settings, "showAgentHelper").name("Show Agent Helper");
     navMeshFolder
-      .add(guiSettings, "cellSize", 0.05, 0.3, 0.01)
+      .add(settings, "cellSize", 0.05, 0.3, 0.01)
       .name("Cell Size");
     navMeshFolder
-      .add(guiSettings, "cellHeight", 0.05, 0.3, 0.01)
+      .add(settings, "cellHeight", 0.05, 0.3, 0.01)
       .name("Cell Height");
     navMeshFolder
-      .add(guiSettings, "walkableRadius", 0.1, 1, 0.1)
+      .add(settings, "walkableRadius", 0.1, 1, 0.1)
       .name("Walkable Radius");
     navMeshFolder
-      .add(guiSettings, "walkableSlopeAngle", 0, 90, 1)
+      .add(settings, "walkableSlopeAngle", 0, 90, 1)
       .name("Walkable Slope Angle");
     navMeshFolder
-      .add(guiSettings, "walkableClimb", 0.1, 1, 0.1)
+      .add(settings, "walkableClimb", 0.1, 1, 0.1)
       .name("Walkable Climb");
     navMeshFolder
-      .add(guiSettings, "walkableHeight", 0.1, 3, 0.1)
+      .add(settings, "walkableHeight", 0.1, 3, 0.1)
       .name("Walkable Height");
     navMeshFolder
       .add(
@@ -585,17 +569,17 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
     const playerFolder = gui.addFolder("Player Speed");
     playerFolder
-      .add(guiSettings, "walkingSpeed", 0.1, 50, 0.1)
+      .add(settings, "walkingSpeed", 0.1, 50, 0.1)
       .name("Walking Speed");
     playerFolder
-      .add(guiSettings, "runningSpeed", 0.1, 50, 0.1)
+      .add(settings, "runningSpeed", 0.1, 50, 0.1)
       .name("Running Speed");
 
     const cameraFolder = gui.addFolder("Camera");
     cameraFolder
-      .add(guiSettings, "offsetBehind", 5, 30, 1)
+      .add(settings, "offsetBehind", 5, 30, 1)
       .name("Offset Behind");
-    cameraFolder.add(guiSettings, "offsetAbove", 2, 15, 1).name("Offset Above");
+    cameraFolder.add(settings, "offsetAbove", 2, 15, 1).name("Offset Above");
 
     // ------------------------------------------------------------------
     // Movement / animation / camera scratch state
@@ -639,6 +623,44 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     cameraPosition.copy(camera.position);
 
     // ------------------------------------------------------------------
+    // Wheel / pinch zoom — dollies the camera along the follow axis via the
+    // shared rig store. radius > 0 pulls in toward the player, radius < 0
+    // pushes out. A single controller writes the camera each frame, so the
+    // pose used for raycasting always matches the rendered frame.
+    // ------------------------------------------------------------------
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      useNavRigStore.getState().dolly(-e.deltaY * 0.015);
+    };
+    gl.domElement.addEventListener("wheel", onWheel, { passive: false });
+
+    const pinchDist = (t: TouchList) => {
+      const a = t[0];
+      const b = t[1];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    };
+    let lastPinchDist: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) lastPinchDist = pinchDist(e.touches);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+      const d = pinchDist(e.touches);
+      if (lastPinchDist != null) {
+        useNavRigStore.getState().dolly((d - lastPinchDist) * 0.03);
+      }
+      lastPinchDist = d;
+    };
+    const onTouchEnd = () => {
+      lastPinchDist = null;
+    };
+    gl.domElement.addEventListener("touchstart", onTouchStart, { passive: true });
+    gl.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
+    gl.domElement.addEventListener("touchend", onTouchEnd);
+    gl.domElement.addEventListener("touchcancel", onTouchEnd);
+
+    // ------------------------------------------------------------------
     // Per-frame update
     // ------------------------------------------------------------------
     const frame = (delta: number, _: any) => {
@@ -679,8 +701,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           if (left) movement.vector.x -= 1;
           if (right) movement.vector.x += 1;
           const scalar = sprint
-            ? guiSettings.runningSpeed
-            : guiSettings.walkingSpeed;
+            ? settings.runningSpeed
+            : settings.walkingSpeed;
           movement.vector.normalize().multiplyScalar(scalar * clamped);
         } else if (!targetReached && path.length > 0) {
           // Steer toward the current path waypoint
@@ -691,8 +713,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
           movement.vector.set(dx, 0, dz);
           const scalar = sprint
-            ? guiSettings.runningSpeed
-            : guiSettings.walkingSpeed;
+            ? settings.runningSpeed
+            : settings.walkingSpeed;
           movement.vector.normalize().multiplyScalar(scalar * clamped);
 
           if (dist < 0.35) {
@@ -807,11 +829,20 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       }
 
       // --- camera follow ---
+      // Baseline follow offset (above/behind from the GUI), dollied along its
+      // own axis by the wheel / pinch zoom radius. This is the only controller
+      // writing the camera, so its pose is what every raycast must match.
       const offsetVector = cameraOffset.set(
         0,
-        guiSettings.offsetAbove,
-        guiSettings.offsetBehind,
+        settings.offsetAbove,
+        settings.offsetBehind,
       );
+      const baseOffsetLen = offsetVector.length();
+      offsetVector
+        .normalize()
+        .multiplyScalar(
+          Math.max(1, baseOffsetLen - useNavRigStore.getState().zoomRadius),
+        );
       const target = cameraPositionTarget
         .copy(playerGroup.position)
         .add(offsetVector);
@@ -822,9 +853,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // --- mixer + helpers ---
       if (mixer) mixer.update(clamped);
       if (navMeshHelper?.object) {
-        navMeshHelper.object.visible = guiSettings.showNavMeshHelper;
+        navMeshHelper.object.visible = settings.showNavMeshHelper;
       }
-      agentHelper.visible = guiSettings.showAgentHelper;
+      agentHelper.visible = settings.showAgentHelper;
     };
 
     frameRef.current = { frame };
@@ -841,6 +872,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       document.removeEventListener("keyup", handleKeyUp);
       pointerDown = false;
       gl.domElement.removeEventListener("pointerdown", handlePointerDown);
+      gl.domElement.removeEventListener("wheel", onWheel);
+      gl.domElement.removeEventListener("touchstart", onTouchStart);
+      gl.domElement.removeEventListener("touchmove", onTouchMove);
+      gl.domElement.removeEventListener("touchend", onTouchEnd);
+      gl.domElement.removeEventListener("touchcancel", onTouchEnd);
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", stopFollowing);
       document.removeEventListener("pointercancel", stopFollowing);

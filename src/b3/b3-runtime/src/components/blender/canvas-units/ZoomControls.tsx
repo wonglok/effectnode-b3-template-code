@@ -105,7 +105,10 @@ export function ZoomControls() {
 
   // Follow the player with an overhead-behind offset; wheel / pinch dolly the
   // camera along that axis. No player object → leave the camera to its controller.
-  useFrame(() => {
+  useFrame((_) => {
+    _.camera.near = 1
+    _.camera.far = 500
+    _.camera.updateProjectionMatrix()
     // 1. compute player position (world space)
     const player = scene.getObjectByName("player");
     if (!player) return;
