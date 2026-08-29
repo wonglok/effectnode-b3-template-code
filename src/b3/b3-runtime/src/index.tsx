@@ -18,7 +18,11 @@ import { SSGIRender } from "./components/blender/canvas-units/SSGIRender";
 import { useBlenderStore } from "./components/stores/blenderStore";
 import { useBlenderSyncStore } from "./components/stores/blenderSyncStore";
 import { useSettingsStore } from "./components/stores/settingsStore";
-import { useNavRigStore } from "./components/stores/navRigStore";
+import {
+  MAX_CAMERA_DISTANCE,
+  MIN_CAMERA_DISTANCE,
+  useNavRigStore,
+} from "./components/stores/navRigStore";
 
 export * from "./components/types/blenderTypes";
 
@@ -28,6 +32,8 @@ export {
   useBlenderSyncStore,
   useBlenderStore,
   useNavRigStore,
+  MIN_CAMERA_DISTANCE,
+  MAX_CAMERA_DISTANCE,
 };
 
 // components

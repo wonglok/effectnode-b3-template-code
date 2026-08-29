@@ -30,7 +30,8 @@ interface NavRigState {
   settings: NavRigSettings;
 
   /** Dolly distance along the follow axis — >0 pulls the camera toward the
-   *  player, <0 pushes it out. 0 = default follow distance. */
+   *  player, <0 pushes it out. 0 = default follow distance. The resulting
+   *  camera distance is clamped to [MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE]. */
   zoomRadius: number;
 
   /** Replace one or more settings fields (used by the lil-gui controls). */
@@ -41,7 +42,9 @@ interface NavRigState {
   dolly: (delta: number) => void;
 }
 
-const MAX_RADIUS = 500;
+/** Min / max camera distance from the player (world units). */
+export const MIN_CAMERA_DISTANCE = 5;
+export const MAX_CAMERA_DISTANCE = 150;
 
 export const useNavRigStore = create<NavRigState>((set, get) => ({
   settings: {
@@ -64,13 +67,19 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
   dolly: (delta) => {
-    const { zoomRadius } = get();
+    const { zoomRadius, settings } = get();
+    // Camera distance = base follow offset length − zoomRadius; clamp the
+    // radius so the distance stays within [MIN, MAX] for the current offset
+    // (which the GUI can change live).
+    const base = Math.hypot(settings.offsetAbove, settings.offsetBehind);
+    const minRadius = base - MAX_CAMERA_DISTANCE;
+    const maxRadius = base - MIN_CAMERA_DISTANCE;
     const next = zoomRadius + delta;
     set({
       zoomRadius:
         zoomRadius !== 0 && zoomRadius * next <= 0
           ? 0
-          : Math.min(MAX_RADIUS, Math.max(-MAX_RADIUS, next)),
+          : Math.min(maxRadius, Math.max(minRadius, next)),
     });
   },
 }));

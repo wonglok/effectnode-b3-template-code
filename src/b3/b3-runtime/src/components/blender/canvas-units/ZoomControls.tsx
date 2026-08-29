@@ -23,6 +23,7 @@ import * as THREE from "three/webgpu";
 // ---------------------------------------------------------------------------
 
 const MAX_RADIUS = 500;
+const MIN_RADIUS = -500;
 
 export function ZoomControls() {
   const camera = useThree((s) => s.camera);
@@ -51,7 +52,7 @@ export function ZoomControls() {
     sphericalRef.current.radius =
       r !== 0 && r * next <= 0
         ? 0
-        : THREE.MathUtils.clamp(next, -MAX_RADIUS, MAX_RADIUS);
+        : THREE.MathUtils.clamp(next, MIN_RADIUS, MAX_RADIUS);
   };
 
   // Wheel → dolly. Scroll up (deltaY < 0) zooms in: radius increases.

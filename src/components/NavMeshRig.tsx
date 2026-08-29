@@ -18,7 +18,12 @@ import {
   type SoloNavMeshOptions,
 } from "navcat/blocks";
 import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
-import { useBlenderStore, useNavRigStore } from "../b3/b3-runtime/src";
+import {
+  MAX_CAMERA_DISTANCE,
+  MIN_CAMERA_DISTANCE,
+  useBlenderStore,
+  useNavRigStore,
+} from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
 
@@ -838,11 +843,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         settings.offsetBehind,
       );
       const baseOffsetLen = offsetVector.length();
-      offsetVector
-        .normalize()
-        .multiplyScalar(
-          Math.max(1, baseOffsetLen - useNavRigStore.getState().zoomRadius),
-        );
+      const dollyDist = THREE.MathUtils.clamp(
+        baseOffsetLen - useNavRigStore.getState().zoomRadius,
+        MIN_CAMERA_DISTANCE,
+        MAX_CAMERA_DISTANCE,
+      );
+      offsetVector.normalize().multiplyScalar(dollyDist);
       const target = cameraPositionTarget
         .copy(playerGroup.position)
         .add(offsetVector);
