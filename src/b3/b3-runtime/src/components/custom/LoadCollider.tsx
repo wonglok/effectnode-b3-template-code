@@ -1,7 +1,7 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, float, vec3, blur, uniform, mix, sample, rangeFogFactor } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, rangeFogFactor } from 'three/tsl';
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
@@ -61,10 +61,11 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				const roughness = texture( perlinMap, animatedUV ).r.mul( 2 ).saturate();
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
+                floorMaterial.copy(collider.userData.oMaterial)
 
                 floorMaterial.transparent = true;
-				floorMaterial.metalness = 1;
-				floorMaterial.roughnessNode = roughness.mul( .2 );
+				floorMaterial.metalness = 0.5;
+				floorMaterial.roughnessNode = roughness.mul( 1.0 );
 				floorMaterial.colorNode = Fn( () => {
 
 					// blur reflection using textureBicubic()
