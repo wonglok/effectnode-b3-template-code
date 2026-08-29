@@ -37,8 +37,12 @@ export interface BlenderObject {
   doubleSided?: boolean;
   /** Serialised Blender shader node graph for TSL material reconstruction. */
   graph?: ShaderGraph;
-  /** Dense local-space curve points (Three.js Y-up), one array per spline. */
-  curveSplines?: number[][][];
+  /** Dense local-space curve points (Three.js Y-up), one array per spline —
+   *  fitted as CatmullRomCurve3 on the JS side. */
+  sampledPoints?: number[][][];
+  /** Original control points per spline (bezier knots / poly / nurbs), Y-up —
+   *  the sparse points the user edits in Blender. */
+  controlPoints?: number[][][];
   /** Per-spline cyclic flag — mirrors Blender spline.use_cyclic_u. */
   curveClosed?: boolean[];
   /** Curve bevel radius — Blender curve.bevel_depth (0 when the curve isn't bevelled). */

@@ -330,25 +330,33 @@ def _same_point(a, b, eps=1e-6):
 def _sample_curve_splines(curve_data, steps_per_segment=10):
     """Sample a bpy.types.Curve into dense local-space points (Three.js Y-up).
 
-    Returns (splines, closed_flags, bevel_depth, version):
-      splines      - list of list of [x, y, z] — one point list per spline
-      closed_flags - list of bool, one per spline (spline.use_cyclic_u)
-      bevel_depth  - float tube radius (curve_data.bevel_depth, 0 when unset)
-      version      - md5 checksum of the sampled payload
+    Returns (sampled, controls, closed_flags, bevel_depth, version):
+      sampled       - list of list of [x, y, z] — dense points along each spline
+      controls      - list of list of [x, y, z] — original control points per
+                      spline (bezier knots / poly / nurbs control points)
+      closed_flags  - list of bool, one per spline (spline.use_cyclic_u)
+      bevel_depth   - float tube radius (curve_data.bevel_depth, 0 when unset)
+      version       - md5 checksum of the exported payload
     """
-    splines = []
+    sampled = []
+    controls = []
     closed_flags = []
     bevel_depth = getattr(curve_data, "bevel_depth", 0.0) or 0.0
 
     for spline in curve_data.splines:
         pts = []
+        ctrl = []
 
         if spline.type == 'BEZIER':
             bez = spline.bezier_points
             n = len(bez)
+            # Control points = the bezier knot positions (the handles stay in
+            # Blender; the sampled interpolation below carries the shape).
+            for b in bez:
+                c = b.co
+                ctrl.append([round(c.x, 6), round(c.z, 6), round(-c.y, 6)])
             if n == 1:
-                c = bez[0].co
-                pts.append([round(c.x, 6), round(c.z, 6), round(-c.y, 6)])
+                pts.append(list(ctrl[0]))
             elif n >= 2:
                 pairs = list(zip(bez, bez[1:]))
                 if spline.use_cyclic_u:
@@ -373,6 +381,7 @@ def _sample_curve_splines(curve_data, steps_per_segment=10):
             for p in spline.points:
                 c = p.co
                 xyz = [round(c[0], 6), round(c[2], 6), round(-c[1], 6)]
+                ctrl.append(list(xyz))
                 if pts and _same_point(xyz, pts[-1]):
                     continue
                 pts.append(xyz)
@@ -384,20 +393,22 @@ def _sample_curve_splines(curve_data, steps_per_segment=10):
             ):
                 pts.append(list(pts[0]))
 
-        splines.append(pts)
+        sampled.append(pts)
+        controls.append(ctrl)
         closed_flags.append(bool(spline.use_cyclic_u))
 
-    # Version checksum — changes when the sampled geometry changes. Points are
+    # Version checksum — changes when the exported payload changes. Points are
     # rounded above so the payload is stable across 5 Hz ticks.
     import hashlib
     payload = json.dumps({
-        "s": splines,
+        "s": sampled,
+        "o": controls,
         "c": closed_flags,
         "b": round(bevel_depth, 6),
     }, sort_keys=True, separators=(",", ":"))
     version = hashlib.md5(payload.encode()).hexdigest()[:8]
 
-    return splines, closed_flags, bevel_depth, version
+    return sampled, controls, closed_flags, bevel_depth, version
 
 
 # ---------------------------------------------------------------------------
@@ -446,7 +457,8 @@ def get_scene_data():
         if obj.type == 'EMPTY':
             obj_data["emptyDisplayType"] = obj.empty_display_type  # 'PLAIN_AXES', 'CUBE', 'SPHERE', etc.
 
-        # --- Curve objects: sample splines into dense local-space points ---
+        # --- Curve objects: sample splines into dense local-space points,
+        # plus the original control points per spline ---
         if obj.type == 'CURVE':
             eval_obj = obj.evaluated_get(depsgraph)
             try:
@@ -459,22 +471,23 @@ def get_scene_data():
                 data["objects"].append(obj_data)
                 continue
             try:
-                splines, closed_flags, bevel_depth, version = _sample_curve_splines(
+                sampled, controls, closed_flags, bevel_depth, version = _sample_curve_splines(
                     curve_data
                 )
             finally:
                 eval_obj.to_curve_clear()
 
-            if not any(splines):
+            if not any(sampled):
                 # No usable spline points — transform-only entry
                 data["objects"].append(obj_data)
                 continue
 
             obj_data.update({
-                "curveSplines": splines,
-                "curveClosed":  closed_flags,
-                "bevelDepth":   bevel_depth,
-                "curveVersion": version,
+                "sampledPoints": sampled,
+                "controlPoints": controls,
+                "curveClosed":   closed_flags,
+                "bevelDepth":    bevel_depth,
+                "curveVersion":  version,
             })
             data["objects"].append(obj_data)
             continue

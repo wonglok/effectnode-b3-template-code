@@ -4,20 +4,21 @@ import * as THREE from "three";
 import type { BlenderObject } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
-// LoadCurve — reconstructs Blender CURVE objects as red lines.
+// LoadCurve — reconstructs Blender CURVE objects.
 //
 // The Blender plugin samples each curve's splines into dense local-space
-// points (`curveSplines`). Each spline is refit as a CatmullRomCurve3,
-// re-sampled with getPoints(), and rendered as a THREE.Line with a red
-// LineBasicMaterial — mirroring the standard Three.js recipe:
+// points (`sampledPoints`) and also exports the original control points
+// (`controlPoints`). Each spline is refit as a CatmullRomCurve3 built from
+// `sampledPoints` (centripetal parametrisation), then tessellated into a
+// THREE.Mesh via TubeGeometry — mirroring the standard Three.js recipe:
 //
-//   const curve = new THREE.CatmullRomCurve3([...points]);
+//   const curve = new THREE.CatmullRomCurve3(vecs, closed, "centripetal", 1.0);
 //   const pts = curve.getPoints(50);
 //   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
 //   const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
 //   const curveObject = new THREE.Line(geometry, material);
 //
-// Lines are grouped under an object-named THREE.Group carrying the object's
+// Curves are grouped under an object-named THREE.Group carrying the object's
 // position / quaternion / scale (same convention as useMeshSync).
 // ---------------------------------------------------------------------------
 
@@ -41,7 +42,8 @@ interface CurveEntry {
 /** Fallback signature when the Blender plugin doesn't send curveVersion yet. */
 function computeCurveSignature(obj: BlenderObject): string {
   return JSON.stringify([
-    obj.curveSplines ?? [],
+    obj.sampledPoints ?? [],
+    obj.controlPoints ?? [],
     obj.curveClosed ?? [],
     obj.bevelDepth ?? 0,
   ]);
@@ -53,15 +55,15 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
 
   const geometries: THREE.BufferGeometry[] = [];
 
-  (obj.curveSplines ?? []).forEach((points, i) => {
+  (obj.sampledPoints ?? []).forEach((points, i) => {
     if (!points || points.length < 2) return; // CatmullRomCurve3 needs ≥ 2 points
 
     const vecs = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     const closed = obj.curveClosed?.[i] ?? false;
 
-    const curve = new THREE.CatmullRomCurve3(vecs, closed, "catmullrom", 1.0);
+    const curve = new THREE.CatmullRomCurve3(vecs, closed, "centripetal", 0.5);
 
-    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 0.25, 24, closed)
+    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 1.25, 24, closed)
 
     const line = new THREE.Mesh(geometry2, MESH_MATERAIL);
     // line.name = `${obj.name}`
@@ -98,7 +100,7 @@ export function LoadCurve({ objects = [] }: { objects?: BlenderObject[] }) {
 
     for (const obj of objects) {
       if (obj.objectType !== "CURVE") continue;
-      if (!obj.curveSplines || obj.curveSplines.length === 0) continue;
+      if (!obj.sampledPoints || obj.sampledPoints.length === 0) continue;
       incoming.add(obj.name);
 
       const sig = obj.curveVersion ?? computeCurveSignature(obj);
