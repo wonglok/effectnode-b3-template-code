@@ -118,7 +118,7 @@ function findBirthplacePosition(scene: THREE.Scene): THREE.Vector3 | null {
 // ---------------------------------------------------------------------------
 
 interface RigFrame {
-  frame: (delta: number) => void;
+  frame: (delta: number, _: any) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -503,12 +503,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         ((pointerX - rect.left) / rect.width) * 2 - 1,
         -((pointerY - rect.top) / rect.height) * 2 + 1,
       );
+
       clickRaycaster.setFromCamera(ndc, camera);
       refreshColliderObjects();
       const hits = clickRaycaster.intersectObjects(colliderObjects, false);
       if (hits.length === 0) return;
 
-    
       moveTo(hits[0].point);
     };
 
@@ -635,14 +635,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     // Per-frame update
     // ------------------------------------------------------------------
-    const frame = (delta: number) => {
+    const frame = (delta: number, _: any) => {
       const clamped = Math.min(delta, 0.1);
 
       // Hold-to-move: while the mouse is held, keep re-aiming the target from
       // the current pointer position (throttled to ~150ms — findPath is costly).
       if (pointerDown) {
         followAccumulator += clamped;
-        if (followAccumulator >= 0.15) {
+        if (followAccumulator >= 0.0) {
           followAccumulator = 0;
           updateTargetFromPointer();
         }
@@ -855,7 +855,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   }, [scene, camera, gl]);
 
   useFrame((_, delta) => {
-    frameRef.current.frame(delta);
+    frameRef.current.frame(delta, _);
   });
 
   return null;
