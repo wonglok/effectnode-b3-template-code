@@ -59,12 +59,9 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
     const vecs = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     const closed = obj.curveClosed?.[i] ?? false;
 
-    const curve = new THREE.CatmullRomCurve3(vecs, closed, "catmullrom", 0.5);
-    // const sampled = curve.getPoints(subdivisionsFor(vecs.length));
-    // const geometry = new THREE.BufferGeometry().setFromPoints(sampled);
+    const curve = new THREE.CatmullRomCurve3(vecs, closed, "centripetal", 1.0);
 
-    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 2.5, 8, closed)
-    geometry2.scale(1.0, 0.01, 1.0)
+    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 0.25, 24, closed)
 
     const line = new THREE.Mesh(geometry2, MESH_MATERAIL);
     // line.name = `${obj.name}`
