@@ -23,6 +23,7 @@ import {
   MIN_CAMERA_DISTANCE,
   useNavRigStore,
 } from "./components/stores/navRigStore";
+import { useImmersiveViewStore } from "./components/stores/immersiveViewStore";
 
 export * from "./components/types/blenderTypes";
 
@@ -32,6 +33,7 @@ export {
   useBlenderSyncStore,
   useBlenderStore,
   useNavRigStore,
+  useImmersiveViewStore,
   MIN_CAMERA_DISTANCE,
   MAX_CAMERA_DISTANCE,
 };

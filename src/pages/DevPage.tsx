@@ -15,6 +15,7 @@ import {
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { ImmersiveViewRig } from "../components/ImmersiveViewRig";
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the
@@ -52,6 +53,10 @@ export function DevPage() {
   // Navmesh mode renders the character rig inside CanvasGPU (instead of the
   // live camera sync) so the Blender content is experienced in the same canvas.
   const [navmeshMode, setNavmeshMode] = useState(true);
+
+  // Immersive view replaces the camera with an OrbitControls first-person walk.
+  // Mutually exclusive with navmesh mode — both write the camera each frame.
+  const [immersiveMode, setImmersiveMode] = useState(false);
 
   // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
   const guiContainerRef = useRef<HTMLDivElement>(null);
@@ -173,7 +178,9 @@ export function DevPage() {
         <div className="flex-1 min-w-0 relative">
           <CanvasGPU>
             <SyncViewer />
-            {navmeshMode ? (
+            {immersiveMode ? (
+              <ImmersiveViewRig />
+            ) : navmeshMode ? (
               <NavMeshRig guiContainer={guiContainerRef} />
             ) : (
               <CameraSync />
@@ -271,7 +278,10 @@ export function DevPage() {
                   Experience
                 </div>
                 <button
-                  onClick={() => setNavmeshMode((m) => !m)}
+                  onClick={() => {
+                    setNavmeshMode((m) => !m);
+                    setImmersiveMode(false);
+                  }}
                   className={`
                     w-full px-2.5 py-1.5 rounded flex items-center justify-center
                     bg-surface-secondary border border-border
@@ -282,6 +292,27 @@ export function DevPage() {
                   `}
                 >
                   {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
+                </button>
+
+                {/* OrbitControls-based first-person walk — exclusive with navmesh */}
+                <button
+                  onClick={() => {
+                    setImmersiveMode((m) => !m);
+                    setNavmeshMode(false);
+                  }}
+                  className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${immersiveMode ? "border-accent/40 text-accent" : ""}
+                  `}
+                  title="Free-walk the scene in first person — WASD to move, drag to look, wheel to dolly"
+                >
+                  {immersiveMode
+                    ? "Immersive View: ON"
+                    : "Immersive View: OFF"}
                 </button>
 
                 {/* lil-gui mounts here when navmesh mode is active */}
