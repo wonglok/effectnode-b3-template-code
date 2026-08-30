@@ -1,12 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { opfs, ProductionViewer, useBlenderStore } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
-import { NavMeshDemoButton } from "../components/NavMeshDemoButton";
-import { buildWalkableMeshesFromStore } from "../components/blenderWalkableMeshes";
-import { buildProceduralLevel } from "../components/NavMeshPlayground";
 import { NavMeshRig } from "../components/NavMeshRig";
 
 /**
@@ -20,14 +17,6 @@ export function ProductionPage() {
   const [zipBuffer, setZipBuffer] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Navmesh walkable collider = Blender-synced geometry when available in this
-  // session (same-tab dev sync); otherwise the procedural level keeps the demo
-  // playable. Stable reference — read at generation time.
-  const getWalkableMeshes = useCallback(() => {
-    const colliders = buildWalkableMeshesFromStore();
-    return colliders.length > 0 ? colliders : buildProceduralLevel();
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,9 +98,6 @@ export function ProductionPage() {
           </ProductionViewer>
         )}
       </div>
-
-      {/* Navmesh playground — walks on the Blender-synced mesh */}
-      <NavMeshDemoButton getWalkableMeshes={getWalkableMeshes} />
     </div>
   );
 }
