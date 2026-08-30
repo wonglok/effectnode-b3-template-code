@@ -30,7 +30,7 @@ const MESH_MATERAIL = new THREE.MeshStandardMaterial({ color: 0xffffff });
 // Subdivision count for getPoints() — the recipe uses 50; scale up for longer
 // splines so they stay smooth.
 function subdivisionsFor(count: number): number {
-  return Math.max(250, count * 2);
+  return Math.max(500, count * 2);
 }
 
 interface CurveEntry {
@@ -63,7 +63,7 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
 
     const curve = new THREE.CatmullRomCurve3(vecs, closed, "centripetal", 0.5);
 
-    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 1.25, 24, closed)
+    const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 1.0, 32, closed)
 
     const line = new THREE.Mesh(geometry2, MESH_MATERAIL);
     // line.name = `${obj.name}`
