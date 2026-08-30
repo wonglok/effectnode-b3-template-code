@@ -50,8 +50,8 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   settings: {
     showNavMeshHelper: false,
     showAgentHelper: false,
-    cellSize: 0.05,
-    cellHeight: 0.05,
+    cellSize: 0.1,
+    cellHeight: 0.1,
     walkableRadius: 0.3,
     walkableSlopeAngle: 45,
     walkableClimb: 0.2,
