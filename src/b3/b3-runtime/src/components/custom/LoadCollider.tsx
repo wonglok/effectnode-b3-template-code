@@ -124,7 +124,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                     //     .mul(disc)
                     //     .add(coreCol.mul(core).mul(0.5));
 
-					return vec4( dirtyReflection.rgb, 0.85 );
+					return vec4( dirtyReflection.rgb, 0.5 );
 				} )();
 
                 floorMaterial.transparent = true
