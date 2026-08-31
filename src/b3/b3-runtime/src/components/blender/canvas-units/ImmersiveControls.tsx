@@ -9,7 +9,6 @@ export function ImmersiveControls ({ player = new Object3D() }) {
 
     console.log(camera);
 
-
     const spherical = useMemo(() => {
         return new Spherical(10, 0, 0) 
     }, [])
