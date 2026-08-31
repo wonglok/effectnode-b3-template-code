@@ -24,6 +24,7 @@
     "mathcat": "^0.0.14",
     "meshoptimizer": "^1.2.0",
     "navcat": "^0.4.1",
+    "nipplejs": "^1.0.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",

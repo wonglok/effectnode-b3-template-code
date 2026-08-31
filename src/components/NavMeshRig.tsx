@@ -28,6 +28,8 @@ import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
 import { ZoomControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ZoomControls";
 import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
+import { Spherical } from "three";
+import { Vector3 } from "three";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -229,6 +231,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const playerGroup = new THREE.Group();
     playerGroup.name = "player"; // ZoomControls follows this group
     playerGroup.position.set(0, 2, 0);
+    playerGroup.userData.spherical = new Spherical(10, 0, 0) 
     scene.add(playerGroup);
 
     setPlayer(playerGroup)
@@ -713,6 +716,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           const scalar = sprint
             ? settings.runningSpeed
             : settings.walkingSpeed;
+
+          movement.vector.applyAxisAngle(new Vector3(0,1, 0 ), playerGroup.userData.spherical.theta)
+
           movement.vector.normalize().multiplyScalar(scalar * clamped);
         } else if (!targetReached && path.length > 0) {
           // Steer toward the current path waypoint
