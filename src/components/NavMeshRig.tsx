@@ -603,9 +603,6 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const playerEuler = new THREE.Euler();
     const playerQuaternion = new THREE.Quaternion();
     const cameraPosition = new THREE.Vector3();
-    const cameraLookAt = new THREE.Vector3();
-    const cameraOffset = new THREE.Vector3();
-    const cameraPositionTarget = new THREE.Vector3();
 
     const raycaster = new THREE.Raycaster();
     raycaster.near = 0.01;
