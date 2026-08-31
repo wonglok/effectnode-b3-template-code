@@ -185,7 +185,7 @@ export function SyncViewer() {
     <group>
       {/* Wheel / pinch zoom — dollies the camera position so it survives
           CameraSync + NavMeshRig (runs at a later frame priority) */}
-      <ZoomControls />
+      {/* <ZoomControls /> */}
 
       <LoadObject3DAsync texData={texData} objects={sceneData.objects as []}></LoadObject3DAsync>
 

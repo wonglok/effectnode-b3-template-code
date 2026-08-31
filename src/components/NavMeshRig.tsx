@@ -26,6 +26,7 @@ import {
 } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
+import { ZoomControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ZoomControls";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -539,6 +540,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const gui = new GUI({
       container: guiContainer?.current ?? undefined,
     });
+    gui.domElement.style.top= "50px"
     const navMeshFolder = gui.addFolder("Nav Mesh");
     navMeshFolder.add(settings, "showNavMeshHelper").name("Show Helper");
     navMeshFolder.add(settings, "showAgentHelper").name("Show Agent Helper");
@@ -837,24 +839,27 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // Baseline follow offset (above/behind from the GUI), dollied along its
       // own axis by the wheel / pinch zoom radius. This is the only controller
       // writing the camera, so its pose is what every raycast must match.
-      const offsetVector = cameraOffset.set(
-        0,
-        settings.offsetAbove,
-        settings.offsetBehind,
-      );
-      const baseOffsetLen = offsetVector.length();
-      const dollyDist = THREE.MathUtils.clamp(
-        baseOffsetLen - useNavRigStore.getState().zoomRadius,
-        MIN_CAMERA_DISTANCE,
-        MAX_CAMERA_DISTANCE,
-      );
-      offsetVector.normalize().multiplyScalar(dollyDist);
-      const target = cameraPositionTarget
-        .copy(playerGroup.position)
-        .add(offsetVector);
-      cameraPosition.lerp(target, t / 1.1);
-      camera.position.copy(cameraPosition);
-      camera.lookAt(cameraLookAt.copy(cameraPosition).sub(offsetVector));
+      // const offsetVector = cameraOffset.set(
+      //   0,
+      //   settings.offsetAbove,
+      //   settings.offsetBehind,
+      // );
+      // const baseOffsetLen = offsetVector.length();
+      // const dollyDist = THREE.MathUtils.clamp(
+      //   baseOffsetLen - useNavRigStore.getState().zoomRadius,
+      //   MIN_CAMERA_DISTANCE,
+      //   MAX_CAMERA_DISTANCE,
+      // );
+      // offsetVector.normalize().multiplyScalar(dollyDist);
+      
+      // const target = cameraPositionTarget
+      //   .copy(playerGroup.position)
+      //   .add(offsetVector);
+      // cameraPosition.lerp(target, t / 1.1);
+      // camera.position.copy(cameraPosition);
+      // camera.lookAt(cameraLookAt.copy(cameraPosition).sub(offsetVector));
+
+      //
 
       // --- mixer + helpers ---
       if (mixer) mixer.update(clamped);
@@ -906,5 +911,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     frameRef.current.frame(delta, _);
   });
 
-  return null;
+  return <>
+    <ZoomControls></ZoomControls>
+  </>;
 }
