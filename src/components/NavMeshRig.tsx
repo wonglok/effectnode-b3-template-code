@@ -543,6 +543,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const gui = new GUI({
       container: guiContainer?.current ?? undefined,
     });
+    gui.close()
     gui.domElement.style.top= "50px"
     const navMeshFolder = gui.addFolder("Nav Mesh");
     navMeshFolder.add(settings, "showNavMeshHelper").name("Show Helper");
