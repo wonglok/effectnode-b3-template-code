@@ -58,7 +58,7 @@ export function ImmersiveControls ({ player = new Object3D() }) {
             zone,
             mode: "static",
             position: { top: "4px", left: "4px" },
-            size: 120,
+            size: 200,
             color: {
                 front: "rgba(255,255,255,0.6)",
                 back: "rgba(255,255,255,0.15)",
