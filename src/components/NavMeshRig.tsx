@@ -648,7 +648,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     };
     let lastPinchDist: number | null = null;
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) lastPinchDist = pinchDist(e.touches);
+      if (e.touches.length === 2) {
+        lastPinchDist = pinchDist(e.touches);
+      }
     };
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 2) return;
