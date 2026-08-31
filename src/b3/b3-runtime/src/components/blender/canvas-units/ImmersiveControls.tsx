@@ -130,7 +130,9 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         spherical.set(spherical.radius,Math.PI / 180 * polarAngle.current, Math.PI / 180 * azAngle.current)
         orbit.position.setFromSpherical(spherical)
         camera.position.add(orbit.position)
-        camera.lookAt(player.position)
+        camera.lookAt(
+            player.position.x,player.position.y + 1.2,player.position.z
+        )
 
         //
     })
