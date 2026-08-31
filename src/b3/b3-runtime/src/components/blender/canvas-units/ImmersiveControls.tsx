@@ -33,6 +33,9 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         };
     },[])
 
+    useEffect(() =>{
+        
+    }, [])
 
 
     useEffect(() =>{
