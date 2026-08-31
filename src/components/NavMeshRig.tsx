@@ -596,8 +596,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const movement = { vector: new THREE.Vector3(), sprinting: false };
     let firstPositionUpdate = true;
-    // Set while a two-finger pinch is active — pauses player walking.
+    // Set while a two-finger pinch is active — pauses player walking and
+    // hides the target marker for the duration.
     let isPinching = false;
+    let targetMarkerWasVisible = false;
 
     const movementTarget = new THREE.Vector3();
     const raycasterOrigin = new THREE.Vector3();
@@ -650,8 +652,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     };
     let lastPinchDist: number | null = null;
     const onTouchStart = (e: TouchEvent) => {
-      isPinching = e.touches.length === 2;
-      if (e.touches.length === 2) {
+      const nowPinching = e.touches.length === 2;
+      if (nowPinching && !isPinching) {
+        // Pinch started — hide the target marker, restore it on pinch end.
+        targetMarkerWasVisible = targetMarker.visible;
+        targetMarker.visible = false;
+      }
+      isPinching = nowPinching;
+      if (nowPinching) {
         lastPinchDist = pinchDist(e.touches);
       }
     };
@@ -666,8 +674,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       lastPinchDist = d;
     };
     const onTouchEnd = (e: TouchEvent) => {
-      lastPinchDist = null;
+      const wasPinching = isPinching;
       isPinching = e.touches.length === 2;
+      if (wasPinching && !isPinching) {
+        // Pinch ended — restore the target marker's prior visibility.
+        targetMarker.visible = targetMarkerWasVisible;
+      }
+      lastPinchDist = null;
     };
     gl.domElement.addEventListener("touchstart", onTouchStart, { passive: true });
     gl.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
