@@ -625,7 +625,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     };
     refreshColliderObjects();
 
-    camera.position.set(5, 8, 5);
+    camera.position.set(0, 8, 5);
     camera.lookAt(0, 0, 0);
     cameraPosition.copy(camera.position);
 
@@ -912,6 +912,6 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   });
 
   return <>
-    <ZoomControls></ZoomControls>
+    {/* <ZoomControls></ZoomControls> */}
   </>;
 }
