@@ -7,6 +7,9 @@ export function ImmersiveControls ({ player = new Object3D() }) {
     const camera = useThree((r) => {
         return r.camera
     });
+    const gl = useThree((r) => {
+        return r.gl
+    });
 
     console.log(camera);
 
@@ -90,6 +93,51 @@ export function ImmersiveControls ({ player = new Object3D() }) {
             zone.remove();
         };
     }, [])
+
+    useEffect(() =>{
+        // Mobile two-finger pinch to zoom — dollies the orbit radius in/out.
+        // Mirrors the NavMeshRig pinch pattern: spreading fingers pulls the
+        // camera in, pinching pushes it out. Handlers live on the canvas, so
+        // the joystick zone stays exclusive to rotation input.
+        const el = gl.domElement;
+        const pinchDist = (t: TouchList) => {
+            const a = t[0];
+            const b = t[1];
+            return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        };
+    
+        let lastPinchDist: number | null = null;
+
+        const onTouchStart = (e: TouchEvent) => {
+            if (e.touches.length === 2) lastPinchDist = pinchDist(e.touches);
+        };
+        const onTouchMove = (e: TouchEvent) => {
+            if (e.touches.length !== 2) return;
+            e.preventDefault();
+            const d = pinchDist(e.touches);
+            if (lastPinchDist != null) {
+                // Spreading fingers (positive delta) pulls the camera in.
+                spherical.radius -= (d - lastPinchDist) * 0.03;
+                spherical.radius = Math.min(150, Math.max(4, spherical.radius));
+            }
+            lastPinchDist = d;
+        };
+        const onTouchEnd = () => {
+            lastPinchDist = null;
+        };
+
+        el.addEventListener("touchstart", onTouchStart, { passive: true });
+        el.addEventListener("touchmove", onTouchMove, { passive: false });
+        el.addEventListener("touchend", onTouchEnd);
+        el.addEventListener("touchcancel", onTouchEnd);
+
+        return () => {
+            el.removeEventListener("touchstart", onTouchStart);
+            el.removeEventListener("touchmove", onTouchMove);
+            el.removeEventListener("touchend", onTouchEnd);
+            el.removeEventListener("touchcancel", onTouchEnd);
+        };
+    }, [gl, spherical])
 
 
     useEffect(() =>{
