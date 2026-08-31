@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { GUI } from "lil-gui";
@@ -27,6 +27,7 @@ import {
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
 import { ZoomControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ZoomControls";
+import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -122,7 +123,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
   const frameRef = useRef<RigFrame>({ frame: () => {} });
-
+  const [player, setPlayer] = useState<any>(null)
   // Setup once: navmesh from the synced *collider* meshes, character, GUI, input
   useEffect(() => {
     let disposed = false;
@@ -229,6 +230,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     playerGroup.name = "player"; // ZoomControls follows this group
     playerGroup.position.set(0, 2, 0);
     scene.add(playerGroup);
+
+    setPlayer(playerGroup)
 
     const agentHelper = new THREE.Mesh(
       new THREE.CapsuleGeometry(
@@ -355,19 +358,19 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       switch (event.code) {
-        case "ArrowUp":
+        // case "ArrowUp":
         case "KeyW":
           input.forward = true;
           break;
-        case "ArrowDown":
+        // case "ArrowDown":
         case "KeyS":
           input.back = true;
           break;
-        case "ArrowLeft":
+        // case "ArrowLeft":
         case "KeyA":
           input.left = true;
           break;
-        case "ArrowRight":
+        // case "ArrowRight":
         case "KeyD":
           input.right = true;
           break;
@@ -912,6 +915,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
   });
 
   return <>
+  {player &&  <ImmersiveControls player={player}></ImmersiveControls>}
     {/* <ZoomControls></ZoomControls> */}
   </>;
 }
