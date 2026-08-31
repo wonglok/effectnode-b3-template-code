@@ -45,8 +45,8 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         // screen. Its X/Y deflection drives theta/phi rotation of the camera.
         const zone = document.createElement("div");
         zone.style.position = "fixed";
-        zone.style.bottom = "24px";
-        zone.style.left = "124px";
+        zone.style.bottom = "0px";
+        zone.style.left = "100px";
         zone.style.width = "128px";
         zone.style.height = "128px";
         zone.style.zIndex = "9999";
@@ -58,7 +58,7 @@ export function ImmersiveControls ({ player = new Object3D() }) {
             zone,
             mode: "static",
             position: { top: "4px", left: "4px" },
-            size: 200,
+            size: 150,
             color: {
                 front: "rgba(255,255,255,0.6)",
                 back: "rgba(255,255,255,0.15)",
