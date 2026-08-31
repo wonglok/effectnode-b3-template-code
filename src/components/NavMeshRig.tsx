@@ -19,14 +19,11 @@ import {
 } from "navcat/blocks";
 import { createNavMeshHelper, getPositionsAndIndices } from "navcat/three";
 import {
-  MAX_CAMERA_DISTANCE,
-  MIN_CAMERA_DISTANCE,
   useBlenderStore,
   useNavRigStore,
 } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import { createAvatarActions, loadAvatar } from "./avatarLoader";
-import { ZoomControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ZoomControls";
 import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 import { Spherical } from "three";
 import { Vector3 } from "three";

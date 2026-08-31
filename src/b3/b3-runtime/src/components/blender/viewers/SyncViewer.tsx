@@ -14,7 +14,6 @@ import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
 import { useEmptySync } from "../canvas-units/useEmptySync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
-import { ZoomControls } from "../canvas-units/ZoomControls";
 
 // ---------------------------------------------------------------------------
 // Viewer

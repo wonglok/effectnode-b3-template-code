@@ -1,6 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { Object3D, Spherical } from "three";
+import { Object3D } from "three";
 import nipplejs from "nipplejs";
 
 export function ImmersiveControls ({ player = new Object3D() }) {
