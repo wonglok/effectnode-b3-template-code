@@ -109,9 +109,12 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         let lastPinchDist: number | null = null;
 
         const onTouchStart = (e: TouchEvent) => {
+            e.preventDefault()
             if (e.touches.length === 2) lastPinchDist = pinchDist(e.touches);
         };
         const onTouchMove = (e: TouchEvent) => {
+            e.preventDefault()
+            e.stopImmediatePropagation()
             if (e.touches.length !== 2) return;
             e.preventDefault();
             const d = pinchDist(e.touches);
@@ -233,7 +236,7 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         // nipplejs reports up as +1 on the Y axis, so the signs here make the
         // joystick match the arrow-key mapping above (up/right reduce the angles).
         polarAngle.current += dt * -joystickSpeed * joystick.current.y
-        azAngle.current += dt * -joystickSpeed * joystick.current.x
+        azAngle.current += dt * joystickSpeed * joystick.current.x
 
         // Keep polar angle within safe bounds so the camera never flips poles.
         polarAngle.current = Math.min(179, Math.max(1, polarAngle.current))

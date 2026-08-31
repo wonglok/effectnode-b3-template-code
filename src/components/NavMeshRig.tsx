@@ -596,6 +596,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const movement = { vector: new THREE.Vector3(), sprinting: false };
     let firstPositionUpdate = true;
+    // Set while a two-finger pinch is active — pauses player walking.
+    let isPinching = false;
 
     const movementTarget = new THREE.Vector3();
     const raycasterOrigin = new THREE.Vector3();
@@ -648,6 +650,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     };
     let lastPinchDist: number | null = null;
     const onTouchStart = (e: TouchEvent) => {
+      isPinching = e.touches.length === 2;
       if (e.touches.length === 2) {
         lastPinchDist = pinchDist(e.touches);
       }
@@ -655,14 +658,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 2) return;
       e.preventDefault();
+      isPinching = true;
       const d = pinchDist(e.touches);
       if (lastPinchDist != null) {
         useNavRigStore.getState().dolly((d - lastPinchDist) * 0.03);
       }
       lastPinchDist = d;
     };
-    const onTouchEnd = () => {
+    const onTouchEnd = (e: TouchEvent) => {
       lastPinchDist = null;
+      isPinching = e.touches.length === 2;
     };
     gl.domElement.addEventListener("touchstart", onTouchStart, { passive: true });
     gl.domElement.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -704,7 +709,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         movement.vector.set(0, 0, 0);
 
-        if (anyKey) {
+        // Pause walking while a two-finger pinch is zooming the camera.
+        if (!isPinching && anyKey) {
           if (forward) movement.vector.z -= 1;
           if (back) movement.vector.z += 1;
           if (left) movement.vector.x -= 1;
@@ -716,7 +722,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           movement.vector.applyAxisAngle(new Vector3(0,1, 0 ), playerGroup.userData.spherical.theta)
 
           movement.vector.normalize().multiplyScalar(scalar * clamped);
-        } else if (!targetReached && path.length > 0) {
+        } else if (!isPinching && !targetReached && path.length > 0) {
           // Steer toward the current path waypoint
           const w = path[pathIndex];
           const dx = w[0] - playerGroup.position.x;
