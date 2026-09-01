@@ -245,7 +245,7 @@ export function ImmersiveControls ({ player = new Object3D() }) {
     useFrame((_,dt) => {
         //
 
-        console.log(input)
+        // console.log(input)
         if (input.back) {
             polarAngle.current += dt * 33.33
         }   

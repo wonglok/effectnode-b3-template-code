@@ -23,40 +23,47 @@ export function LoadGuide ({ texData = new Map(), objects = [] }) {
     useEffect(() => {
         let cleans: (() => void)[] = []
         let run = async () =>{
-            const name = 'guide'
+            const pattern = 'guide'
 
-            let info = objects.find((r: any)=>{
-                return r.name === name
-            }) as any;
+            objects.filter((r: any)=> `${r?.name}`.includes(pattern)).forEach(async (item: any)=>{
+                {
+                    //////
+                    const name = item.name
 
-            if (idVersion.get(name) === info?.version && typeof idVersion.get(name) !== 'undefined')  {
-                return
-            }             
+                    let info = objects.find((r: any)=>{
+                        return r.name === name
+                    }) as any;
 
-            // playerGroup
-
-            let found = await new Promise<Group>((resolve) => {
-                let interval = setInterval(() => {
-                    let obj = scene.getObjectByName(name)
-                    if(obj){
-                        clearInterval(interval)
-                        resolve(obj as Group)
+                    if (idVersion.get(name) === info?.version && typeof idVersion.get(name) !== 'undefined')  {
+                        return
                     }
-                }, 1)
-            });
+
+                    let found = await new Promise<Group>((resolve) => {
+                        let interval = setInterval(() => {
+                            let obj = scene.getObjectByName(name)
+                            if(obj){
+                                clearInterval(interval)
+                                resolve(obj as Group)
+                            }
+                        }, 1)
+                    });
 
 
-            if(found){
-                found.traverse((it: Object3D | Mesh | any) => {
-                    if(it && it?.material) {
-                        it.material = new MeshStandardNodeMaterial({
-                            colorNode: colorNode,
-                            transparent: true
+                    if(found){
+                        found.traverse((it: Object3D | Mesh | any) => {
+                            if(it && it?.material) {
+                                it.material = new MeshStandardNodeMaterial({
+                                    colorNode: colorNode,
+                                    transparent: true
+                                })
+                            }
                         })
+                        idVersion.set(name, info?.version)
                     }
-                })
-                idVersion.set(name, info?.version)
-            }
+                    //////
+                }
+            })
+
         }
 
 
