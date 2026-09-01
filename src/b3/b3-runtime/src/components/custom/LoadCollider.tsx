@@ -137,7 +137,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				roughnessMap.wrapT = RepeatWrapping;
 				roughnessMap.colorSpace = SRGBColorSpace;
 
-                const animatedUV = uv().mul( 1 ).add( vec2( 0, time.mul( 0.0 ) ) );
+                const animatedUV = uv()
 
 				const normlTexture = texture( normalMap, animatedUV )
 				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
@@ -148,7 +148,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				// floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
                 floorMaterial.iridescenceNode = normlTexture
-                floorMaterial.normalNode = normlTexture.mul(0.75)
+                // floorMaterial.normalNode = normlTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
@@ -165,7 +165,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
-					return vec4(reflectionNode.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.25)).mul(color('#f0ff4d'))),  float(honeyCombPulse.mul(2)).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(reflectionNode.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.25)).mul(color('#f0ff4d'))),  float(honeyCombPulse.mul(1.5)).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
                 
                 //
