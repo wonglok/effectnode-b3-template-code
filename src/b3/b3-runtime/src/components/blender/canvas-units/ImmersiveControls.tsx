@@ -1,7 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { Object3D } from "three";
-import nipplejs from "nipplejs";
 
 export function ImmersiveControls ({ player = new Object3D() }) {
     const camera = useThree((r) => {
@@ -95,28 +94,54 @@ export function ImmersiveControls ({ player = new Object3D() }) {
     // }, [])
 
     useEffect(() =>{
-        // Mobile two-finger pinch to zoom — dollies the orbit radius in/out.
-        // Mirrors the NavMeshRig pinch pattern: spreading fingers pulls the
-        // camera in, pinching pushes it out. Handlers live on the canvas, so
-        // the joystick zone stays exclusive to rotation input.
+        // Mobile multi-touch: two fingers or more orbits the camera — horizontal
+        // centroid movement increases theta (azAngle), vertical increases phi
+        // (polarAngle). The two-finger pinch also dollies the orbit radius in/out
+        // (spreading fingers pulls the camera in, pinching pushes it out).
+        // Handlers live on the canvas, so the joystick zone stays exclusive to
+        // rotation input.
         const el = gl.domElement;
         const pinchDist = (t: TouchList) => {
             const a = t[0];
             const b = t[1];
             return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         };
-    
+        const centroid = (t: TouchList) => {
+            let x = 0;
+            let y = 0;
+            for (let i = 0; i < t.length; i++) {
+                x += t[i].clientX;
+                y += t[i].clientY;
+            }
+            return { x: x / t.length, y: y / t.length };
+        };
+
         let lastPinchDist: number | null = null;
+        let lastCentroid: { x: number; y: number } | null = null;
 
         const onTouchStart = (e: TouchEvent) => {
             e.preventDefault()
-            if (e.touches.length === 2) lastPinchDist = pinchDist(e.touches);
+            if (e.touches.length >= 2) {
+                lastPinchDist = pinchDist(e.touches);
+                lastCentroid = centroid(e.touches);
+            }
         };
         const onTouchMove = (e: TouchEvent) => {
             e.preventDefault()
             e.stopImmediatePropagation()
-            if (e.touches.length !== 2) return;
-            e.preventDefault();
+            if (e.touches.length < 2) return;
+
+            const c = centroid(e.touches);
+            if (lastCentroid) {
+                // Horizontal drag orbits theta, vertical drag tilts phi.
+                // Screen Y grows downward, so a positive dy raises phi (camera
+                // moves down, view tilts up) — matches the arrow-key mapping.
+                azAngle.current += (c.x - lastCentroid.x) * 0.25;
+                polarAngle.current += (c.y - lastCentroid.y) * 0.25;
+            }
+            lastCentroid = c;
+
+            // Two-finger pinch dollies the orbit radius.
             const d = pinchDist(e.touches);
             if (lastPinchDist != null) {
                 // Spreading fingers (positive delta) pulls the camera in.
@@ -127,6 +152,7 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         };
         const onTouchEnd = () => {
             lastPinchDist = null;
+            lastCentroid = null;
         };
 
         el.addEventListener("touchstart", onTouchStart, { passive: true });
