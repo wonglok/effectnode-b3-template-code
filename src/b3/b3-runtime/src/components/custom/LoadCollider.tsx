@@ -1,7 +1,7 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform } from 'three/tsl';
+import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform, sin } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
 import { useGameGlobal } from "../../../../../components/useGameGlobal";
 //
@@ -55,13 +55,13 @@ const getNoiseValue = Fn(() => {
     const uvScaled = uv().mul(2.5);
     
     // Animate the noise over time by adding time to the coordinates
-    const animatedCoords = uvScaled.add(vec2(time.mul(1.2), time.mul(1.2)));
+    const animatedCoords = uvScaled.add(vec2(time.mul(0.75), time.mul(0.75)));
     
     // Sample the built-in MaterialX Perlin/Simplex noise node (returns a float)
     const noiseVal = mx_noise_float(animatedCoords);
 
     return noiseVal
-})
+});
 
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
