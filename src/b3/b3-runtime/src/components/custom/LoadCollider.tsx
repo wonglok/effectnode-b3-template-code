@@ -143,7 +143,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
-                floorMaterial.normalNode = normlTexture;
+                // floorMaterial.normalNode = normlTexture;
                 floorMaterial.transparent = true;
 				floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
