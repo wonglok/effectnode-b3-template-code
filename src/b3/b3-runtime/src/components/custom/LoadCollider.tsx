@@ -1,12 +1,53 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, color, mix } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, color, mix, uniform } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
+import { useGameGlobal } from "../../../../../components/useGameGlobal";
 //
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 //
+import {  positionWorld,  distance,  smoothstep, mod } from 'three/tsl';
 
+// Define the TSL function taking a character position vector, speed, and max radius
+const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node<"float"> = Fn(([characterPos, speed, maxRadius]: any) => {
+    // Calculate distance on the XZ plane (ground) from the character uniform
+    const dist = distance(positionWorld.xz, characterPos.xz);
+    
+    // Create an expanding radius that loops using mod
+    const radius = mod(time.mul(speed), maxRadius);
+    
+    // Calculate distance from the current ring edge
+    const ringDist = abs(dist.sub(radius));
+    
+    // Sharpness/width of the pulse line (1.0 width with smooth edges)
+    const intensity = smoothstep(1.0, 0.0, ringDist);
+    
+    // Fade out the pulse as it reaches maxRadius
+    const fade = smoothstep(maxRadius, maxRadius.mul(0.6), radius);
+    
+    return intensity.mul(fade);
+}) as any;
+
+ const hexShapeFnc: (p: Node<"float">, r: Node<"float">) => Node<"float"> = Fn(([pulse = float(1.0), thickness = float(-0.125)]: any) => {
+    const p = uv().mul(10.0);
+    
+    const r = vec2(1.0, 1.7320508); // vec2(1.0, sqrt(3))
+    const h = r.mul(0.5);
+    
+    const a = p.mod(r).sub(h);
+    const b = p.sub(h).mod(r).sub(h);
+                
+    
+    const gv = select(lessThan(a.dot(a), b.dot(b)), a, b);
+    
+    const uvAbs = abs(gv);
+    const hexDist = max(uvAbs.x, uvAbs.x.mul(0.5).add(uvAbs.y.mul(0.8660254)));
+    
+    const hexPattern = step(float(0.5).add(pulse.oneMinus().mul(thickness)), hexDist);
+
+    return hexPattern;
+});
 
 
 export function LoadCollider ({ texData = new Map(), objects = [] }) {
@@ -15,6 +56,8 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
     const done = useMemo(() =>{
         return new Map()
     }, [])
+
+    const playerGroup = useGameGlobal((r)=>r.playerGroup)
 
     const normalMapData = useMemo(() => {
         return texData.get("Chip005_4K-PNG_NormalGL.png")
@@ -25,6 +68,9 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
     }, [texData])
 
     useEffect(() => {
+        if (!playerGroup) {
+            return
+        }
         let cleans: (() => void)[] = []
         let onClean = (v: () => void) => {
             cleans.push(v)
@@ -89,32 +135,17 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.metalnessNode = float(normlTexture);
 				floorMaterial.roughnessNode = roughnessTexture;
 
-                const hexShape: Node<"float"> = Fn(() => {
-                    const p = uv().mul(10.0);
-                    
-                    const r = vec2(1.0, 1.7320508); // vec2(1.0, sqrt(3))
-                    const h = r.mul(0.5);
-                    
-                    const a = p.mod(r).sub(h);
-                    const b = p.sub(h).mod(r).sub(h);
-                                
-                    
-                    const gv = select(lessThan(a.dot(a), b.dot(b)), a, b);
-                    
-                    const uvAbs = abs(gv);
-                    const hexDist = max(uvAbs.x, uvAbs.x.mul(0.5).add(uvAbs.y.mul(0.8660254)));
-                    
-                    const hexPattern = step(0.4875, hexDist);
-
-                    return hexPattern;
-                })();
-
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
 
-                    const honey = hexShape;
+                    const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
-					return vec4( dirtyReflection.rgb, honey.oneMinus().mul(0.9) );
+                    const pulseValue = circlePulse(uPlayerPosition, float(7.0), float(10.0));
+
+                    const honeyCombPulse = hexShapeFnc(pulseValue, float(-0.125)) as Node<"float">;
+                    const honeyCombBase = hexShapeFnc(float(0.0), float(-0.01)) as Node<"float">;
+
+					return vec4(dirtyReflection.rgb, float(honeyCombPulse).mul(float(pulseValue)).oneMinus().add(honeyCombBase) );
 				} )();
 
                 floorMaterial.transparent = true
@@ -132,7 +163,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [objects, normalMapData, roughnessMapData]);
+    }, [playerGroup, objects, normalMapData, roughnessMapData]);
 
     useEffect(() => {
         let cleans: (() => void)[] = []

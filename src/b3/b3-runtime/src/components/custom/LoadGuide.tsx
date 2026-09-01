@@ -33,6 +33,8 @@ export function LoadGuide ({ texData = new Map(), objects = [] }) {
                 return
             }             
 
+            // 
+
             let found = await new Promise<Group>((resolve) => {
                 let interval = setInterval(() => {
                     let obj = scene.getObjectByName(name)

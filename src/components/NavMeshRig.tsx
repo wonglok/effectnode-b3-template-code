@@ -27,6 +27,7 @@ import { createAvatarActions, loadAvatar } from "./avatarLoader";
 import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 import { Spherical } from "three";
 import { Vector3 } from "three";
+import { useGameGlobal } from "./useGameGlobal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -230,6 +231,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     playerGroup.position.set(0, 2, 0);
     playerGroup.userData.spherical = new Spherical(10, 0, 0) 
     scene.add(playerGroup);
+
+    useGameGlobal.setState({
+      playerGroup: playerGroup
+    })
 
     setPlayer(playerGroup)
 
