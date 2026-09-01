@@ -36,9 +36,10 @@ bun run preview
 
 ### 1. Install the Blender add-on
 
-1. In Blender, open **Edit → Preferences → Add-ons → Install…** and select `src/b3/b3-blender/` (or `__init__.py`)
-2. Enable **B3 Sync** — it lives at **Properties → Render → B3 Sync**
-3. It will auto-install `websockets` into Blender's bundled Python on first use
+1. bun run dev, then download the plugin at the home page.
+2. In Blender, open **Edit → Preferences → Add-ons → Install…** and select the plugin file
+3. Enable **B3 Sync** — it lives at **Properties → Render → B3 Sync**
+4. It will auto-install `websockets` into Blender's bundled Python on first use
 
 ### 2. Live-sync in the browser
 
