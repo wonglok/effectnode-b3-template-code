@@ -149,12 +149,12 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.roughnessNode = roughnessTexture;
                 floorMaterial.iridescenceNode = normlTexture
 
-				floorMaterial.colorNode = Fn( () => {
-					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
+                const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
-                    const uPlayerPosition = uniform(playerGroup.position, 'vec3');
+                floorMaterial.colorNode = Fn( () => {
+					const reflectionNode = textureBicubic(reflection, roughnessTexture);
 
-                    const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(10.0));
+                    const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0));
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.1)) as Node<"float">;
 
@@ -162,10 +162,12 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
-                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
+                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
-					return vec4(dirtyReflection.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#f8ffae'))),  float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(reflectionNode.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.25)).mul(color('#f0ff4d'))),  float(honeyCombPulse.mul(2)).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
+                
+                //
 
                 floorMaterial.transparent = true
 

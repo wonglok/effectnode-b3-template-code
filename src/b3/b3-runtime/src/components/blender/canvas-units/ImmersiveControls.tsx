@@ -43,56 +43,56 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         };
     },[])
 
-    useEffect(() =>{
-        // HTML joystick (nipplejs) anchored to the bottom-left corner of the
-        // screen. Its X/Y deflection drives theta/phi rotation of the camera.
-        const zone = document.createElement("div");
-        zone.style.position = "fixed";
-        zone.style.bottom = "0px";
-        zone.style.left = "100px";
-        zone.style.width = "128px";
-        zone.style.height = "128px";
-        zone.style.zIndex = "9999";
-        zone.style.touchAction = "none";
-        zone.style.userSelect = "none";
-        document.body.appendChild(zone);
+    // useEffect(() =>{
+    //     // HTML joystick (nipplejs) anchored to the bottom-left corner of the
+    //     // screen. Its X/Y deflection drives theta/phi rotation of the camera.
+    //     const zone = document.createElement("div");
+    //     zone.style.position = "fixed";
+    //     zone.style.bottom = "0px";
+    //     zone.style.left = "100px";
+    //     zone.style.width = "128px";
+    //     zone.style.height = "128px";
+    //     zone.style.zIndex = "9999";
+    //     zone.style.touchAction = "none";
+    //     zone.style.userSelect = "none";
+    //     document.body.appendChild(zone);
 
-        const manager = nipplejs.create({
-            zone,
-            mode: "static",
-            position: { top: "4px", left: "4px" },
-            size: 150,
-            color: {
-                front: "rgba(255,255,255,0.6)",
-                back: "rgba(255,255,255,0.15)",
-            },
-            restJoystick: true,
-            threshold: 0.1,
-            fadeTime: 120,
-        });
+    //     const manager = nipplejs.create({
+    //         zone,
+    //         mode: "static",
+    //         position: { top: "4px", left: "4px" },
+    //         size: 150,
+    //         color: {
+    //             front: "rgba(255,255,255,0.6)",
+    //             back: "rgba(255,255,255,0.15)",
+    //         },
+    //         restJoystick: true,
+    //         threshold: 0.1,
+    //         fadeTime: 120,
+    //     });
 
-        const handleMove = (evt: {
-            data: { vector: { x: number; y: number } }
-        }) => {
-            joystick.current.x = evt.data.vector.x / 2.5;
-            joystick.current.y = evt.data.vector.y / 2.5;
-        };
+    //     const handleMove = (evt: {
+    //         data: { vector: { x: number; y: number } }
+    //     }) => {
+    //         joystick.current.x = evt.data.vector.x / 2.5;
+    //         joystick.current.y = evt.data.vector.y / 2.5;
+    //     };
 
-        const handleEnd = () => {
-            joystick.current.x = 0;
-            joystick.current.y = 0;
-        };
+    //     const handleEnd = () => {
+    //         joystick.current.x = 0;
+    //         joystick.current.y = 0;
+    //     };
 
-        manager.on("move", handleMove);
-        manager.on("end", handleEnd);
+    //     manager.on("move", handleMove);
+    //     manager.on("end", handleEnd);
 
-        return () => {
-            manager.off("move", handleMove);
-            manager.off("end", handleEnd);
-            manager.destroy();
-            zone.remove();
-        };
-    }, [])
+    //     return () => {
+    //         manager.off("move", handleMove);
+    //         manager.off("end", handleEnd);
+    //         manager.destroy();
+    //         zone.remove();
+    //     };
+    // }, [])
 
     useEffect(() =>{
         // Mobile two-finger pinch to zoom — dollies the orbit radius in/out.
