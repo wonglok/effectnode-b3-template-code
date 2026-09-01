@@ -1,6 +1,5 @@
 # What is this?
-
-
+- a vite code template with blender plugin integrated into the workflow
 
 # credits / thank you list
  - ThreeJS r185
