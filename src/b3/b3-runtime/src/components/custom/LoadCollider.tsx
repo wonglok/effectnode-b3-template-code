@@ -1,7 +1,7 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform, sin } from 'three/tsl';
+import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform, sin, color } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
 import { useGameGlobal } from "../../../../../components/useGameGlobal";
 //
@@ -52,7 +52,7 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
 
 const getNoiseValue = Fn(() => {
     // Scale UV coordinates to control noise frequency
-    const uvScaled = uv().mul(2.5);
+    const uvScaled = uv().mul(1.0);
     
     // Animate the noise over time by adding time to the coordinates
     const animatedCoords = uvScaled.add(vec2(time.mul(0.75), time.mul(0.75)));
@@ -162,7 +162,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
-					return vec4(dirtyReflection.rgb, float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(dirtyReflection.rgb.add(honeyCombBase.mul(noiseUV.mul(0.25)).mul(color('#f8ffae'))), float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
 
                 floorMaterial.transparent = true
