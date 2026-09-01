@@ -161,8 +161,9 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                     const noiseUV = getNoiseValue();
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
+                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
 
-					return vec4(dirtyReflection.rgb.add(honeyCombBase.mul(noiseUV.mul(0.25)).mul(color('#f8ffae'))), float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(dirtyReflection.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#f8ffae'))), float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
 
                 floorMaterial.transparent = true
