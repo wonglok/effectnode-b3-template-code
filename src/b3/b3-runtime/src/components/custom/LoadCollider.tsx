@@ -1,6 +1,6 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
+import { Mesh,  RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from "three";
 import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform, sin, color } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
 import { useGameGlobal } from "../../../../../components/useGameGlobal";
@@ -50,9 +50,9 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
 });
 
 
-const getNoiseValue = Fn(() => {
+const getNoiseValue = Fn(([texture]: [texture: Node<"vec4">]) => {
     // Scale UV coordinates to control noise frequency
-    const uvScaled = uv().mul(1.0);
+    const uvScaled = uv().mul(1.0)
     
     // Animate the noise over time by adding time to the coordinates
     const animatedCoords = uvScaled.add(vec2(time.mul(0.75), time.mul(0.75)));
@@ -139,14 +139,15 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                 const animatedUV = uv().mul( 1 ).add( vec2( 0, time.mul( 0.0 ) ) );
 
-				// const normlTexture = texture( normalMap, animatedUV )
+				const normlTexture = texture( normalMap, animatedUV )
 				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
-                // floorMaterial.normalNode = normlTexture.negate();
+                // floorMaterial.normalNode = normlTexture;
                 floorMaterial.transparent = true;
-				floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
+				// floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
+                floorMaterial.iridescenceNode = normlTexture
 
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
@@ -157,13 +158,13 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.1)) as Node<"float">;
 
-                    const noiseUV = getNoiseValue() as Node<"float">;
+                    const noiseUV = getNoiseValue(normlTexture) as Node<"float">;
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
                     const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
 
-					return vec4(dirtyReflection.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#f8ffae'))), float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(dirtyReflection.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#f8ffae'))),  float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
 
                 floorMaterial.transparent = true
