@@ -50,12 +50,12 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
 });
 
 
-const getNoiseValue = Fn(([texture]: [texture: Node<"vec4">]) => {
+const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<"float">, speed: Node<"float">]) => {
     // Scale UV coordinates to control noise frequency
-    const uvScaled = uv().mul(1.0)
+    const uvScaled = uv().mul(scale)
     
     // Animate the noise over time by adding time to the coordinates
-    const animatedCoords = uvScaled.add(vec2(time.mul(0.75), time.mul(0.75)));
+    const animatedCoords = uvScaled.add(vec2(time.mul(speed), time.mul(speed)));
     
     // Sample the built-in MaterialX Perlin/Simplex noise node (returns a float)
     const noiseVal = mx_noise_float(animatedCoords);
@@ -158,7 +158,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.1)) as Node<"float">;
 
-                    const noiseUV = getNoiseValue(normlTexture) as Node<"float">;
+                    const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<"float">;
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
