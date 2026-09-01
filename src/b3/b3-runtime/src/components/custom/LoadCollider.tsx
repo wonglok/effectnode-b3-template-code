@@ -148,6 +148,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				// floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
                 floorMaterial.iridescenceNode = normlTexture
+                floorMaterial.normalNode = normlTexture.mul(0.75)
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
