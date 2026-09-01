@@ -89,32 +89,32 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				floorMaterial.metalnessNode = float(normlTexture);
 				floorMaterial.roughnessNode = roughnessTexture;
 
+                const hexShape: Node<"float"> = Fn(() => {
+                    const p = uv().mul(10.0);
+                    
+                    const r = vec2(1.0, 1.7320508); // vec2(1.0, sqrt(3))
+                    const h = r.mul(0.5);
+                    
+                    const a = p.mod(r).sub(h);
+                    const b = p.sub(h).mod(r).sub(h);
+                                
+                    
+                    const gv = select(lessThan(a.dot(a), b.dot(b)), a, b);
+                    
+                    const uvAbs = abs(gv);
+                    const hexDist = max(uvAbs.x, uvAbs.x.mul(0.5).add(uvAbs.y.mul(0.8660254)));
+                    
+                    const hexPattern = step(0.4875, hexDist);
+
+                    return hexPattern;
+                })();
+
 				floorMaterial.colorNode = Fn( () => {
 					const dirtyReflection = textureBicubic( reflection, roughnessTexture );
-                
-                    const hexShape: Node<"float"> = Fn(() => {
-                        const p = uv().mul(10.0);
-                        
-                        const r = vec2(1.0, 1.7320508); // vec2(1.0, sqrt(3))
-                        const h = r.mul(0.5);
-                        
-                        const a = p.mod(r).sub(h);
-                        const b = p.sub(h).mod(r).sub(h);
-                                    
-                        
-                        const gv = select(lessThan(a.dot(a), b.dot(b)), a, b);
-                        
-                        const uvAbs = abs(gv);
-                        const hexDist = max(uvAbs.x, uvAbs.x.mul(0.5).add(uvAbs.y.mul(0.8660254)));
-                        
-                        const hexPattern = step(0.485, hexDist);
-
-                        return hexPattern;
-                    })();
 
                     const honey = hexShape;
 
-					return vec4( dirtyReflection.rgb, honey.oneMinus() );
+					return vec4( dirtyReflection.rgb, honey.oneMinus().mul(0.9) );
 				} )();
 
                 floorMaterial.transparent = true
