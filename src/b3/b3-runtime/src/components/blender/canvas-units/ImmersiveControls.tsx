@@ -136,8 +136,8 @@ export function ImmersiveControls ({ player = new Object3D() }) {
                 // Horizontal drag orbits theta, vertical drag tilts phi.
                 // Screen Y grows downward, so a positive dy raises phi (camera
                 // moves down, view tilts up) — matches the arrow-key mapping.
-                azAngle.current += (c.x - lastCentroid.x) * 0.25;
-                polarAngle.current += (c.y - lastCentroid.y) * 0.25;
+                azAngle.current += (c.x - lastCentroid.x) * -0.25;
+                polarAngle.current += (c.y - lastCentroid.y) * -0.25;
             }
             lastCentroid = c;
 

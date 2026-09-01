@@ -6,6 +6,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    allowedHosts: true,
     watch: {
       // The Dev page's "Select Export Folder" feature writes scene.zip into
       // public/deploy on every snapshot. Vite full-reloads when files in its
