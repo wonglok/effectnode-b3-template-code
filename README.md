@@ -1,5 +1,6 @@
 # What is this?
-- a vite code template with blender plugin integrated into the workflow
+- a Vite code template with blender plugin integrated into the workflow
+<img width="3840" height="2160" alt="image" src="https://github.com/user-attachments/assets/baa11558-c132-4901-bd81-0ae33ccd8285" />
 
 # credits / thank you list
  - ThreeJS r185
