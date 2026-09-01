@@ -29,7 +29,7 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
     return intensity.mul(fade);
 }) as any;
 
- const hexShapeFnc: (p: Node<"float">, r: Node<"float">) => Node<"float"> = Fn(([pulse = float(1.0), thickness = float(-0.125)]: any) => {
+ const hexShapeFnc: (p: Node<"float">, r: Node<"float">) => Node<"float"> = Fn(([pulse = float(1.0), thickness = float(0.125)]: any) => {
     const p = uv().mul(10.0);
     
     const r = vec2(1.0, 1.7320508); // vec2(1.0, sqrt(3))
@@ -44,7 +44,7 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
     const uvAbs = abs(gv);
     const hexDist = max(uvAbs.x, uvAbs.x.mul(0.5).add(uvAbs.y.mul(0.8660254)));
     
-    const hexPattern = step(float(0.5).add(pulse.oneMinus().mul(thickness)), hexDist);
+    const hexPattern = step(float(0.5).add(pulse.oneMinus().mul(thickness.mul(-1))), hexDist);
 
     return hexPattern;
 });
@@ -142,8 +142,8 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const pulseValue = circlePulse(uPlayerPosition, float(7.0), float(10.0));
 
-                    const honeyCombPulse = hexShapeFnc(pulseValue, float(-0.125)) as Node<"float">;
-                    const honeyCombBase = hexShapeFnc(float(0.0), float(-0.01)) as Node<"float">;
+                    const honeyCombPulse = hexShapeFnc(pulseValue, float(0.225)) as Node<"float">;
+                    const honeyCombBase = hexShapeFnc(float(0.0), float(0.01)) as Node<"float">;
 
 					return vec4(dirtyReflection.rgb, float(honeyCombPulse).mul(float(pulseValue)).oneMinus().add(honeyCombBase) );
 				} )();
@@ -155,7 +155,6 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 done.set(name,  `${colliderInfo?.version}${JSON.stringify([objects])}`)
             }
         }
-
 
         run()
         return () =>{
