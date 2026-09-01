@@ -52,10 +52,10 @@ const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node
 
 const getNoiseValue = Fn(() => {
     // Scale UV coordinates to control noise frequency
-    const uvScaled = uv().mul(5.0);
+    const uvScaled = uv().mul(2.5);
     
     // Animate the noise over time by adding time to the coordinates
-    const animatedCoords = uvScaled.add(vec2(time.mul(0.2), time.mul(0.1)));
+    const animatedCoords = uvScaled.add(vec2(time.mul(1.2), time.mul(1.2)));
     
     // Sample the built-in MaterialX Perlin/Simplex noise node (returns a float)
     const noiseVal = mx_noise_float(animatedCoords);
@@ -158,11 +158,11 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.225)) as Node<"float">;
 
-                    const noise = getNoiseValue();
+                    const noiseUV = getNoiseValue();
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
 
-					return vec4(dirtyReflection.rgb, float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase) );
+					return vec4(dirtyReflection.rgb, float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
 				} )();
 
                 floorMaterial.transparent = true
