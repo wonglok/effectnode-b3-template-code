@@ -1,7 +1,7 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
-import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, color, mix, uniform } from 'three/tsl';
+import { Fn, vec2, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
 import { useGameGlobal } from "../../../../../components/useGameGlobal";
 //
