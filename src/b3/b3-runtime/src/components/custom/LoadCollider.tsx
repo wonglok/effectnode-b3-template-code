@@ -153,13 +153,14 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
                     const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
-                    const pulseMotion = circlePulse(uPlayerPosition, float(7.0), float(10.0));
+                    const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(10.0));
 
-                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.225)) as Node<"float">;
+                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.1)) as Node<"float">;
 
-                    const noiseUV = getNoiseValue();
+                    const noiseUV = getNoiseValue() as Node<"float">;
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
+
                     const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
 
 					return vec4(dirtyReflection.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#f8ffae'))), float(honeyCombPulse).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
