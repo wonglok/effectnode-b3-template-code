@@ -130,7 +130,6 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				normalMap.wrapT = RepeatWrapping;
 				normalMap.colorSpace = SRGBColorSpace;
 
-
                 const roughnessMap = textureLoader.load(
                     URL.createObjectURL(new Blob([roughnessMapData.bytes], {type: roughnessMapData.mime})) 
                 );
@@ -144,9 +143,9 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
-
+                floorMaterial.normalNode = normlTexture;
                 floorMaterial.transparent = true;
-				floorMaterial.metalnessNode = float(normlTexture);
+				floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
 
 				floorMaterial.colorNode = Fn( () => {
