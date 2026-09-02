@@ -254,7 +254,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       idle: THREE.AnimationAction | null;
       walk: THREE.AnimationAction | null;
       run: THREE.AnimationAction | null;
-    } = { idle: null, walk: null, run: null };
+      jump: THREE.AnimationAction | null;
+    } = { idle: null, walk: null, run: null, jump: null };
 
     loadAvatar()
       .then((avatar) => {
@@ -266,6 +267,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         animations.idle = a.idle;
         animations.walk = a.walk;
         animations.run = a.run;
+        animations.jump = a.jump;
       })
       .catch((err) => {
         console.warn("[NavMeshRig] Failed to load avatar:", err);
@@ -625,7 +627,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // re-applied at the end of the frame to render the lift. The character
     // therefore keeps walking the navmesh horizontally while airborne.
     const JUMP_GRAVITY = 20; // downward accel on the arc (units/s^2)
-    const JUMP_SPEED = 10; // takeoff impulse (units/s) → ~2.5u apex
+    const JUMP_SPEED = 6.9; // takeoff impulse (units/s) → ~1.2u apex, ~0.7s
+    // Where in the 1.9s jumping.fbx to start each takeoff — the clip begins
+    // with an anticipation crouch, so start at its launch (~0.45s) to match
+    // the physical arc. Tune to taste.
+    const JUMP_CLIP_START = 0.45;
     let isJumping = false;
     let jumpOffset = 0; // current lift above the navmesh surface
     let jumpVelocity = 0; // vertical velocity of the jump arc
@@ -764,6 +770,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           if (!isJumping) {
             isJumping = true;
             jumpVelocity = JUMP_SPEED;
+            // Restart the jump clip at its launch frame (skipping the
+            // anticipation crouch so the pose matches the takeoff).
+            if (animations.jump) animations.jump.time = JUMP_CLIP_START;
           }
         }
 
@@ -856,18 +865,28 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       let idleWeight: number;
       let walkWeight: number;
       let runWeight: number;
-      if (speed < 0.01) {
+      let jumpWeight: number;
+      if (isJumping) {
+        // Play the jump clip for the whole airborne arc.
+        idleWeight = 0;
+        walkWeight = 0;
+        runWeight = 0;
+        jumpWeight = 1;
+      } else if (speed < 0.01) {
         idleWeight = 1;
         walkWeight = 0;
         runWeight = 0;
+        jumpWeight = 0;
       } else if (movement.sprinting) {
         idleWeight = 0;
         walkWeight = 0;
         runWeight = 1;
+        jumpWeight = 0;
       } else {
         idleWeight = 0;
         walkWeight = 1;
         runWeight = 0;
+        jumpWeight = 0;
       }
       if (animations.idle) {
         animations.idle.weight = THREE.MathUtils.lerp(
@@ -887,6 +906,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         animations.run.weight = THREE.MathUtils.lerp(
           animations.run.weight,
           runWeight,
+          t * 5,
+        );
+      }
+      if (animations.jump) {
+        animations.jump.weight = THREE.MathUtils.lerp(
+          animations.jump.weight,
+          jumpWeight,
           t * 5,
         );
       }
