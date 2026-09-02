@@ -359,6 +359,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       left: false,
       right: false,
       sprint: false,
+      jump: false,
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -383,6 +384,21 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         case "ShiftRight":
           input.sprint = true;
           break;
+        case "Space": {
+          // Ignore while typing into the lil-gui — don't swallow spaces.
+          const el = event.target as HTMLElement | null;
+          const tag = el?.tagName ?? "";
+          if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) {
+            break;
+          }
+          // One jump per tap (event.repeat skips the OS auto-repeat) and only
+          // once the navmesh is ready.
+          if (!event.repeat && navMesh) {
+            event.preventDefault(); // stop the page from scrolling on Space
+            input.jump = true;
+          }
+          break;
+        }
       }
     };
 
@@ -602,6 +618,17 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const movement = { vector: new THREE.Vector3(), sprinting: false };
     let firstPositionUpdate = true;
+
+    // Jump physics — a ballistic vertical arc layered over the navmesh
+    // following. `jumpOffset` is stripped from the player's y at the top of
+    // every frame (so navmesh queries + ground snaps read ground level) and
+    // re-applied at the end of the frame to render the lift. The character
+    // therefore keeps walking the navmesh horizontally while airborne.
+    const JUMP_GRAVITY = 20; // downward accel on the arc (units/s^2)
+    const JUMP_SPEED = 10; // takeoff impulse (units/s) → ~2.5u apex
+    let isJumping = false;
+    let jumpOffset = 0; // current lift above the navmesh surface
+    let jumpVelocity = 0; // vertical velocity of the jump arc
     // Set while a two-finger pinch is active — pauses player walking and
     // hides the target marker for the duration.
     let isPinching = false;
@@ -699,6 +726,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const frame = (delta: number, _: any) => {
       const clamped = Math.min(delta, 0.1);
 
+      // Strip any jump lift so every position read below (navmesh queries,
+      // ground snaps) sees ground level. The lift is re-applied at the end of
+      // the frame so the rendered pose is `surface + jumpOffset`.
+      playerGroup.position.y -= jumpOffset;
+
       // Hold-to-move: while the mouse is held, keep re-aiming the target from
       // the current pointer position (throttled to ~150ms — findPath is costly).
       if (pointerDown) {
@@ -724,6 +756,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           path.length = 0;
           targetReached = false;
           targetMarker.visible = false;
+        }
+
+        // Jump on Space press — one impulse per tap, only while grounded.
+        if (input.jump) {
+          input.jump = false;
+          if (!isJumping) {
+            isJumping = true;
+            jumpVelocity = JUMP_SPEED;
+          }
         }
 
         movement.vector.set(0, 0, 0);
@@ -853,7 +894,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // Height correction against the rendered collider meshes
       frameCounter++;
       if (frameCounter % 45 === 0) refreshColliderObjects();
-      if (navMesh && colliderObjects.length > 0) {
+      // Skip the ground snap while airborne — otherwise it pulls the player
+      // back to the surface before the jump lift has a chance to render.
+      if (navMesh && !isJumping && colliderObjects.length > 0) {
         const origin = raycasterOrigin.copy(playerGroup.position);
         origin.y += 1;
         raycaster.set(origin, raycasterDirection.set(0, -1, 0));
@@ -864,6 +907,21 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           if (yDiff < 1) playerGroup.position.y = hit.point.y;
         }
       }
+
+      // --- jump (space) ---
+      // Integrate the ballistic arc and re-apply the lift that was stripped at
+      // the top of this frame, so the rendered y is `surface + jumpOffset`.
+      if (isJumping) {
+        jumpVelocity -= JUMP_GRAVITY * clamped;
+        jumpOffset += jumpVelocity * clamped;
+        // Landed — clear the arc and settle flush on the surface again.
+        if (jumpOffset <= 0) {
+          jumpOffset = 0;
+          jumpVelocity = 0;
+          isJumping = false;
+        }
+      }
+      playerGroup.position.y += jumpOffset;
 
       // --- camera follow ---
       // Baseline follow offset (above/behind from the GUI), dollied along its
