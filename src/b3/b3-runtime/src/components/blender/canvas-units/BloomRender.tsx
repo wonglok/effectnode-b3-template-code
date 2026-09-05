@@ -41,17 +41,6 @@ export function BloomRender({ params }: BloomRenderProps) {
     if (!needsSetup.current) return;
     needsSetup.current = false;
 
-    // R3F's default loop renders the scene to the canvas every frame, but the TSL
-    // RenderPipeline below also renders to the canvas (pipeline.render() in the
-    // frame loop). Running both in one frame double-writes the colour target and
-    // while the renderer is mid-frame the canvas texture is both a render
-    // attachment and an active texture source → "Feedback loop formed between
-    // Framebuffer and active Texture" (WebGL2) / "usage (TextureBinding|
-    // RenderAttachment)" GPUValidationError (WebGPU). Suppress the automatic
-    // render while this pipeline owns the frame; restore it on unmount.
-    const autoRender = gl.render;
-    gl.render = () => {};
-
     const scenePass = pass(scene, camera);
 
     // MRT: output color + emissive (RGB from material, alpha from output)
@@ -83,15 +72,6 @@ export function BloomRender({ params }: BloomRenderProps) {
     const postProcessing = new THREE.RenderPipeline(gl);
     postProcessing.outputNode = outputPass.add(bloomNode);
     pipelineRef.current = postProcessing;
-
-    // Restore R3F's automatic render on unmount so any non-bloom canvas content
-    // (mode switch / page leave) draws normally again.
-    return () => {
-      gl.render = autoRender;
-      pipelineRef.current = null;
-      bloomRef.current = null;
-      postProcessing.dispose?.();
-    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ------------------------------------------------------------------
