@@ -1,0 +1,3213 @@
+{
+  "sdk": "mixamo-adapter/avatar",
+  "version": 2,
+  "name": "avatar-01",
+  "gender": "male",
+  "assets": {
+    "body": "/char/male/body/army.glb",
+    "face": "/char/male/face/mexican2.glb"
+  },
+  "headBone": null,
+  "head": {
+    "position": [
+      0,
+      0.005,
+      -0.005
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "scale": [
+      0.95,
+      0.95,
+      0.95
+    ]
+  },
+  "body": {
+    "position": [
+      0,
+      -0.045,
+      0
+    ],
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "offsets": [
+    {
+      "bodyUrl": "/char/male/body/army.glb",
+      "faceUrl": "/char/male/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/skydive.glb",
+      "faceUrl": "/char/male/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/skydive.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/skydive.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.01,
+          -0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/t-shirt.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.015,
+          -0.020000000000000004
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/t-shirt.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.030000000000000002,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.015,
+          0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/hoodie.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.01,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space2.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.015,
+          0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9299999999999999,
+          0.9299999999999999,
+          0.9349999999999999
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/skydive.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0
+        ],
+        "rotation": [
+          7,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0
+        ],
+        "rotation": [
+          7,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/body-02.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/office-01.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.025
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/office-02.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/runner.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/teal-polo.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/space.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/blue-polo.glb",
+      "faceUrl": "/char/female/face/head-01.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.005
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0.005
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.0075,
+          -0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/runner.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.01
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/runner.glb",
+      "faceUrl": "/char/female/face/princess.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          8,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/runner.glb",
+      "faceUrl": "/char/female/face/lady.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0.005
+        ],
+        "rotation": [
+          9,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space2.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0
+        ],
+        "rotation": [
+          12,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.02
+        ],
+        "rotation": [
+          9,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.005
+        ],
+        "rotation": [
+          -6,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.005
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/t-shirt.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/skydive.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          7,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/winter-clothing-male.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/hoodie.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/teal-polo.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          6,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/street.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          6,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/office-02.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.01
+        ],
+        "rotation": [
+          9,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/office-01.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          9,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/blue-polo.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          6,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/body-02.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/body-01.glb",
+      "faceUrl": "/char/female/face/southern.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.005
+        ],
+        "rotation": [
+          6,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/office-male-body.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/chinese.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/wintersnow.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9500000000000001,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/wintersnow.glb",
+      "faceUrl": "/char/male/face/chinese.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/wintersnow.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/wintersnow.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.065,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.005
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/wintersnow.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.065,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.025,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.009999999999999998,
+          -0.02
+        ],
+        "rotation": [
+          -11,
+          0,
+          0
+        ],
+        "scale": [
+          0.9349999999999999,
+          0.9349999999999999,
+          0.9349999999999999
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-02.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-01.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.04,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army-1.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.025,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/commander-1.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.015,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/rocket-01.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.06,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-02.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.04,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.025,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.025,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.015
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/hoodie.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.004999999999999998,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/hoodie.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.02,
+          1.734723475976807e-18
+        ],
+        "rotation": [
+          -9,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/latin-face-male.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.93,
+          0.93,
+          0.93
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          -0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.005,
+          0.009999999999999998
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.8999999999999999,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/asian.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.005,
+          -0.01
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          -0.01,
+          -0.005
+        ],
+        "rotation": [
+          -12,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.005,
+          -0.02
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.9,
+          0.9,
+          0.9
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-02.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.015,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-02.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.009999999999999998,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army-1.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.01,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.95,
+          0.95,
+          0.95
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army-1.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-01.glb",
+      "faceUrl": "/char/male/face/mr-bun.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/army-1.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.030000000000000002,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/commander-1.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/space-army-03.glb",
+      "faceUrl": "/char/male/face/chinese.glb",
+      "body": {
+        "position": [
+          0,
+          -0.02,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/office-02.glb",
+      "faceUrl": "/char/female/face/lady.glb",
+      "body": {
+        "position": [
+          0,
+          -0.05999999999999999,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/female/body/teal-polo.glb",
+      "faceUrl": "/char/female/face/princess.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "motion": {
+    "clips": [
+      {
+        "name": "idle-breathing",
+        "url": "/char/motion-2/fbx/stay/idle-breathing.fbx"
+      },
+      {
+        "name": "idle-neutral",
+        "url": "/char/motion-2/fbx/stay/idle-neutral.fbx"
+      },
+      {
+        "name": "idle-pose",
+        "url": "/char/motion-2/fbx/stay/idle-pose.fbx"
+      },
+      {
+        "name": "jumping",
+        "url": "/char/motion-2/fbx/stay/jumping.fbx"
+      },
+      {
+        "name": "running",
+        "url": "/char/motion-2/fbx/stay/running.fbx"
+      },
+      {
+        "name": "rush",
+        "url": "/char/motion-2/fbx/stay/rush.fbx"
+      },
+      {
+        "name": "walking",
+        "url": "/char/motion-2/fbx/stay/walking.fbx"
+      },
+      {
+        "name": "walking2",
+        "url": "/char/motion-2/fbx/stay/walking2.fbx"
+      }
+    ],
+    "default": "idle-pose",
+    "loop": true,
+    "speed": 1,
+    "playing": true
+  },
+  "genderDefaults": {
+    "male": {
+      "body": "/char/male/body/army.glb",
+      "face": "/char/male/face/mexican2.glb"
+    },
+    "female": {
+      "body": "/char/female/body/teal-polo.glb",
+      "face": "/char/female/face/princess.glb"
+    }
+  }
+}
