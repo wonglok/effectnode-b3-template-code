@@ -4,14 +4,14 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/space-army-02.glb",
-    "face": "/char/male/face/mexican2.glb"
+    "body": "/char/male/body/swat.glb",
+    "face": "/char/male/face/mexican.glb"
   },
   "headBone": null,
   "head": {
     "position": [
       0,
-      0.009999999999999998,
+      0,
       0
     ],
     "rotation": [
@@ -20,9 +20,9 @@
       0
     ],
     "scale": [
-      0.95,
-      0.95,
-      0.95
+      1,
+      1,
+      1
     ]
   },
   "body": {
@@ -3240,8 +3240,8 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/space-army-02.glb",
-      "face": "/char/male/face/mexican2.glb"
+      "body": "/char/male/body/swat.glb",
+      "face": "/char/male/face/mexican.glb"
     },
     "female": {
       "body": "/char/female/body/teal-polo.glb",
