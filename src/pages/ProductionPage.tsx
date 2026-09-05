@@ -5,6 +5,7 @@ import { opfs, ProductionViewer, useBlenderStore } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { VirtualJoystick } from "../components/VirtualJoystick";
 
 /**
  * Production — optimised deployment preview.
@@ -49,6 +50,9 @@ export function ProductionPage() {
   return (
     <div className="w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="production" />
+
+      {/* On-screen joystick to walk the optimised deployment's character */}
+      {zipBuffer ? <VirtualJoystick /> : null}
 
       <div className="flex-1 min-h-0 relative">
         {/* Loading the deployment zip */}

@@ -16,6 +16,7 @@ import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-unit
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { AvatarTuning } from "../components/avatar/AvatarTuning";
+import { VirtualJoystick } from "../components/VirtualJoystick";
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the
@@ -165,6 +166,9 @@ export function DevPage() {
   return (
     <div className="relative w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="dev" />
+
+      {/* On-screen joystick to walk the navmesh character (navmesh mode only) */}
+      {navmeshMode ? <VirtualJoystick /> : null}
 
       <div className="flex-1 min-h-0 flex">
         {/* Starts / stops the WebSocket connection to Blender */}

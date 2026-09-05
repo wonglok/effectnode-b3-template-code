@@ -5,6 +5,7 @@ import { ProductionViewer } from "../b3/b3-runtime/src";
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { VirtualJoystick } from "../components/VirtualJoystick";
 
 const DEPLOY_URL = "/deploy/scene.zip";
 
@@ -55,6 +56,9 @@ export function DeployedPage() {
   return (
     <div className="w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="deployment" />
+
+      {/* On-screen joystick to walk the deployed scene's character */}
+      {zipBuffer ? <VirtualJoystick /> : null}
 
       <div className="flex-1 min-h-0 relative">
         {/* Fetching the deployment zip */}

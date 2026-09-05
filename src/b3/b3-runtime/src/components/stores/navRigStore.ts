@@ -40,6 +40,14 @@ interface NavRigState {
   /** Move the dolly distance by `delta` world units; passing through 0
    *  releases the camera back to the default follow distance. */
   dolly: (delta: number) => void;
+
+  /** On-screen joystick deflection (-1..1 per axis). y > 0 = up = forward.
+   *  Written by the bottom-centre joystick, read every frame by the rig's
+   *  movement loop so it steers the character like WASD. */
+  stick: { x: number; y: number };
+
+  /** Replace the current joystick deflection (0,0 on release/unmount). */
+  setStick: (value: { x: number; y: number }) => void;
 }
 
 /** Min / max camera distance from the player (world units). */
@@ -63,8 +71,11 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   },
 
   zoomRadius: 0,
+  stick: { x: 0, y: 0 },
 
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+
+  setStick: (stick) => set({ stick }),
 
   dolly: (delta) => {
     const { zoomRadius, settings } = get();

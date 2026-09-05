@@ -737,7 +737,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     };
     refreshColliderObjects();
 
-    camera.position.set(0, 8, 5);
+    camera.position.set(0, 1.5, 2);
     camera.lookAt(0, 0, 0);
     cameraPosition.copy(camera.position);
 
@@ -825,9 +825,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       if (navMesh) {
         const { left, right, forward, back, sprint } = input;
         const anyKey = forward || back || left || right;
+        // On-screen joystick (bottom centre) — analog deflection feeds the same
+        // camera-relative steering as WASD. y > 0 = up = forward.
+        const stick = useNavRigStore.getState().stick;
+        const stickActive = Math.hypot(stick.x, stick.y) > 0.12;
+        const anySteer = anyKey || stickActive;
 
-        // Manual keyboard input cancels click-to-move
-        if (anyKey && path.length > 0) {
+        // Manual input (keys or joystick) cancels click-to-move
+        if (anySteer && path.length > 0) {
           path.length = 0;
           targetReached = false;
           targetMarker.visible = false;
@@ -848,11 +853,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         movement.vector.set(0, 0, 0);
 
         // Pause walking while a two-finger pinch is zooming the camera.
-        if (!isPinching && anyKey) {
+        if (!isPinching && anySteer) {
           if (forward) movement.vector.z -= 1;
           if (back) movement.vector.z += 1;
           if (left) movement.vector.x -= 1;
           if (right) movement.vector.x += 1;
+          // Analog stick axes (dead-zoned above). up → forward, right → right.
+          if (stickActive) {
+            movement.vector.x += stick.x;
+            movement.vector.z -= stick.y;
+          }
           const scalar = sprint
             ? settings.runningSpeed
             : settings.walkingSpeed;
