@@ -1,6 +1,14 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { Object3D } from "three";
+import { Object3D, Vector3 } from "three";
+
+// Zoom orbit radius limits (world units from the player). 0.5 lets the camera
+// get very close to the character.
+const MIN_ZOOM_DISTANCE = 0.5;
+const MAX_ZOOM_DISTANCE = 250;
+// The camera orbits / looks at a focus point this high above the player's feet —
+// roughly the character's centre, so zooming in keeps the body framed.
+const CAMERA_TARGET_Y = 0.85;
 
 export function ImmersiveControls ({ player = new Object3D() }) {
     const camera = useThree((r) => {
@@ -15,9 +23,12 @@ export function ImmersiveControls ({ player = new Object3D() }) {
     const spherical = useMemo(() => {
         return player.userData.spherical
     }, [player])
+    
     const orbit = useMemo(() => {
-        return new Object3D() 
+        return new Object3D()
     }, [])
+    // Reused focus point the camera orbits around and looks at each frame.
+    const focus = useMemo(() => new Vector3(), [])
 
     const polarAngle = useRef(30)
     const azAngle = useRef(0)
@@ -146,7 +157,10 @@ export function ImmersiveControls ({ player = new Object3D() }) {
             if (lastPinchDist != null) {
                 // Spreading fingers (positive delta) pulls the camera in.
                 spherical.radius -= (d - lastPinchDist) * 0.03;
-                spherical.radius = Math.min(150, Math.max(4, spherical.radius));
+                spherical.radius = Math.min(
+                    MAX_ZOOM_DISTANCE,
+                    Math.max(MIN_ZOOM_DISTANCE, spherical.radius),
+                );
             }
             lastPinchDist = d;
         };
@@ -224,10 +238,10 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         const handleWheel = (event: WheelEvent) => {
             spherical.radius +=  event.deltaY / 75
 
-            if (spherical.radius <= 4) {
+            if (spherical.radius <= MIN_ZOOM_DISTANCE) {
                 spherical.radius += event.deltaY / 75 * -1
             }
-            if (spherical.radius >= 150) {
+            if (spherical.radius >= MAX_ZOOM_DISTANCE) {
                 spherical.radius += event.deltaY / 75 * -1
             }
         };
@@ -265,16 +279,19 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         azAngle.current += dt * joystickSpeed * joystick.current.x
 
         // Keep polar angle within safe bounds so the camera never flips poles.
-        polarAngle.current = Math.min(179, Math.max(1, polarAngle.current))
+        polarAngle.current = Math.min(179, Math.max(0.001, polarAngle.current))
 
-        camera.position.copy(player.position)
+        // Orbit + look target = the player's position, raised to the character's
+        // centre (player.y + CAMERA_TARGET_Y), so zoom is centred on the body.
+        focus.copy(player.position)
+        focus.y = player.position.y + CAMERA_TARGET_Y
+
+        camera.position.copy(focus)
         spherical.makeSafe()
-        spherical.set(spherical.radius,Math.PI / 180 * polarAngle.current, Math.PI / 180 * azAngle.current)
+        spherical.set(spherical.radius, Math.PI / 180 * polarAngle.current, Math.PI / 180 * azAngle.current)
         orbit.position.setFromSpherical(spherical)
         camera.position.add(orbit.position)
-        camera.lookAt(
-            player.position.x,player.position.y + 1.2,player.position.z
-        )
+        camera.lookAt(focus)
 
         //
     })
