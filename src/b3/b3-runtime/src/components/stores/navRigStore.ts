@@ -48,6 +48,28 @@ interface NavRigState {
 
   /** Replace the current joystick deflection (0,0 on release/unmount). */
   setStick: (value: { x: number; y: number }) => void;
+
+  /** Last one-shot gesture/dance requested by an emotion button. `nonce`
+   *  advances on every request so even the same gesture can be re-triggered;
+   *  NavMeshRig consumes it once per nonce and plays the clip then returns to
+   *  the idle state. */
+  emotionRequest: { def: EmotionDef; nonce: number } | null;
+
+  /** Fire a one-shot gesture/dance once — the rig plays the clip, then blends
+   *  back to the idle locomotion state. */
+  requestEmotion: (def: EmotionDef) => void;
+}
+
+/** A one-shot emotion (dance / gesture) mapped to an on-screen button. */
+export interface EmotionDef {
+  /** Unique id used as the clip name when loaded. */
+  id: string;
+  /** Stable clip identifier fed to the avatar rig (must match the FBX name). */
+  name: string;
+  /** `/char/...` URL of the gesture/dance FBX. */
+  url: string;
+  /** Short button label (tooltip / a11y). */
+  label: string;
 }
 
 /** Min / max camera distance from the player (world units). */
@@ -72,10 +94,16 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
 
   zoomRadius: 0,
   stick: { x: 0, y: 0 },
+  emotionRequest: null,
 
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
   setStick: (stick) => set({ stick }),
+
+  requestEmotion: (def) =>
+    set((s) => ({
+      emotionRequest: { def, nonce: (s.emotionRequest?.nonce ?? 0) + 1 },
+    })),
 
   dolly: (delta) => {
     const { zoomRadius, settings } = get();

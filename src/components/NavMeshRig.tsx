@@ -22,6 +22,7 @@ import {
   useBlenderStore,
   useNavRigStore,
 } from "../b3/b3-runtime/src";
+import type { EmotionDef } from "../b3/b3-runtime/src/components/stores/navRigStore";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
 import {
   loadAvatar,
@@ -709,6 +710,24 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     let isPinching = false;
     let targetMarkerWasVisible = false;
 
+    // --- one-shot emotions (gesture / dance buttons) -----------------------
+    // Requests arrive in the store (navRigStore.emotionRequest); the frame loop
+    // consumes each one by nonce and hands the clip to the rig. The character
+    // parks in place while `avatarRig.isEmotionActive()` is true, then the rig
+    // returns to the caller's blend (idle once the player stops moving).
+    let lastEmotionNonce = 0;
+    const runEmotion = (def: EmotionDef) => {
+      // Park the character: cancel click-to-move and any jump arc, then let the
+      // rig play the clip once and blend back to idle on its own.
+      path.length = 0;
+      targetReached = false;
+      targetMarker.visible = false;
+      isJumping = false;
+      jumpOffset = 0;
+      jumpVelocity = 0;
+      avatarRig?.playEmotionOnce(def);
+    };
+
     const movementTarget = new THREE.Vector3();
     const raycasterOrigin = new THREE.Vector3();
     const raycasterDirection = new THREE.Vector3();
@@ -806,6 +825,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // the frame so the rendered pose is `surface + jumpOffset`.
       playerGroup.position.y -= jumpOffset;
 
+      // Consume a one-shot emotion request (button press) — once per nonce.
+      const req = useNavRigStore.getState().emotionRequest;
+      if (req && avatarRig && req.nonce !== lastEmotionNonce) {
+        lastEmotionNonce = req.nonce;
+        runEmotion(req.def);
+      }
+      // While a gesture/dance plays the character parks in place (feet planted).
+      const emotionActive = avatarRig?.isEmotionActive() ?? false;
+
       // Hold-to-move: while the mouse is held, keep re-aiming the target from
       // the current pointer position (throttled to ~150ms — findPath is costly).
       if (pointerDown) {
@@ -838,10 +866,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           targetMarker.visible = false;
         }
 
-        // Jump on Space press — one impulse per tap, only while grounded.
+        // Jump on Space press — one impulse per tap, only while grounded and
+        // not mid-emotion (a gesture owns the mixers, so no jumping on top).
         if (input.jump) {
           input.jump = false;
-          if (!isJumping) {
+          if (!isJumping && !emotionActive) {
             isJumping = true;
             jumpVelocity = JUMP_SPEED;
             // Restart the jump clip at its launch frame (skipping the
@@ -852,8 +881,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         movement.vector.set(0, 0, 0);
 
-        // Pause walking while a two-finger pinch is zooming the camera.
-        if (!isPinching && anySteer) {
+        // Pause walking while pinch-zooming or a one-shot emotion is playing.
+        const canMove = !isPinching && !emotionActive;
+        if (canMove && anySteer) {
           if (forward) movement.vector.z -= 1;
           if (back) movement.vector.z += 1;
           if (left) movement.vector.x -= 1;
@@ -870,7 +900,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           movement.vector.applyAxisAngle(new Vector3(0,1, 0 ), playerGroup.userData.spherical.theta)
 
           movement.vector.normalize().multiplyScalar(scalar * clamped);
-        } else if (!isPinching && !targetReached && path.length > 0) {
+        } else if (canMove && !targetReached && path.length > 0) {
           // Steer toward the current path waypoint
           const w = path[pathIndex];
           const dx = w[0] - playerGroup.position.x;
@@ -964,6 +994,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       } else {
         idleWeight = 0;
         walkWeight = 1;
+        runWeight = 0;
+        jumpWeight = 0;
+      }
+      // A one-shot emotion owns the mixers while it plays — drop every
+      // locomotion weight so only the gesture clip contributes.
+      if (emotionActive) {
+        idleWeight = 0;
+        walkWeight = 0;
         runWeight = 0;
         jumpWeight = 0;
       }

@@ -236,6 +236,14 @@ export interface AvatarRig {
   /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
    * matches the ballistic launch). */
   startJumpAt(time: number): void;
+  /** Play a one-shot dance/gesture clip once, then release control back to the
+   * caller's locomotion blend. Interrupts any emotion currently playing. While
+   * it runs `isEmotionActive()` is true — callers should park the character
+   * (no movement) and blend the locomotion weights toward 0. The clip's root
+   * translation is frozen so the gesture can't drag the player around. */
+  playEmotionOnce(def: MotionClipDef): void;
+  /** True while a one-shot emotion is ramping in, playing, or fading out. */
+  isEmotionActive(): boolean;
 
   // ---- live retuning (no rebuild — cheap, called on store changes) ----
   /** Body placement offset → applyBodyOffset on the composed root. */
@@ -399,6 +407,109 @@ export async function loadAvatar(
     }
   };
 
+  // ------------------------------------------------------------------
+  // One-shot emotion (dance / gesture) — play once, then hand back to the
+  // caller's locomotion blend. NavMeshRig feeds `idle` once this reports
+  // inactive, so an emotion that started from a walk ends standing.
+  // ------------------------------------------------------------------
+  // Clips are loaded through the SDK's module FBX cache and remapped onto the
+  // body skeleton exactly like the locomotion clips; the root translation is
+  // frozen so a gesture can't drag the player around inside the navmesh-owned
+  // group. The action runs once (LoopOnce + clamp) with a quick fade in, holds
+  // for one full pass, fades out, then releases the mixers back to idle.
+  let emotionActiveFlag = false;
+  let emotionToken = 0;
+  let emotionPhase: "in" | "hold" | "out" | null = null;
+  let emotionRamp = 0; // current emotion action weight (0..1)
+  let emotionElapsed = 0; // playback seconds into the current pass
+  let emotionDuration = 0;
+  let emotionAction: THREE.AnimationAction | null = null;
+  let emotionHeadAction: THREE.AnimationAction | null = null;
+  const EMOTION_FADE_IN = 0.12;
+  const EMOTION_FADE_OUT = 0.3;
+
+  const stopEmotion = () => {
+    if (emotionAction) {
+      emotionAction.enabled = false;
+      emotionAction.stop();
+      emotionAction = null;
+    }
+    if (emotionHeadAction) {
+      emotionHeadAction.enabled = false;
+      emotionHeadAction.stop();
+      emotionHeadAction = null;
+    }
+    emotionActiveFlag = false;
+    emotionPhase = null;
+    emotionRamp = 0;
+    emotionElapsed = 0;
+    emotionDuration = 0;
+  };
+
+  const startEmotionClip = (clip: THREE.AnimationClip) => {
+    const bodyClip = freezeClipRootPosition(clip, bodyScene);
+    const makeOnce = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
+      const action = m.clipAction(c);
+      action.loop = THREE.LoopOnce;
+      action.clampWhenFinished = true; // hold the last frame during the fade-out
+      action.weight = 0;
+      action.timeScale = speedFactor;
+      action.play();
+      return action;
+    };
+    emotionAction = makeOnce(mixer, bodyClip);
+    if (headMixer) {
+      // Dual-drive faces play the gesture restricted to the bones under the face
+      // skeleton (head nods / shakes drive the seated head too). When nothing
+      // survives the restriction (e.g. a body-only clip), the face just rests.
+      const headClip = restrictClipToRoot(bodyClip, faceScene);
+      if (headClip) emotionHeadAction = makeOnce(headMixer, headClip);
+    }
+    emotionDuration = bodyClip.duration;
+    emotionElapsed = 0;
+    emotionRamp = 0;
+    emotionPhase = "in";
+    emotionActiveFlag = true;
+  };
+
+  const triggerEmotion = (def: MotionClipDef) => {
+    const token = ++emotionToken;
+    stopEmotion(); // interrupt any gesture already playing / fading out
+    loadMotionClips([def], bodyScene).then((loaded) => {
+      if (token !== emotionToken) return; // superseded by a newer request
+      const clip = loaded.get(def.name);
+      if (!clip) {
+        console.warn(`[avatarLoader] emotion "${def.name}" has no clip.`);
+        return;
+      }
+      startEmotionClip(clip);
+    });
+  };
+
+  // Advance the emotion phase/weights once per frame (dt is already 0 while the
+  // character is paused, so an emotion freezes with everything else).
+  const advanceEmotion = (dt: number) => {
+    if (!emotionActiveFlag) return;
+    if (emotionPhase === "in") {
+      emotionRamp = Math.min(1, emotionRamp + dt / EMOTION_FADE_IN);
+      if (emotionRamp >= 1) emotionPhase = "hold";
+    } else if (emotionPhase === "out") {
+      emotionRamp = Math.max(0, emotionRamp - dt / EMOTION_FADE_OUT);
+      if (emotionRamp <= 0) {
+        stopEmotion();
+        return;
+      }
+    }
+    // "hold" — count the pass (mixer advances the action at speedFactor×);
+    // once it completes a full play, begin the fade back to idle.
+    emotionElapsed += dt * speedFactor;
+    if (emotionPhase === "hold" && emotionElapsed >= emotionDuration) {
+      emotionPhase = "out";
+    }
+    if (emotionAction) emotionAction.weight = emotionRamp;
+    if (emotionHeadAction) emotionHeadAction.weight = emotionRamp;
+  };
+
   return {
     scene: root,
     blend(targets, alpha) {
@@ -413,6 +524,7 @@ export async function loadAvatar(
       const dt = paused ? 0 : delta;
       mixer.update(dt);
       if (headMixer) headMixer.update(dt);
+      advanceEmotion(dt);
       // Re-seat the face on the *live* head bone (both rigid glue and the
       // dual-drive offset nudge recompute against the bone's current transform).
       mount?.update(headOffset);
@@ -423,6 +535,12 @@ export async function loadAvatar(
       if (body) body.time = time;
       const head = headActions.jump;
       if (head) head.time = time;
+    },
+    playEmotionOnce(def) {
+      triggerEmotion(def);
+    },
+    isEmotionActive() {
+      return emotionActiveFlag;
     },
     setBodyOffset(offset) {
       bodyOffset = cloneOffset(offset);
@@ -444,6 +562,7 @@ export async function loadAvatar(
       paused = value;
     },
     dispose() {
+      stopEmotion();
       mixer.stopAllAction();
       if (headMixer) headMixer.stopAllAction();
       attachment.dispose();

@@ -6,6 +6,7 @@ import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-unit
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { VirtualJoystick } from "../components/VirtualJoystick";
+import { EmotionButtons } from "../components/EmotionButtons";
 
 const DEPLOY_URL = "/deploy/scene.zip";
 
@@ -57,8 +58,13 @@ export function DeployedPage() {
     <div className="w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="deployment" />
 
-      {/* On-screen joystick to walk the deployed scene's character */}
-      {zipBuffer ? <VirtualJoystick /> : null}
+      {/* On-screen joystick + emotion buttons to drive the deployed character */}
+      {zipBuffer ? (
+        <>
+          <VirtualJoystick />
+          <EmotionButtons />
+        </>
+      ) : null}
 
       <div className="flex-1 min-h-0 relative">
         {/* Fetching the deployment zip */}

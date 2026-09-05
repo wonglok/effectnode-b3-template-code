@@ -6,6 +6,7 @@ import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-unit
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { VirtualJoystick } from "../components/VirtualJoystick";
+import { EmotionButtons } from "../components/EmotionButtons";
 
 /**
  * Production — optimised deployment preview.
@@ -51,8 +52,13 @@ export function ProductionPage() {
     <div className="w-full h-full flex flex-col bg-studio-950">
       <SiteMenu active="production" />
 
-      {/* On-screen joystick to walk the optimised deployment's character */}
-      {zipBuffer ? <VirtualJoystick /> : null}
+      {/* On-screen joystick + emotion buttons to drive the deployed character */}
+      {zipBuffer ? (
+        <>
+          <VirtualJoystick />
+          <EmotionButtons />
+        </>
+      ) : null}
 
       <div className="flex-1 min-h-0 relative">
         {/* Loading the deployment zip */}
