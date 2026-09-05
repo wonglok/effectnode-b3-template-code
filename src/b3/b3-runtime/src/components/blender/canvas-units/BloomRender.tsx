@@ -41,19 +41,21 @@ export function BloomRender({ params }: BloomRenderProps) {
     if (!needsSetup.current) return;
     needsSetup.current = false;
 
-    const scenePass = pass(scene, camera);
+    const scenePass = pass(scene, camera, {
+      
+    });
 
-    // MRT: output color + emissive (RGB from material, alpha from output)
+    // // MRT: output color + emissive (RGB from material, alpha from output)
     const mrtNode = mrt({
       output: output,
-      emissive: vec4(emissive, output.a),
+      emissive: emissive,
     });
-    mrtNode.setBlendMode("emissive", new THREE.BlendMode(THREE.NormalBlending));
+    // mrtNode.setBlendMode("emissive", new THREE.BlendMode(THREE.NormalBlending));
     scenePass.setMRT(mrtNode);
 
-    // Optimize emissive texture bandwidth
-    const emissiveTexture = scenePass.getTexture("emissive");
-    emissiveTexture.type = THREE.UnsignedByteType;
+    // // Optimize emissive texture bandwidth
+    // const emissiveTexture = scenePass.getTexture("emissive");
+    // emissiveTexture.type = THREE.UnsignedByteType;
 
     // Extract passes
     const outputPass = scenePass.getTextureNode();
@@ -84,7 +86,7 @@ export function BloomRender({ params }: BloomRenderProps) {
       if (params.radius != null) bloomRef.current.radius.value = params.radius;
     }
     pipelineRef.current?.render();
-  }, 1);
+  }, 10);
 
   return null;
 }

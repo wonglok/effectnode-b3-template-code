@@ -56,15 +56,15 @@ export const CanvasGPU: any = ({
               ...(glprops as any),
               ...props,
 
-              alpha: false,
-              antialias: false,
-              depth: false,
-              stencil: false,
-              multiview: true,
+              // alpha: false,
+              // antialias: false,
+              // depth: false,
+              // stencil: false,
+              // multiview: true,
 
-              requiredLimits: {
-                maxColorAttachments: 64,
-              },
+              // requiredLimits: {
+              //   maxColorAttachments: 8,
+              // },
             });
 
             await renderer.init();
