@@ -40,7 +40,12 @@ import { parseManifest } from "../b3/b3-runtime/src/components/AvatarSDK/manifes
 import { loadMotionClips } from "../b3/b3-runtime/src/components/AvatarSDK/motionLibrary";
 import { findBone, restrictClipToRoot } from "../b3/b3-runtime/src/components/AvatarSDK/rig";
 import { makeDefaultManifest } from "../b3/b3-runtime/src/components/AvatarSDK/sample/charAssets";
-import type { AvatarManifest, MotionClipDef } from "../b3/b3-runtime/src/components/AvatarSDK/types";
+import type {
+  AvatarManifest,
+  BodyInsertion,
+  HeadInsertion,
+  MotionClipDef,
+} from "../b3/b3-runtime/src/components/AvatarSDK/types";
 
 // ---------------------------------------------------------------------------
 // Look + motion configuration
@@ -72,7 +77,9 @@ const LOCOMOTION_SYNONYMS: Record<LocomotionKey, string[]> = {
   jump: ["jumping", "jump"],
 };
 const STAY_FBX = "/char/motion-2/fbx/stay";
-const LOCOMOTION_KEYS: LocomotionKey[] = ["idle", "walk", "run", "jump"];
+
+/** The four locomotion states a NavMeshRig avatar blends between. */
+export const LOCOMOTION_KEYS: LocomotionKey[] = ["idle", "walk", "run", "jump"];
 
 /** Cadence correction for the walk clip (matches the character's navmesh speed). */
 const WALK_TIMESCALE = 1.5;
@@ -205,6 +212,14 @@ function playClip(
  * NavMeshRig drives each frame. `scene` is the group to add under the player
  * group; the rest replace the mixer/action plumbing the rig used to own.
  */
+/** Which clip each rig state uses (built from a manifest by default). */
+export interface AvatarConfig {
+  /** Composed look (body/face assets, head bone, body + head offsets). */
+  manifest: AvatarManifest;
+  /** Optional per-state stay-clip overrides (what the Motion tab retunes). */
+  clips?: Partial<Record<LocomotionKey, MotionClipDef>>;
+}
+
 export interface AvatarRig {
   /** Composed avatar root (body + seated/dual-drive head), upright "home"
    * applied. Add this under the player group — it carries the whole character. */
@@ -218,22 +233,53 @@ export interface AvatarRig {
   /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
    * matches the ballistic launch). */
   startJumpAt(time: number): void;
+
+  // ---- live retuning (no rebuild — cheap, called on store changes) ----
+  /** Body placement offset → applyBodyOffset on the composed root. */
+  setBodyOffset(offset: BodyInsertion): void;
+  /** Head-insertion offset → re-seat the face on the live head bone. */
+  setHeadOffset(offset: HeadInsertion): void;
+  /** Show/hide the body and/or face meshes of the composed avatar. */
+  setVisibility(visibility: { body?: boolean; face?: boolean }): void;
+  /** Global playback speed × (1 = natural). Multiplies every action's own
+   * timescale (walk runs at 1.5× naturally). */
+  setSpeed(factor: number): void;
+  /** Pause/resume the whole character's animation. */
+  setPaused(paused: boolean): void;
+
   /** Stop mixers/actions and detach the head mount. GPU disposal of `scene` is
    * the caller's job (NavMeshRig disposes it on teardown). */
   dispose(): void;
 }
 
+/** Clone an offset group so store mutations can't alias into the rig. */
+function cloneOffset(o: BodyInsertion): BodyInsertion {
+  return {
+    position: [...o.position] as BodyInsertion["position"],
+    rotation: [...o.rotation] as BodyInsertion["rotation"],
+    scale: [...o.scale] as BodyInsertion["scale"],
+  };
+}
+
 /**
- * Build a composed avatar for the NavMeshRig. Optional `manifest` (a saved
- * `/char` look + motion library) defaults to `fetchSavedManifest()`.
+ * Build a composed avatar for the NavMeshRig. Optional `config.manifest` (a
+ * saved `/char` look + motion library) defaults to `fetchSavedManifest()`;
+ * `config.clips` overrides which stay clips feed the four rig states.
  */
-export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> {
-  const resolved = manifest ?? (await fetchSavedManifest());
+export async function loadAvatar(
+  config?: AvatarConfig | AvatarManifest,
+): Promise<AvatarRig> {
+  const cfg: AvatarConfig | undefined = config
+    ? "assets" in config
+      ? { manifest: config }
+      : config
+    : undefined;
+  const manifest = cfg?.manifest ?? (await fetchSavedManifest());
 
   // --- load + compose body & face on the shared mixamorig skeleton ----------
   const [bodyGltf, faceGltf] = await Promise.all([
-    loadGLB(resolved.assets.body),
-    loadGLB(resolved.assets.face),
+    loadGLB(manifest.assets.body),
+    loadGLB(manifest.assets.face),
   ]);
   const bodyScene = bodyGltf.scene;
   const faceScene = faceGltf.scene;
@@ -243,7 +289,7 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
   const plan: HeadComposePlan = classifyHeadCompose({
     bodyScene,
     faceScene,
-    headBone: resolved.headBone,
+    headBone: manifest.headBone,
     headMode: "auto",
   });
 
@@ -260,14 +306,20 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
   const mixer = new THREE.AnimationMixer(root);
   const attachment = createHeadAttachment({ root, faceScene, plan });
   const mount = attachment.mount;
+  const faceGroup = attachment.group;
 
-  // Stand the rig up on its motion root (+ feet sink) — the manifest's body
-  // offset is the asset-frame correction the SDK would apply to `<Avatar>`.
-  applyBodyOffset(root, resolved.body);
-  mount?.update(resolved.head);
+  // Live offset copies the tuning panel writes through `setBody/HeadOffset`.
+  let bodyOffset = cloneOffset(manifest.body);
+  let headOffset = cloneOffset(manifest.head) as HeadInsertion;
+  applyBodyOffset(root, bodyOffset);
+  mount?.update(headOffset);
 
   // --- load + remap the four locomotion clips --------------------------------
-  const defs = resolveLocomotionDefs(resolved);
+  const baseDefs = resolveLocomotionDefs(manifest);
+  const defs = {} as Record<LocomotionKey, MotionClipDef>;
+  for (const key of LOCOMOTION_KEYS) {
+    defs[key] = cfg?.clips?.[key] ?? baseDefs[key];
+  }
   const loaded = await loadMotionClips(LOCOMOTION_KEYS.map((k) => defs[k]), bodyScene);
 
   const clips: Record<LocomotionKey, THREE.AnimationClip | null> = {
@@ -298,11 +350,20 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
   }
 
   // --- actions (idle at full weight; the rig crossfades from there) ----------
+  // Walk naturally runs at 1.5×; every action is scaled further by `speedFactor`
+  // so the tuning panel's playback speed stays live-tunable.
+  const BASE_TIMESCALE: Record<LocomotionKey, number> = {
+    idle: 1,
+    walk: WALK_TIMESCALE,
+    run: 1,
+    jump: 1,
+  };
   const bodyActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
   const headActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
   for (const key of LOCOMOTION_KEYS) {
-    bodyActions[key] = playClip(mixer, clips[key], key === "idle" ? 1 : 0, key === "walk" ? WALK_TIMESCALE : 1);
-    if (headMixer) headActions[key] = playClip(headMixer, headClips[key], key === "idle" ? 1 : 0, key === "walk" ? WALK_TIMESCALE : 1);
+    const ts = BASE_TIMESCALE[key];
+    bodyActions[key] = playClip(mixer, clips[key], key === "idle" ? 1 : 0, ts);
+    if (headMixer) headActions[key] = playClip(headMixer, headClips[key], key === "idle" ? 1 : 0, ts);
   }
 
   // --- reveal gate -----------------------------------------------------------
@@ -322,6 +383,19 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
     }
   };
 
+  // Live-playback state (set by the tuning panel / NavMeshRig).
+  let speedFactor = 1;
+  let paused = false;
+  const applySpeed = () => {
+    for (const key of LOCOMOTION_KEYS) {
+      const target = BASE_TIMESCALE[key] * speedFactor;
+      const body = bodyActions[key];
+      if (body) body.timeScale = target;
+      const head = headActions[key];
+      if (head) head.timeScale = target;
+    }
+  };
+
   return {
     scene: root,
     blend(targets, alpha) {
@@ -333,11 +407,12 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
       }
     },
     advance(delta) {
-      mixer.update(delta);
-      if (headMixer) headMixer.update(delta);
+      const dt = paused ? 0 : delta;
+      mixer.update(dt);
+      if (headMixer) headMixer.update(dt);
       // Re-seat the face on the *live* head bone (both rigid glue and the
       // dual-drive offset nudge recompute against the bone's current transform).
-      mount?.update(resolved.head);
+      mount?.update(headOffset);
       maybeReveal(delta);
     },
     startJumpAt(time) {
@@ -345,6 +420,25 @@ export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> 
       if (body) body.time = time;
       const head = headActions.jump;
       if (head) head.time = time;
+    },
+    setBodyOffset(offset) {
+      bodyOffset = cloneOffset(offset);
+      applyBodyOffset(root, bodyOffset);
+    },
+    setHeadOffset(offset) {
+      headOffset = cloneOffset(offset) as HeadInsertion;
+      mount?.update(headOffset);
+    },
+    setVisibility(visibility) {
+      if (visibility.body !== undefined) bodyScene.visible = visibility.body;
+      if (visibility.face !== undefined && faceGroup) faceGroup.visible = visibility.face;
+    },
+    setSpeed(factor) {
+      speedFactor = factor;
+      applySpeed();
+    },
+    setPaused(value) {
+      paused = value;
     },
     dispose() {
       mixer.stopAllAction();

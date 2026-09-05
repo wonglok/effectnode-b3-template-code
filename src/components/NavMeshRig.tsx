@@ -23,7 +23,16 @@ import {
   useNavRigStore,
 } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
-import { loadAvatar, type AvatarRig } from "./avatarLoader";
+import {
+  loadAvatar,
+  LOCOMOTION_KEYS,
+  type AvatarConfig,
+  type AvatarRig,
+} from "./avatarLoader";
+import {
+  avatarConfigSnapshot,
+  useAvatarStore,
+} from "./avatar/useAvatarStore";
 import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 import { Spherical } from "three";
 import { Vector3 } from "three";
@@ -248,20 +257,90 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     agentHelper.position.y = 0.9;
     playerGroup.add(agentHelper);
 
-    // The composed SDK avatar rides inside the player group. It owns its mixers
-    // (body + optional dual-drive head) and its idle/walk/run/jump clips — the
-    // rig only crossfades their weights and advances them via `AvatarRig`.
+    // The composed SDK avatar rides inside the player group. It's driven by the
+    // avatar tuning store (DevPage left sidebar): structural changes — the
+    // body/head look, or which stay clip feeds each rig state — rebuild the
+    // composed avatar; offset / visibility / speed / pause tweaks apply live.
     let avatarRig: AvatarRig | null = null;
+    let avatarBuildId = 0;
 
-    loadAvatar()
-      .then((avatar) => {
-        if (disposed) return;
-        avatarRig = avatar;
-        playerGroup.add(avatar.scene);
-      })
-      .catch((err) => {
-        console.warn("[NavMeshRig] Failed to load avatar:", err);
-      });
+    const disposeRig = () => {
+      const old = avatarRig;
+      avatarRig = null;
+      if (!old) return;
+      if (old.scene.parent === playerGroup) playerGroup.remove(old.scene);
+      old.dispose();
+      disposeObject(old.scene);
+    };
+
+    const mountAvatar = (config: AvatarConfig) => {
+      const id = ++avatarBuildId;
+      disposeRig();
+      loadAvatar(config)
+        .then((rig) => {
+          if (disposed || id !== avatarBuildId) {
+            rig.dispose();
+            return;
+          }
+          avatarRig = rig;
+          playerGroup.add(rig.scene);
+          // Push the current live store state onto the fresh rig.
+          const s = useAvatarStore.getState();
+          rig.setBodyOffset(s.body);
+          rig.setHeadOffset(s.head);
+          rig.setVisibility({ body: s.bodyVisible, face: s.faceVisible });
+          rig.setSpeed(s.speed);
+          rig.setPaused(!s.playing);
+        })
+        .catch((err) => {
+          console.warn("[NavMeshRig] Failed to load avatar:", err);
+        });
+    };
+
+    mountAvatar(avatarConfigSnapshot());
+
+    const tupleEq = (a: readonly number[], b: readonly number[]) =>
+      a.length === b.length &&
+      a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+    const offsetsEqual = (
+      a: {
+        position: readonly number[];
+        rotation: readonly number[];
+        scale: readonly number[];
+      },
+      b: typeof a,
+    ) =>
+      tupleEq(a.position, b.position) &&
+      tupleEq(a.rotation, b.rotation) &&
+      tupleEq(a.scale, b.scale);
+
+    // React to store edits without a re-render (this whole rig lives in one
+    // effect). Structural changes rebuild the avatar; the rest tune it live.
+    const unsubAvatar = useAvatarStore.subscribe((s, prev) => {
+      const lookChanged =
+        s.assets.body !== prev.assets.body ||
+        s.assets.face !== prev.assets.face ||
+        s.headBone !== prev.headBone;
+      const rigChanged = LOCOMOTION_KEYS.some(
+        (k) => s.rigClips[k]?.url !== prev.rigClips[k]?.url,
+      );
+      if (lookChanged || rigChanged) {
+        mountAvatar(avatarConfigSnapshot());
+        return;
+      }
+      const rig = avatarRig;
+      if (!rig) return;
+      if (!offsetsEqual(s.body, prev.body)) rig.setBodyOffset(s.body);
+      if (!offsetsEqual(s.head, prev.head)) rig.setHeadOffset(s.head);
+      if (
+        s.bodyVisible !== prev.bodyVisible ||
+        s.faceVisible !== prev.faceVisible
+      ) {
+        rig.setVisibility({ body: s.bodyVisible, face: s.faceVisible });
+      }
+      if (s.speed !== prev.speed) rig.setSpeed(s.speed);
+      if (s.playing !== prev.playing) rig.setPaused(!s.playing);
+    });
 
     // ------------------------------------------------------------------
     // Place the player on the navmesh
@@ -983,6 +1062,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       scene.remove(targetMarker);
       targetMarker.geometry.dispose();
       targetMarker.material.dispose();
+      unsubAvatar();
       if (avatarRig) {
         avatarRig.dispose();
         disposeObject(avatarRig.scene);

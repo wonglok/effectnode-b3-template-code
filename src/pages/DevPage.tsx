@@ -15,6 +15,7 @@ import {
 import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
+import { AvatarTuning } from "../components/avatar/AvatarTuning";
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the
@@ -168,6 +169,11 @@ export function DevPage() {
       <div className="flex-1 min-h-0 flex">
         {/* Starts / stops the WebSocket connection to Blender */}
         <BlenderConnection />
+
+        {/* Character + Motion tuning (drives the navmesh walker's avatar) */}
+        <div className="relative h-full w-[300px] shrink-0 overflow-hidden border-r border-studio-700">
+          <AvatarTuning />
+        </div>
 
         {/* Live synced canvas — navmesh rig swaps the camera sync while active */}
         <div className="flex-1 min-w-0 relative">
