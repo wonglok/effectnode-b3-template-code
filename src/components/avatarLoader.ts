@@ -236,16 +236,27 @@ export interface AvatarRig {
   /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
    * matches the ballistic launch). */
   startJumpAt(time: number): void;
-  /** Play a one-shot dance/gesture clip once, then release control back to the
-   * caller's locomotion blend. Interrupts any emotion currently playing. While
-   * it runs `isEmotionActive()` is true — callers should park the character
-   * (no movement) and blend the locomotion weights toward 0. The clip's root
-   * translation is frozen so the gesture can't drag the player around. */
-  /** `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
-   *  "get up from the floor" intro) so the one-shot begins standing. */
-  playEmotionOnce(def: MotionClipDef & { startAt?: number }): void;
-  /** True while a one-shot emotion is ramping in, playing, or fading out. */
+  /** Play an emotion. `def.dance` toggles between the two modes:
+   *   - gesture (default): plays the clip once then returns to the caller's
+   *     blend (idle). The character parks in place while it plays.
+   *   - dance: loops the clip in place until {@link cancelEmotion} is called
+   *     (tap the same button again / pick another emotion); the character keeps
+   *     steering/walking while it plays (no park).
+   * Interrupts any emotion currently playing. While it runs `isEmotionActive()`
+   * is true — the emotion owns the mixers (locomotion weight forced to 0). The
+   * clip's root translation is frozen so it can't drag the player around.
+   * `def.startAt` skips an authored preamble (e.g. the gesture library's
+   * ~0.14s "get up from the floor" intro) so a one-shot begins standing. */
+  playEmotionOnce(def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }): void;
+  /** True while an emotion is playing. */
   isEmotionActive(): boolean;
+  /** True when the active emotion is a looping dance (tap again to stop). */
+  isEmotionDance(): boolean;
+  /** Clip id of the currently active emotion (null when none is playing). */
+  getEmotionId(): string | null;
+  /** Stop the current emotion (dance or one-shot) and hand back to the caller's
+   *  blend immediately. */
+  cancelEmotion(): void;
 
   // ---- live retuning (no rebuild — cheap, called on store changes) ----
   /** Body placement offset → applyBodyOffset on the composed root. */
@@ -410,19 +421,23 @@ export async function loadAvatar(
   };
 
   // ------------------------------------------------------------------
-  // One-shot emotion (dance / gesture) — play once, then hand back to the
-  // caller's locomotion blend. No fade in/out: the moment the clip starts it
-  // owns the mixers outright at full weight (locomotion forced to 0), plays a
-  // single pass, then cuts straight back to the caller's blend (idle).
+  // One-shot emotion (gesture / dance). No fade in/out: whichever emotion is
+  // active owns the mixers outright — its clip at full weight, every locomotion
+  // action (body + dual-drive head) forced to 0 — so nothing underneath leaks
+  // through. A *gesture* plays one pass then hands back to the caller's blend;
+  // a *dance* loops in place until cancelEmotion() (tap again / pick another).
   // ------------------------------------------------------------------
-  // Clips are loaded through the SDK's module FBX cache and remapped onto the
-  // body skeleton exactly like the locomotion clips; the root translation is
-  // frozen so a gesture can't drag the player around inside the navmesh-owned
-  // group. `startAt` skips an authored preamble (e.g. the gesture library's
-  // "get up from the floor" intro) so the one-shot begins standing.
+  // Clips load through the SDK's module FBX cache and are remapped onto the
+  // body skeleton; the root translation is frozen so a clip can't drag the
+  // player around inside the navmesh-owned group — moving around is done by
+  // steering the player group, so a dancing character can still be walked.
+  // `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
+  // "get up from the floor" intro) so a one-shot begins standing.
   let emotionActiveFlag = false;
   let emotionToken = 0;
-  let emotionElapsed = 0; // playback seconds into the current pass
+  let emotionId: string | null = null;
+  let emotionDance = false;
+  let emotionElapsed = 0; // playback seconds into the current pass (one-shots)
   let emotionDuration = 0;
   let emotionAction: THREE.AnimationAction | null = null;
   let emotionHeadAction: THREE.AnimationAction | null = null;
@@ -439,13 +454,15 @@ export async function loadAvatar(
       emotionHeadAction = null;
     }
     emotionActiveFlag = false;
+    emotionId = null;
+    emotionDance = false;
     emotionElapsed = 0;
     emotionDuration = 0;
   };
 
-  // Emotion owns the mixers outright: gesture at full weight, every locomotion
-  // action (body + dual-drive head) at 0 — re-asserted each frame so the
-  // caller's blend() can't creep idle back up underneath it.
+  // Emotion owns the mixers outright: its clip at full weight, every locomotion
+  // action at 0 — re-asserted each frame so the caller's blend() can't creep
+  // idle back up underneath it.
   const applyEmotionWeights = () => {
     for (const key of LOCOMOTION_KEYS) {
       const body = bodyActions[key];
@@ -457,7 +474,7 @@ export async function loadAvatar(
     if (emotionHeadAction) emotionHeadAction.weight = 1;
   };
 
-  // Snap the locomotion back to a full idle stance (used the frame the emotion
+  // Snap the locomotion back to a full idle stance (used the frame an emotion
   // finishes, so there is no bind-pose flash before the caller re-asserts idle).
   const settleIdle = () => {
     for (const key of LOCOMOTION_KEYS) {
@@ -469,26 +486,33 @@ export async function loadAvatar(
     }
   };
 
-  const startEmotionClip = (clip: THREE.AnimationClip, startAt = 0) => {
+  const startEmotionClip = (
+    clip: THREE.AnimationClip,
+    def: { startAt?: number; dance?: boolean; id?: string },
+  ) => {
+    const startAt = def.startAt ?? 0;
     const bodyClip = freezeClipRootPosition(clip, bodyScene);
-    const makeOnce = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
+    const makeAction = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
       const action = m.clipAction(c);
-      action.loop = THREE.LoopOnce;
-      action.clampWhenFinished = true; // hold the last frame until the cut
+      action.loop = def.dance ? THREE.LoopRepeat : THREE.LoopOnce;
+      // A gesture holds its last frame until the cut; a dance just loops.
+      action.clampWhenFinished = !def.dance;
       action.weight = 0;
       action.timeScale = speedFactor;
       action.play();
-      // Skip the clip's authored preamble so the one-shot starts standing.
+      // Skip the clip's authored preamble so a one-shot starts standing.
       if (startAt > 0) action.time = startAt;
       return action;
     };
-    emotionAction = makeOnce(mixer, bodyClip);
+    emotionId = def.id ?? clip.name;
+    emotionDance = !!def.dance;
+    emotionAction = makeAction(mixer, bodyClip);
     if (headMixer) {
-      // Dual-drive faces play the gesture restricted to the bones under the face
+      // Dual-drive faces play the emotion restricted to the bones under the face
       // skeleton (head nods / shakes drive the seated head too). When nothing
       // survives the restriction (e.g. a body-only clip), the face just rests.
       const headClip = restrictClipToRoot(bodyClip, faceScene);
-      if (headClip) emotionHeadAction = makeOnce(headMixer, headClip);
+      if (headClip) emotionHeadAction = makeAction(headMixer, headClip);
     }
     emotionDuration = Math.max(0.001, bodyClip.duration - startAt);
     emotionElapsed = 0;
@@ -496,7 +520,9 @@ export async function loadAvatar(
     applyEmotionWeights();
   };
 
-  const triggerEmotion = (def: MotionClipDef & { startAt?: number }) => {
+  const triggerEmotion = (
+    def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string },
+  ) => {
     const token = ++emotionToken;
     stopEmotion(); // interrupt any emotion already playing
     loadMotionClips([def], bodyScene).then((loaded) => {
@@ -506,14 +532,16 @@ export async function loadAvatar(
         console.warn(`[avatarLoader] emotion "${def.name}" has no clip.`);
         return;
       }
-      startEmotionClip(clip, def.startAt ?? 0);
+      startEmotionClip(clip, def);
     });
   };
 
-  // Count the single pass; on completion cut straight back to idle. Weights are
-  // asserted by applyEmotionWeights() at the top of advance(), not here.
+  // One-shots count the single pass and cut to idle at its end; dances loop
+  // until cancelEmotion(). Weights are asserted by applyEmotionWeights() at the
+  // top of advance(), not here.
   const advanceEmotion = (dt: number) => {
     if (!emotionActiveFlag) return;
+    if (emotionDance) return; // keep dancing until explicitly stopped
     emotionElapsed += dt * speedFactor;
     if (emotionElapsed >= emotionDuration) {
       settleIdle();
@@ -556,6 +584,17 @@ export async function loadAvatar(
     },
     isEmotionActive() {
       return emotionActiveFlag;
+    },
+    isEmotionDance() {
+      return emotionDance;
+    },
+    getEmotionId() {
+      return emotionId;
+    },
+    cancelEmotion() {
+      if (!emotionActiveFlag) return;
+      settleIdle();
+      stopEmotion();
     },
     setBodyOffset(offset) {
       bodyOffset = cloneOffset(offset);

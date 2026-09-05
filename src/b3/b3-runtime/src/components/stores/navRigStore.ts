@@ -73,6 +73,10 @@ export interface EmotionDef {
   /** Skip this many seconds of clip preamble (e.g. a "get up from the floor"
    *  intro) so the one-shot starts from the standing pose. */
   startAt?: number;
+  /** True for dances: the clip loops in place until the same button is tapped
+   *  again (or another emotion is picked), and the character keeps steering/
+   *  walking while it plays. Gestures default to one-shot then idle. */
+  dance?: boolean;
 }
 
 /** Min / max camera distance from the player (world units). */

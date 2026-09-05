@@ -717,14 +717,18 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // returns to the caller's blend (idle once the player stops moving).
     let lastEmotionNonce = 0;
     const runEmotion = (def: EmotionDef) => {
-      // Park the character: cancel click-to-move and any jump arc, then let the
-      // rig play the clip once and blend back to idle on its own.
-      path.length = 0;
-      targetReached = false;
-      targetMarker.visible = false;
-      isJumping = false;
-      jumpOffset = 0;
-      jumpVelocity = 0;
+      // Gestures park in place (clear click-to-move / any jump arc) so the pose
+      // is seen; dances deliberately do NOT — the character keeps steering /
+      // walking and any click-to-move destination stays active. The rig decides
+      // loop-vs-one-shot from `def.dance`.
+      if (!def.dance) {
+        path.length = 0;
+        targetReached = false;
+        targetMarker.visible = false;
+        isJumping = false;
+        jumpOffset = 0;
+        jumpVelocity = 0;
+      }
       avatarRig?.playEmotionOnce(def);
     };
 
@@ -825,14 +829,26 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       // the frame so the rendered pose is `surface + jumpOffset`.
       playerGroup.position.y -= jumpOffset;
 
-      // Consume a one-shot emotion request (button press) — once per nonce.
+      // Consume an emotion request (button press) — once per nonce. A dance that
+      // is already playing is a toggle: tapping its button again stops it.
       const req = useNavRigStore.getState().emotionRequest;
       if (req && avatarRig && req.nonce !== lastEmotionNonce) {
         lastEmotionNonce = req.nonce;
-        runEmotion(req.def);
+        const sameDance =
+          req.def.dance &&
+          avatarRig.isEmotionActive() &&
+          avatarRig.getEmotionId() === req.def.id;
+        if (sameDance) {
+          avatarRig.cancelEmotion(); // tap the dancing button again → stop
+        } else {
+          runEmotion(req.def);
+        }
       }
-      // While a gesture/dance plays the character parks in place (feet planted).
+      // While an emotion plays the mixers are its own. A *dance* still lets the
+      // character steer/walk (not locked); a *gesture* parks it (feet planted).
       const emotionActive = avatarRig?.isEmotionActive() ?? false;
+      const emotionDanceActive =
+        emotionActive && (avatarRig?.isEmotionDance() ?? false);
 
       // Hold-to-move: while the mouse is held, keep re-aiming the target from
       // the current pointer position (throttled to ~150ms — findPath is costly).
@@ -881,8 +897,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         movement.vector.set(0, 0, 0);
 
-        // Pause walking while pinch-zooming or a one-shot emotion is playing.
-        const canMove = !isPinching && !emotionActive;
+        // Pause walking only while pinch-zooming or a one-shot *gesture* is
+        // playing — a looping dance never locks the character in place.
+        const canMove = !isPinching && (!emotionActive || emotionDanceActive);
         if (canMove && anySteer) {
           if (forward) movement.vector.z -= 1;
           if (back) movement.vector.z += 1;
