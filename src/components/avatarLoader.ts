@@ -241,7 +241,9 @@ export interface AvatarRig {
    * it runs `isEmotionActive()` is true — callers should park the character
    * (no movement) and blend the locomotion weights toward 0. The clip's root
    * translation is frozen so the gesture can't drag the player around. */
-  playEmotionOnce(def: MotionClipDef): void;
+  /** `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
+   *  "get up from the floor" intro) so the one-shot begins standing. */
+  playEmotionOnce(def: MotionClipDef & { startAt?: number }): void;
   /** True while a one-shot emotion is ramping in, playing, or fading out. */
   isEmotionActive(): boolean;
 
@@ -446,7 +448,7 @@ export async function loadAvatar(
     emotionDuration = 0;
   };
 
-  const startEmotionClip = (clip: THREE.AnimationClip) => {
+  const startEmotionClip = (clip: THREE.AnimationClip, startAt = 0) => {
     const bodyClip = freezeClipRootPosition(clip, bodyScene);
     const makeOnce = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
       const action = m.clipAction(c);
@@ -455,6 +457,9 @@ export async function loadAvatar(
       action.weight = 0;
       action.timeScale = speedFactor;
       action.play();
+      // Skip the clip's authored preamble (e.g. the "get up from the floor"
+      // intro) so the one-shot begins from the standing pose the idle had.
+      if (startAt > 0) action.time = startAt;
       return action;
     };
     emotionAction = makeOnce(mixer, bodyClip);
@@ -465,14 +470,14 @@ export async function loadAvatar(
       const headClip = restrictClipToRoot(bodyClip, faceScene);
       if (headClip) emotionHeadAction = makeOnce(headMixer, headClip);
     }
-    emotionDuration = bodyClip.duration;
+    emotionDuration = Math.max(0.001, bodyClip.duration - startAt);
     emotionElapsed = 0;
     emotionRamp = 0;
     emotionPhase = "in";
     emotionActiveFlag = true;
   };
 
-  const triggerEmotion = (def: MotionClipDef) => {
+  const triggerEmotion = (def: MotionClipDef & { startAt?: number }) => {
     const token = ++emotionToken;
     stopEmotion(); // interrupt any gesture already playing / fading out
     loadMotionClips([def], bodyScene).then((loaded) => {
@@ -482,7 +487,7 @@ export async function loadAvatar(
         console.warn(`[avatarLoader] emotion "${def.name}" has no clip.`);
         return;
       }
-      startEmotionClip(clip);
+      startEmotionClip(clip, def.startAt ?? 0);
     });
   };
 

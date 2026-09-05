@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>pose probe</title></head>
+  <body><pre id="log"></pre>
+  <script type="module">
+    import * as THREE from "three";
+    import { parseManifest } from "/src/b3/b3-runtime/src/components/AvatarSDK/manifest.ts";
+    import { findBone } from "/src/b3/b3-runtime/src/components/AvatarSDK/rig.ts";
+    import { loadAvatar } from "/src/components/avatarLoader.ts";
+
+    window.__result = { status: "running" };
+    try {
+      const manifest = parseManifest(await (await fetch("/char/avatar.manifest.json")).json());
+      const rig = await loadAvatar({ manifest, headMode: "seat" });
+      rig.scene.visible = true; // skip the reveal gate for measurement
+
+      const head =
+        findBone(rig.scene, "mixamorig:Head") ||
+        findBone(rig.scene, "Head") ||
+        null;
+      const hips =
+        findBone(rig.scene, "mixamorig:Hips") ||
+        findBone(rig.scene, "Hips") ||
+        null;
+      const a = new THREE.Vector3();
+      const b = new THREE.Vector3();
+
+      const read = () => {
+        head.getWorldPosition(a);
+        hips.getWorldPosition(b);
+        const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        return {
+          headY: +a.y.toFixed(3),
+          hipsY: +b.y.toFixed(3),
+          tilt: +(dy / len).toFixed(3), // 1 = standing up, 0 = horizontal
+        };
+      };
+
+      const step = (dt, emo) => {
+        const clamped = Math.min(dt, 0.1);
+        const t = 1 - 0.01 ** clamped;
+        const targets = emo
+          ? { idle: 0, walk: 0, run: 0, jump: 0 }
+          : { idle: 1, walk: 0, run: 0, jump: 0 };
+        rig.blend(targets, Math.min(1, t * 5));
+        rig.advance(clamped);
+        rig.scene.updateMatrixWorld(true);
+      };
+
+      // ~2s of idle so the skeleton is standing.
+      for (let i = 0; i < 120; i++) step(1 / 60, false);
+      const base = read();
+
+      // Press the emotion, wait for load, then record tilt at set times.
+      const G = [
+        ["happy-hand-gesture", "/char/motion-2/fbx/gesture/happy-hand-gesture.fbx"],
+        ["lengthy-head-nod", "/char/motion-2/fbx/gesture/lengthy-head-nod.fbx"],
+        ["dismissing-gesture", "/char/motion-2/fbx/gesture/dismissing-gesture.fbx"],
+        ["annoyed-head-shake", "/char/motion-2/fbx/gesture/annoyed-head-shake.fbx"],
+      ];
+      const results = [];
+      const PROBE_T = [0.05, 0.1, 0.15, 0.2, 0.3];
+      for (const [name, url] of G) {
+        rig.playEmotionOnce({ name, url, startAt: 0.14 });
+        const t0 = Date.now();
+        while (!rig.isEmotionActive() && Date.now() - t0 < 4000) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
+        const trace = [];
+        let sim = 0;
+        const marks = [...PROBE_T];
+        for (let i = 0; i < 80 && sim <= 0.4; i++) {
+          step(1 / 60, rig.isEmotionActive());
+          sim += 1 / 60;
+          if (marks.length && sim >= marks[0]) {
+            marks.shift();
+            trace.push(+read().tilt.toFixed(3));
+          }
+        }
+        results.push({ name, tiltAt: trace });
+      }
+      window.__result = { status: "done", results };
+    } catch (e) {
+      window.__result = { status: "error", error: String((e && e.stack) || e) };
+    }
+    document.getElementById("log").textContent = JSON.stringify(window.__result, null, 2);
+  </script>
+  </body>
+</html>

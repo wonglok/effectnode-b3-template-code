@@ -70,6 +70,9 @@ export interface EmotionDef {
   url: string;
   /** Short button label (tooltip / a11y). */
   label: string;
+  /** Skip this many seconds of clip preamble (e.g. a "get up from the floor"
+   *  intro) so the one-shot starts from the standing pose. */
+  startAt?: number;
 }
 
 /** Min / max camera distance from the player (world units). */

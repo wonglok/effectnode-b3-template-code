@@ -12,6 +12,7 @@ import {
 } from "./useAvatarStore";
 import type { Axis, OffsetKey } from "./useAvatarStore";
 import { Chip, MONO, Section, SliderRow, SUB, ToggleRow } from "./panel";
+import { EmotionTester } from "./EmotionTester";
 
 /**
  * Stop sidebar events from bubbling to the document/window listeners owned by
@@ -114,7 +115,9 @@ function OffsetGroup({
 }
 
 export function AvatarTuning() {
-  const [tab, setTab] = useState<"character" | "motion">("character");
+  const [tab, setTab] = useState<"character" | "motion" | "emotion">(
+    "character",
+  );
 
   const name = useAvatarStore((s) => s.name);
   const assets = useAvatarStore((s) => s.assets);
@@ -163,9 +166,9 @@ export function AvatarTuning() {
       onKeyUp={stopEvent}
       onContextMenu={stopEvent}
     >
-      {/* tab switcher: character · motion */}
+      {/* tab switcher: character · motion · emotion */}
       <div className="flex shrink-0 gap-1 border-b border-studio-700 px-3 py-2">
-        {(["character", "motion"] as const).map((value) => {
+        {(["character", "motion", "emotion"] as const).map((value) => {
           const active = tab === value;
           return (
             <button
@@ -184,7 +187,9 @@ export function AvatarTuning() {
         })}
       </div>
 
-      {tab === "motion" ? (
+      {tab === "emotion" ? (
+        <EmotionTester />
+      ) : tab === "motion" ? (
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
           <Section
             title="Locomotion clips"

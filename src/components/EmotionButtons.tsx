@@ -20,24 +20,28 @@ const GESTURES: EmotionDef[] = [
     name: "happy-hand-gesture",
     label: "Happy hand gesture",
     url: "/char/motion-2/fbx/gesture/happy-hand-gesture.fbx",
+    startAt: 0.14,
   },
   {
     id: "lengthy-head-nod",
     name: "lengthy-head-nod",
     label: "Lengthy head nod",
     url: "/char/motion-2/fbx/gesture/lengthy-head-nod.fbx",
+    startAt: 0.14,
   },
   {
     id: "dismissing-gesture",
     name: "dismissing-gesture",
     label: "Dismissing gesture",
     url: "/char/motion-2/fbx/gesture/dismissing-gesture.fbx",
+    startAt: 0.14,
   },
   {
     id: "annoyed-head-shake",
     name: "annoyed-head-shake",
     label: "Annoyed head shake",
     url: "/char/motion-2/fbx/gesture/annoyed-head-shake.fbx",
+    startAt: 0.14,
   },
 ];
 
