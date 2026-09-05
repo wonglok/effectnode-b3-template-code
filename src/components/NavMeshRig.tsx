@@ -749,6 +749,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     // ------------------------------------------------------------------
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      // e.stopImmediatePropagation()
+      // e.stopPropagation()
       useNavRigStore.getState().dolly(-e.deltaY * 0.015);
     };
     gl.domElement.addEventListener("wheel", onWheel, { passive: false });

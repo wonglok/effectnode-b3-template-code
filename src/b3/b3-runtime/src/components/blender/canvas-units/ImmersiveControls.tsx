@@ -184,7 +184,8 @@ export function ImmersiveControls ({ player = new Object3D() }) {
 
 
     useEffect(() =>{
-
+        const el = gl.domElement
+        
         const handleKeyDown = (event: KeyboardEvent) => {
             switch (event.key) {
                 case "ArrowUp":
@@ -236,6 +237,8 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         };
 
         const handleWheel = (event: WheelEvent) => {
+            // event.stopPropagation()
+            // event.stopImmediatePropagation()
             spherical.radius +=  event.deltaY / 75
 
             if (spherical.radius <= MIN_ZOOM_DISTANCE) {
@@ -245,12 +248,12 @@ export function ImmersiveControls ({ player = new Object3D() }) {
                 spherical.radius += event.deltaY / 75 * -1
             }
         };
-        window.addEventListener("wheel", handleWheel);
+        el.addEventListener("wheel", handleWheel);
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
 
         return () => {
-            window.removeEventListener("wheel", handleWheel);
+            el.removeEventListener("wheel", handleWheel);
             window.removeEventListener("keydown", handleKeyDown);
             window.removeEventListener("keyup", handleKeyUp);
         }
