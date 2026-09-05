@@ -23,7 +23,7 @@ import {
   useNavRigStore,
 } from "../b3/b3-runtime/src";
 import { buildWalkableMeshesFromStore } from "./blenderWalkableMeshes";
-import { createAvatarActions, loadAvatar } from "./avatarLoader";
+import { loadAvatar, type AvatarRig } from "./avatarLoader";
 import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 import { Spherical } from "three";
 import { Vector3 } from "three";
@@ -248,26 +248,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     agentHelper.position.y = 0.9;
     playerGroup.add(agentHelper);
 
-    let characterScene: THREE.Object3D | null = null;
-    let mixer: THREE.AnimationMixer | null = null;
-    const animations: {
-      idle: THREE.AnimationAction | null;
-      walk: THREE.AnimationAction | null;
-      run: THREE.AnimationAction | null;
-      jump: THREE.AnimationAction | null;
-    } = { idle: null, walk: null, run: null, jump: null };
+    // The composed SDK avatar rides inside the player group. It owns its mixers
+    // (body + optional dual-drive head) and its idle/walk/run/jump clips — the
+    // rig only crossfades their weights and advances them via `AvatarRig`.
+    let avatarRig: AvatarRig | null = null;
 
     loadAvatar()
       .then((avatar) => {
         if (disposed) return;
-        characterScene = avatar.scene;
-        playerGroup.add(characterScene);
-        mixer = avatar.mixer;
-        const a = createAvatarActions(avatar);
-        animations.idle = a.idle;
-        animations.walk = a.walk;
-        animations.run = a.run;
-        animations.jump = a.jump;
+        avatarRig = avatar;
+        playerGroup.add(avatar.scene);
       })
       .catch((err) => {
         console.warn("[NavMeshRig] Failed to load avatar:", err);
@@ -772,7 +762,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             jumpVelocity = JUMP_SPEED;
             // Restart the jump clip at its launch frame (skipping the
             // anticipation crouch so the pose matches the takeoff).
-            if (animations.jump) animations.jump.time = JUMP_CLIP_START;
+            avatarRig?.startJumpAt(JUMP_CLIP_START);
           }
         }
 
@@ -888,34 +878,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         runWeight = 0;
         jumpWeight = 0;
       }
-      if (animations.idle) {
-        animations.idle.weight = THREE.MathUtils.lerp(
-          animations.idle.weight,
-          idleWeight,
-          t * 5,
-        );
-      }
-      if (animations.walk) {
-        animations.walk.weight = THREE.MathUtils.lerp(
-          animations.walk.weight,
-          walkWeight,
-          t * 5,
-        );
-      }
-      if (animations.run) {
-        animations.run.weight = THREE.MathUtils.lerp(
-          animations.run.weight,
-          runWeight,
-          t * 5,
-        );
-      }
-      if (animations.jump) {
-        animations.jump.weight = THREE.MathUtils.lerp(
-          animations.jump.weight,
-          jumpWeight,
-          t * 5,
-        );
-      }
+      // Crossfade the composed avatar's clips toward these targets (body + head
+      // mixers) — same lerp rate the old single-mixer engine used.
+      avatarRig?.blend(
+        { idle: idleWeight, walk: walkWeight, run: runWeight, jump: jumpWeight },
+        t * 5,
+      );
 
       // Height correction against the rendered collider meshes
       frameCounter++;
@@ -975,8 +943,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
       //
 
-      // --- mixer + helpers ---
-      if (mixer) mixer.update(clamped);
+      // --- avatar + helpers ---
+      avatarRig?.advance(clamped);
       if (navMeshHelper?.object) {
         navMeshHelper.object.visible = settings.showNavMeshHelper;
       }
@@ -1015,7 +983,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       scene.remove(targetMarker);
       targetMarker.geometry.dispose();
       targetMarker.material.dispose();
-      if (characterScene) disposeObject(characterScene);
+      if (avatarRig) {
+        avatarRig.dispose();
+        disposeObject(avatarRig.scene);
+      }
       agentHelper.geometry.dispose();
       agentHelper.material.dispose();
     };

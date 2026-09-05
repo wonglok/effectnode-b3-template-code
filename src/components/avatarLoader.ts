@@ -1,195 +1,355 @@
 "use client";
 
+/**
+ * Avatar loader for the NavMeshRig character, rebuilt on the AvatarSDK.
+ *
+ * Previously this module loaded one bespoke `/character/avatar2/avatar.glb` and
+ * bound four raw FBX clips to it by hand. It now composes a proper SDK avatar —
+ * a rigged body GLB + a face/head GLB seated on the shared mixamorig skeleton
+ * (`/char` catalog) — stands it up with the manifest's body offset, and remaps
+ * the four locomotion clips (idle / walk / run / jump) onto that skeleton.
+ *
+ * The NavMeshRig drives *where* the character is and *how fast* it moves, so it
+ * owns the group position on the navmesh. Motion clips are therefore expected to
+ * be "in place" — any root translation the FBX carries is discarded (the jump
+ * clip's hop is frozen at its standing value) so the character never drifts or
+ * hops *inside* the player group.
+ *
+ * The SDK's `<Avatar>` React component plays a single clip at a time and is the
+ * documented consumer path (see AvatarSDK/README.md). That model can't express
+ * the rig's four-way weighted blend (crossfading idle/walk/run while a jump arcs
+ * over the top), so this loader reuses the SDK's *assembly* primitives
+ * (headCompose / attachHead / motion remap) and exposes a small imperative
+ * controller the NavMeshRig's existing per-frame engine can drive unchanged.
+ */
+
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 
-const AVATAR_URL = "/character/avatar2/avatar.glb";
-const IDLE_URL = "/character/avatar2/breathing-motion.fbx";
-const WALK_URL = "/character/avatar2/walking-motion.fbx";
-const RUN_URL = "/character/avatar2/running-motion.fbx";
-const JUMP_URL = "/character/avatar2/jumping.fbx";
+import {
+  UPRIGHT_REVEAL,
+  applyBodyOffset,
+  uprightFraction,
+} from "../b3/b3-runtime/src/components/AvatarSDK/avatarPose";
+import { loadGLB } from "../b3/b3-runtime/src/components/AvatarSDK/decoders";
+import {
+  classifyHeadCompose,
+  createHeadAttachment,
+  type HeadComposePlan,
+} from "../b3/b3-runtime/src/components/AvatarSDK/headCompose";
+import { parseManifest } from "../b3/b3-runtime/src/components/AvatarSDK/manifest";
+import { loadMotionClips } from "../b3/b3-runtime/src/components/AvatarSDK/motionLibrary";
+import { findBone, restrictClipToRoot } from "../b3/b3-runtime/src/components/AvatarSDK/rig";
+import { makeDefaultManifest } from "../b3/b3-runtime/src/components/AvatarSDK/sample/charAssets";
+import type { AvatarManifest, MotionClipDef } from "../b3/b3-runtime/src/components/AvatarSDK/types";
 
-export interface AvatarAnimations {
-  idle: THREE.AnimationClip | null;
-  walk: THREE.AnimationClip | null;
-  run: THREE.AnimationClip | null;
-  jump: THREE.AnimationClip | null;
-}
+// ---------------------------------------------------------------------------
+// Look + motion configuration
+// ---------------------------------------------------------------------------
 
-export interface Avatar {
-  scene: THREE.Object3D;
-  skeleton: THREE.Skeleton | null;
-  mixer: THREE.AnimationMixer;
-  clips: AvatarAnimations;
-}
+/**
+ * HTTP source of the saved character manifest (body × face URLs, every tuned
+ * body/face offset, and the motion library). This is the served URL of the file
+ * the user edits on disk:
+ *   `public/char/avatar.manifest.json`  →  GET `/char/avatar.manifest.json`
+ * It is the sole source of the NavMeshRig character data.
+ */
+export const DEFAULT_MANIFEST_URL = "/char/avatar.manifest.json";
 
-export interface AvatarActions {
-  idle: THREE.AnimationAction | null;
-  walk: THREE.AnimationAction | null;
-  run: THREE.AnimationAction | null;
-  jump: THREE.AnimationAction | null;
-}
+/** Locomotion states the NavMeshRig blends between. */
+export type LocomotionKey = "idle" | "walk" | "run" | "jump";
+/** Target weights (0..1) per locomotion state, fed to `AvatarRig.blend`. */
+export type LocomotionTargets = Record<LocomotionKey, number>;
 
-/** Find the first SkinnedMesh skeleton in a loaded character. */
-function findSkeleton(root: THREE.Object3D): THREE.Skeleton | null {
-  let skeleton: THREE.Skeleton | null = null;
-  root.traverse((obj) => {
-    const mesh = obj as THREE.SkinnedMesh;
-    if (!skeleton && mesh.isSkinnedMesh && mesh.skeleton) {
-      skeleton = mesh.skeleton;
-    }
+/**
+ * Names the SDK's stay library (`/char/motion-2/fbx/stay`) gives each
+ * locomotion state. A manifest's `motion.clips` is searched for one of these;
+ * unknown names fall back to the same stay folder.
+ */
+const LOCOMOTION_SYNONYMS: Record<LocomotionKey, string[]> = {
+  idle: ["idle-breathing", "idle-neutral", "idle-pose"],
+  walk: ["walking", "walking2"],
+  run: ["running", "rush"],
+  jump: ["jumping", "jump"],
+};
+const STAY_FBX = "/char/motion-2/fbx/stay";
+const LOCOMOTION_KEYS: LocomotionKey[] = ["idle", "walk", "run", "jump"];
+
+/** Cadence correction for the walk clip (matches the character's navmesh speed). */
+const WALK_TIMESCALE = 1.5;
+
+/**
+ * GET the persisted character manifest over HTTP and validate it. Throws when
+ * the fetch fails or the JSON doesn't parse as a manifest — callers decide how
+ * to fall back. `cache: "no-cache"` revalidates so edits to the file on disk
+ * (e.g. switching the look in `avatar.manifest.json`) show up on the next load.
+ */
+export async function loadSavedManifest(): Promise<AvatarManifest> {
+  const res = await fetch(DEFAULT_MANIFEST_URL, {
+    method: "GET",
+    cache: "no-cache",
   });
-  return skeleton;
-}
-
-/**
- * Rebind an FBX motion clip's tracks onto the avatar's skeleton by bone name.
- * Tracks for bones the avatar doesn't have are dropped (graceful) so a
- * mismatched rig degrades to a static character instead of crashing.
- *
- * Names are compared colon-agnostically: three's FBXLoader sanitises bone
- * names (mixamo's "mixamorig:Hips" → "mixamorigHips") but the GLB skeleton
- * keeps the colon, so exact matching would drop every track.
- *
- * When `freezeRootPosition` is true the root bone's `.position` track is kept
- * but frozen at its first (standing) value. Mixamo clips carry the root
- * translation of the motion (the clip's own hop / drift); the NavMeshRig owns
- * the group's position, so the root motion is discarded — but the track must
- * still animate so the mixer never drops the hips to its bind pose and sinks
- * the model while the jump action dominates.
- */
-function retargetClip(
-  clip: THREE.AnimationClip,
-  skeleton: THREE.Skeleton,
-  freezeRootPosition = false,
-): THREE.AnimationClip {
-  // Compare names without the mixamo ":" (present in the GLB, stripped by the
-  // FBX loader) so the clips actually bind.
-  const norm = (name: string) => name.replace(/:/g, "");
-  const boneNames = new Set(skeleton.bones.map((b) => norm(b.name)));
-  const rootName = skeleton.bones[0] ? norm(skeleton.bones[0].name) : "";
-  const tracks: THREE.KeyframeTrack[] = [];
-  for (const track of clip.tracks) {
-    const parts = track.name.split(".");
-    const boneName = norm(parts[0]);
-    const property = parts[1];
-    if (!boneNames.has(boneName)) continue;
-    if (freezeRootPosition && boneName === rootName && property === "position") {
-      // Rewrite the track as a constant of its first value (the standing pose).
-      const TrackClass = track.constructor as new (
-        name: string,
-        times: ArrayLike<number>,
-        values: ArrayLike<number>,
-      ) => THREE.KeyframeTrack;
-      const size = track.getValueSize();
-      const times = track.times.slice();
-      const base = track.values.slice(0, size);
-      const values = new Float32Array(times.length * size);
-      for (let i = 0; i < times.length; i++) values.set(base, i * size);
-      tracks.push(new TrackClass(track.name, times, values));
-      continue;
-    }
-    tracks.push(track.clone());
+  if (!res.ok) {
+    throw new Error(
+      `[avatarLoader] GET ${DEFAULT_MANIFEST_URL} → HTTP ${res.status}`,
+    );
   }
-  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+  return parseManifest(await res.json());
+}
+
+/** Convenience used by `loadAvatar()`: the saved manifest from
+ *  `public/char/avatar.manifest.json` (via GET), with the SDK's sample default
+ *  male look (swat × chinese) only as a last resort when the GET/parse fails. */
+export async function fetchSavedManifest(): Promise<AvatarManifest> {
+  try {
+    return await loadSavedManifest();
+  } catch (error) {
+    console.warn(
+      "[avatarLoader] Failed to GET saved manifest — using sample default.",
+      error,
+    );
+    return makeDefaultManifest({ gender: "male" });
+  }
 }
 
 /**
- * Load the avatar GLB and bind the four FBX motion clips (idle / walk / run /
- * jump) to its skeleton. The returned mixer is ready to drive the avatar.
+ * Resolve the four locomotion clips out of a manifest's motion library.
+ * Each state maps to one stay-clip whose name matches its synonym list, with a
+ * hardcoded `/char/motion-2/fbx/stay` fallback so the rig still works even for a
+ * manifest whose motion list only carries, say, breakdance poses.
  */
-export async function loadAvatar(): Promise<Avatar> {
-  // avatar.glb is Draco-compressed — use three's decoder files from a
-  // dedicated subpath (kept separate from /draco/ used by the draco3d npm path).
-  const dracoLoader = new DRACOLoader();
-  dracoLoader.setDecoderPath("/draco/three/");
-  const gltfLoader = new GLTFLoader();
-  gltfLoader.setDRACOLoader(dracoLoader);
+function resolveLocomotionDefs(manifest: AvatarManifest): Record<LocomotionKey, MotionClipDef> {
+  const byName = new Map(manifest.motion.clips.map((c) => [c.name, c]));
+  const out = {} as Record<LocomotionKey, MotionClipDef>;
+  for (const key of LOCOMOTION_KEYS) {
+    const found = LOCOMOTION_SYNONYMS[key]
+      .map((name) => byName.get(name))
+      .find((c): c is MotionClipDef => !!c);
+    out[key] =
+      found ?? { name: LOCOMOTION_SYNONYMS[key][0], url: `${STAY_FBX}/${LOCOMOTION_SYNONYMS[key][0]}.fbx` };
+  }
+  return out;
+}
 
-  const gltf = await gltfLoader.loadAsync(AVATAR_URL);
-  const scene = gltf.scene;
-  const skeleton = findSkeleton(scene);
+// ---------------------------------------------------------------------------
+// Clip helpers
+// ---------------------------------------------------------------------------
 
-  // The avatar imports lying down (Blender Z-up convention) — stand it up.
-  // Applied to a wrapper so the rig's yaw-facing logic on the parent group is
-  // left untouched.
-  const avatarRoot = new THREE.Group();
-  avatarRoot.rotation.x = -Math.PI / 2;
-  avatarRoot.add(scene);
+/** First bone under a scene (the mixamo rig always roots at the hips). */
+function findFirstBone(root: THREE.Object3D): THREE.Bone | null {
+  let hit: THREE.Bone | null = null;
+  root.traverse((o) => {
+    const b = o as THREE.Bone;
+    if (!hit && b.isBone) hit = b;
+  });
+  return hit;
+}
 
-  const [idleObj, walkObj, runObj, jumpObj] = await Promise.all([
-    new FBXLoader().loadAsync(IDLE_URL),
-    new FBXLoader().loadAsync(WALK_URL),
-    new FBXLoader().loadAsync(RUN_URL),
-    new FBXLoader().loadAsync(JUMP_URL),
+/**
+ * The rig owns the group's position, so the *root* (hips) translation an FBX
+ * carries — the clip's own hop/drift — is discarded. This returns a copy of
+ * `clip` whose root `.position` track is frozen at its first (standing) value.
+ * The track must still animate so the mixer never drops the hips to the bind
+ * pose and sinks the model while the action is running.
+ */
+function freezeClipRootPosition(clip: THREE.AnimationClip, bodyScene: THREE.Object3D): THREE.AnimationClip {
+  const root =
+    findBone(bodyScene, "mixamorig:Hips") ??
+    findBone(bodyScene, "Hips") ??
+    findFirstBone(bodyScene);
+  if (!root) return clip;
+
+  const trackName = `${root.name}.position`;
+  const source = clip.tracks.find((t) => t.name === trackName);
+  if (!source) return clip;
+
+  const TrackClass = source.constructor as new (
+    name: string,
+    times: ArrayLike<number>,
+    values: ArrayLike<number>,
+  ) => THREE.KeyframeTrack;
+  const size = source.getValueSize();
+  const times = source.times.slice();
+  const base = source.values.slice(0, size);
+  const values = new Float32Array(times.length * size);
+  for (let i = 0; i < times.length; i++) values.set(base, i * size);
+
+  const next = clip.clone();
+  next.tracks = clip.tracks.map((t) =>
+    t.name === trackName ? new TrackClass(trackName, times, values) : t,
+  );
+  return next;
+}
+
+/** Start one looping clip on a mixer at a given weight. */
+function playClip(
+  mixer: THREE.AnimationMixer,
+  clip: THREE.AnimationClip | null,
+  weight: number,
+  timeScale = 1,
+): THREE.AnimationAction | null {
+  if (!clip) return null;
+  const action = mixer.clipAction(clip);
+  action.loop = THREE.LoopRepeat;
+  action.weight = weight;
+  action.timeScale = timeScale;
+  action.play();
+  return action;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * The composed, SDK-built avatar plus the small imperative controller the
+ * NavMeshRig drives each frame. `scene` is the group to add under the player
+ * group; the rest replace the mixer/action plumbing the rig used to own.
+ */
+export interface AvatarRig {
+  /** Composed avatar root (body + seated/dual-drive head), upright "home"
+   * applied. Add this under the player group — it carries the whole character. */
+  readonly scene: THREE.Group;
+  /** Crossfade the idle/walk/run/jump weights (on body *and* dual-drive head
+   * mixers) toward `targets`. `alpha` is the frame lerp factor. */
+  blend(targets: LocomotionTargets, alpha: number): void;
+  /** Advance all mixers, re-glue the head to the live head bone, and reveal the
+   * avatar once its skeleton stands (hides a floor-splayed clip intro). */
+  advance(delta: number): void;
+  /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
+   * matches the ballistic launch). */
+  startJumpAt(time: number): void;
+  /** Stop mixers/actions and detach the head mount. GPU disposal of `scene` is
+   * the caller's job (NavMeshRig disposes it on teardown). */
+  dispose(): void;
+}
+
+/**
+ * Build a composed avatar for the NavMeshRig. Optional `manifest` (a saved
+ * `/char` look + motion library) defaults to `fetchSavedManifest()`.
+ */
+export async function loadAvatar(manifest?: AvatarManifest): Promise<AvatarRig> {
+  const resolved = manifest ?? (await fetchSavedManifest());
+
+  // --- load + compose body & face on the shared mixamorig skeleton ----------
+  const [bodyGltf, faceGltf] = await Promise.all([
+    loadGLB(resolved.assets.body),
+    loadGLB(resolved.assets.face),
   ]);
+  const bodyScene = bodyGltf.scene;
+  const faceScene = faceGltf.scene;
 
-  const clips: AvatarAnimations = {
+  // Classify (congruent dual-drive vs cross-look seat) while both scenes are
+  // still unparented so the measurement can't be skewed by the upright rotation.
+  const plan: HeadComposePlan = classifyHeadCompose({
+    bodyScene,
+    faceScene,
+    headBone: resolved.headBone,
+    headMode: "auto",
+  });
+
+  const root = new THREE.Group();
+  root.name = "Avatar";
+  // Hidden until the reveal gate (in advance) sees the skeleton standing — a
+  // clip can open with the character floor-splayed and stand over the first
+  // seconds; that intro must never render on the navmesh.
+  root.visible = false;
+  root.add(bodyScene);
+
+  // Body mixer bound to the root: the clips are remapped onto the body bone
+  // names, which the mixer resolves through the root's subtree.
+  const mixer = new THREE.AnimationMixer(root);
+  const attachment = createHeadAttachment({ root, faceScene, plan });
+  const mount = attachment.mount;
+
+  // Stand the rig up on its motion root (+ feet sink) — the manifest's body
+  // offset is the asset-frame correction the SDK would apply to `<Avatar>`.
+  applyBodyOffset(root, resolved.body);
+  mount?.update(resolved.head);
+
+  // --- load + remap the four locomotion clips --------------------------------
+  const defs = resolveLocomotionDefs(resolved);
+  const loaded = await loadMotionClips(LOCOMOTION_KEYS.map((k) => defs[k]), bodyScene);
+
+  const clips: Record<LocomotionKey, THREE.AnimationClip | null> = {
     idle: null,
     walk: null,
     run: null,
     jump: null,
   };
-  if (skeleton) {
-    const sources = [
-      idleObj.animations[0],
-      walkObj.animations[0],
-      runObj.animations[0],
-      jumpObj.animations[0],
-    ];
-    const keys: (keyof AvatarAnimations)[] = ["idle", "walk", "run", "jump"];
-    // The jump clip carries root-bone translation (its own hop); freeze it at
-    // the standing pose so the rig's group (and camera) stays the motion.
-    const freezeRoot = [false, false, false, true];
-    sources.forEach((clip, i) => {
-      if (clip) clips[keys[i]] = retargetClip(clip, skeleton, freezeRoot[i]);
-    });
+  for (const key of LOCOMOTION_KEYS) {
+    const clip = loaded.get(defs[key].name) ?? null;
+    clips[key] = key === "jump" && clip ? freezeClipRootPosition(clip, bodyScene) : clip;
   }
+
+  // The face's own rig (dual-drive heads only — cross-look heads are rigid-glued
+  // onto the body head bone and need no clip of their own) plays the same clips
+  // restricted to the bones that actually exist under the face skeleton.
+  const headMixer = attachment.headMixer;
+  const headClips: Record<LocomotionKey, THREE.AnimationClip | null> = {
+    idle: null,
+    walk: null,
+    run: null,
+    jump: null,
+  };
+  if (headMixer) {
+    for (const key of LOCOMOTION_KEYS) {
+      headClips[key] = clips[key] ? restrictClipToRoot(clips[key]!, faceScene) : null;
+    }
+  }
+
+  // --- actions (idle at full weight; the rig crossfades from there) ----------
+  const bodyActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
+  const headActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
+  for (const key of LOCOMOTION_KEYS) {
+    bodyActions[key] = playClip(mixer, clips[key], key === "idle" ? 1 : 0, key === "walk" ? WALK_TIMESCALE : 1);
+    if (headMixer) headActions[key] = playClip(headMixer, headClips[key], key === "idle" ? 1 : 0, key === "walk" ? WALK_TIMESCALE : 1);
+  }
+
+  // --- reveal gate -----------------------------------------------------------
+  let revealed = false;
+  let hiddenElapsed = 0;
+  const maybeReveal = (dt: number) => {
+    if (revealed) return;
+    hiddenElapsed += dt;
+    // Refresh world matrices so the standing test reads live bone positions.
+    root.updateMatrixWorld(true);
+    const up = uprightFraction(plan.bone, plan.hips);
+    // No head/hips to measure → don't gate; also un-hide after ~1.6s no matter
+    // what so a clip with no obvious "stand" never leaves the avatar invisible.
+    if (up === null || up >= UPRIGHT_REVEAL || hiddenElapsed > 1.6) {
+      revealed = true;
+      root.visible = true;
+    }
+  };
 
   return {
-    scene: avatarRoot,
-    skeleton,
-    mixer: new THREE.AnimationMixer(scene),
-    clips,
+    scene: root,
+    blend(targets, alpha) {
+      for (const key of LOCOMOTION_KEYS) {
+        const body = bodyActions[key];
+        if (body) body.weight = THREE.MathUtils.lerp(body.weight, targets[key], alpha);
+        const head = headActions[key];
+        if (head) head.weight = THREE.MathUtils.lerp(head.weight, targets[key], alpha);
+      }
+    },
+    advance(delta) {
+      mixer.update(delta);
+      if (headMixer) headMixer.update(delta);
+      // Re-seat the face on the *live* head bone (both rigid glue and the
+      // dual-drive offset nudge recompute against the bone's current transform).
+      mount?.update(resolved.head);
+      maybeReveal(delta);
+    },
+    startJumpAt(time) {
+      const body = bodyActions.jump;
+      if (body) body.time = time;
+      const head = headActions.jump;
+      if (head) head.time = time;
+    },
+    dispose() {
+      mixer.stopAllAction();
+      if (headMixer) headMixer.stopAllAction();
+      attachment.dispose();
+    },
   };
-}
-
-/**
- * Create + start the idle/walk/run/jump actions on the avatar's mixer. Idle
- * starts at weight 1 with walk/run/jump at 0 — the NavMeshRig crossfades the
- * weights at runtime (jump is raised for the airborne arc).
- */
-export function createAvatarActions(avatar: Avatar): AvatarActions {
-  const { mixer, clips } = avatar;
-  const actions: AvatarActions = { idle: null, walk: null, run: null, jump: null };
-
-  if (clips.idle) {
-    actions.idle = mixer.clipAction(clips.idle);
-    actions.idle.loop = THREE.LoopRepeat;
-    actions.idle.weight = 1;
-    actions.idle.play();
-  }
-  if (clips.walk) {
-    actions.walk = mixer.clipAction(clips.walk);
-    actions.walk.loop = THREE.LoopRepeat;
-    actions.walk.weight = 0;
-    actions.walk.timeScale = 1.5;
-    actions.walk.play();
-  }
-  if (clips.run) {
-    actions.run = mixer.clipAction(clips.run);
-    actions.run.loop = THREE.LoopRepeat;
-    actions.run.weight = 0;
-    actions.run.play();
-  }
-  if (clips.jump) {
-    actions.jump = mixer.clipAction(clips.jump);
-    actions.jump.loop = THREE.LoopRepeat;
-    actions.jump.weight = 0;
-    actions.jump.play();
-  }
-
-  return actions;
 }
