@@ -997,14 +997,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         runWeight = 0;
         jumpWeight = 0;
       }
-      // A one-shot emotion owns the mixers while it plays — drop every
-      // locomotion weight so only the gesture clip contributes.
-      if (emotionActive) {
-        idleWeight = 0;
-        walkWeight = 0;
-        runWeight = 0;
-        jumpWeight = 0;
-      }
+      // Note: while a one-shot emotion plays, AvatarRig.advance() asserts the
+      // emotion at full weight and every locomotion action at 0 itself — it
+      // ignores these targets until the clip finishes and idle resumes.
       // Crossfade the composed avatar's clips toward these targets (body + head
       // mixers) — same lerp rate the old single-mixer engine used.
       avatarRig?.blend(

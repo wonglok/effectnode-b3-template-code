@@ -411,24 +411,21 @@ export async function loadAvatar(
 
   // ------------------------------------------------------------------
   // One-shot emotion (dance / gesture) — play once, then hand back to the
-  // caller's locomotion blend. NavMeshRig feeds `idle` once this reports
-  // inactive, so an emotion that started from a walk ends standing.
+  // caller's locomotion blend. No fade in/out: the moment the clip starts it
+  // owns the mixers outright at full weight (locomotion forced to 0), plays a
+  // single pass, then cuts straight back to the caller's blend (idle).
   // ------------------------------------------------------------------
   // Clips are loaded through the SDK's module FBX cache and remapped onto the
   // body skeleton exactly like the locomotion clips; the root translation is
   // frozen so a gesture can't drag the player around inside the navmesh-owned
-  // group. The action runs once (LoopOnce + clamp) with a quick fade in, holds
-  // for one full pass, fades out, then releases the mixers back to idle.
+  // group. `startAt` skips an authored preamble (e.g. the gesture library's
+  // "get up from the floor" intro) so the one-shot begins standing.
   let emotionActiveFlag = false;
   let emotionToken = 0;
-  let emotionPhase: "in" | "hold" | "out" | null = null;
-  let emotionRamp = 0; // current emotion action weight (0..1)
   let emotionElapsed = 0; // playback seconds into the current pass
   let emotionDuration = 0;
   let emotionAction: THREE.AnimationAction | null = null;
   let emotionHeadAction: THREE.AnimationAction | null = null;
-  const EMOTION_FADE_IN = 0.12;
-  const EMOTION_FADE_OUT = 0.3;
 
   const stopEmotion = () => {
     if (emotionAction) {
@@ -442,10 +439,34 @@ export async function loadAvatar(
       emotionHeadAction = null;
     }
     emotionActiveFlag = false;
-    emotionPhase = null;
-    emotionRamp = 0;
     emotionElapsed = 0;
     emotionDuration = 0;
+  };
+
+  // Emotion owns the mixers outright: gesture at full weight, every locomotion
+  // action (body + dual-drive head) at 0 — re-asserted each frame so the
+  // caller's blend() can't creep idle back up underneath it.
+  const applyEmotionWeights = () => {
+    for (const key of LOCOMOTION_KEYS) {
+      const body = bodyActions[key];
+      if (body) body.weight = 0;
+      const head = headActions[key];
+      if (head) head.weight = 0;
+    }
+    if (emotionAction) emotionAction.weight = 1;
+    if (emotionHeadAction) emotionHeadAction.weight = 1;
+  };
+
+  // Snap the locomotion back to a full idle stance (used the frame the emotion
+  // finishes, so there is no bind-pose flash before the caller re-asserts idle).
+  const settleIdle = () => {
+    for (const key of LOCOMOTION_KEYS) {
+      const value = key === "idle" ? 1 : 0;
+      const body = bodyActions[key];
+      if (body) body.weight = value;
+      const head = headActions[key];
+      if (head) head.weight = value;
+    }
   };
 
   const startEmotionClip = (clip: THREE.AnimationClip, startAt = 0) => {
@@ -453,12 +474,11 @@ export async function loadAvatar(
     const makeOnce = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
       const action = m.clipAction(c);
       action.loop = THREE.LoopOnce;
-      action.clampWhenFinished = true; // hold the last frame during the fade-out
+      action.clampWhenFinished = true; // hold the last frame until the cut
       action.weight = 0;
       action.timeScale = speedFactor;
       action.play();
-      // Skip the clip's authored preamble (e.g. the "get up from the floor"
-      // intro) so the one-shot begins from the standing pose the idle had.
+      // Skip the clip's authored preamble so the one-shot starts standing.
       if (startAt > 0) action.time = startAt;
       return action;
     };
@@ -472,14 +492,13 @@ export async function loadAvatar(
     }
     emotionDuration = Math.max(0.001, bodyClip.duration - startAt);
     emotionElapsed = 0;
-    emotionRamp = 0;
-    emotionPhase = "in";
     emotionActiveFlag = true;
+    applyEmotionWeights();
   };
 
   const triggerEmotion = (def: MotionClipDef & { startAt?: number }) => {
     const token = ++emotionToken;
-    stopEmotion(); // interrupt any gesture already playing / fading out
+    stopEmotion(); // interrupt any emotion already playing
     loadMotionClips([def], bodyScene).then((loaded) => {
       if (token !== emotionToken) return; // superseded by a newer request
       const clip = loaded.get(def.name);
@@ -491,28 +510,15 @@ export async function loadAvatar(
     });
   };
 
-  // Advance the emotion phase/weights once per frame (dt is already 0 while the
-  // character is paused, so an emotion freezes with everything else).
+  // Count the single pass; on completion cut straight back to idle. Weights are
+  // asserted by applyEmotionWeights() at the top of advance(), not here.
   const advanceEmotion = (dt: number) => {
     if (!emotionActiveFlag) return;
-    if (emotionPhase === "in") {
-      emotionRamp = Math.min(1, emotionRamp + dt / EMOTION_FADE_IN);
-      if (emotionRamp >= 1) emotionPhase = "hold";
-    } else if (emotionPhase === "out") {
-      emotionRamp = Math.max(0, emotionRamp - dt / EMOTION_FADE_OUT);
-      if (emotionRamp <= 0) {
-        stopEmotion();
-        return;
-      }
-    }
-    // "hold" — count the pass (mixer advances the action at speedFactor×);
-    // once it completes a full play, begin the fade back to idle.
     emotionElapsed += dt * speedFactor;
-    if (emotionPhase === "hold" && emotionElapsed >= emotionDuration) {
-      emotionPhase = "out";
+    if (emotionElapsed >= emotionDuration) {
+      settleIdle();
+      stopEmotion();
     }
-    if (emotionAction) emotionAction.weight = emotionRamp;
-    if (emotionHeadAction) emotionHeadAction.weight = emotionRamp;
   };
 
   return {
@@ -527,6 +533,10 @@ export async function loadAvatar(
     },
     advance(delta) {
       const dt = paused ? 0 : delta;
+      // While an emotion is active it owns the mixers: force the gesture to
+      // full weight and every locomotion action to 0 before this update, so
+      // the caller's blend can't leak idle in underneath.
+      if (emotionActiveFlag) applyEmotionWeights();
       mixer.update(dt);
       if (headMixer) headMixer.update(dt);
       advanceEmotion(dt);
