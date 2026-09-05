@@ -4,15 +4,15 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/army.glb",
+    "body": "/char/male/body/swat.glb",
     "face": "/char/male/face/mexican2.glb"
   },
   "headBone": null,
   "head": {
     "position": [
       0,
-      0.005,
-      -0.005
+      0,
+      0
     ],
     "rotation": [
       0,
@@ -20,9 +20,9 @@
       0
     ],
     "scale": [
-      0.95,
-      0.95,
-      0.95
+      0.9,
+      0.9,
+      0.9
     ]
   },
   "body": {
@@ -3202,7 +3202,7 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/army.glb",
+      "body": "/char/male/body/swat.glb",
       "face": "/char/male/face/mexican2.glb"
     },
     "female": {
