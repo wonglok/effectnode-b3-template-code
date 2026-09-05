@@ -61,6 +61,10 @@ export const CanvasGPU: any = ({
               depth: false,
               stencil: false,
               multiview: true,
+
+              requiredLimits: {
+                maxColorAttachments: 64,
+              },
             });
 
             await renderer.init();
