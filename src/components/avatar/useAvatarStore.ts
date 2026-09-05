@@ -871,9 +871,15 @@ export async function hydrateAvatarStore(): Promise<void> {
   await restoreManifestExportDir()
 }
 
-/** Manifest + rig-clip snapshot the NavMeshRig consumes to build its avatar. */
+/** Manifest + rig-clip snapshot the NavMeshRig consumes to build its avatar.
+ * Heads are always seat-glued (`headMode: 'seat'`) for the walking rig — the
+ * composed face rides rigidly on the live head bone instead of dual-driving. */
 export function avatarConfigSnapshot(): AvatarConfig {
   const state = useAvatarStore.getState()
-  return { manifest: toManifest(state), clips: state.rigClips }
+  return {
+    manifest: toManifest(state),
+    clips: state.rigClips,
+    headMode: 'seat',
+  }
 }
 

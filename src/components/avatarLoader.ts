@@ -218,6 +218,9 @@ export interface AvatarConfig {
   manifest: AvatarManifest;
   /** Optional per-state stay-clip overrides (what the Motion tab retunes). */
   clips?: Partial<Record<LocomotionKey, MotionClipDef>>;
+  /** Rigged-head composition: `'auto'` (geometry decides) or `'seat'` (force
+   * seat-glue at authored size, no dual-drive). Defaults to `'auto'`. */
+  headMode?: "auto" | "seat";
 }
 
 export interface AvatarRig {
@@ -290,7 +293,7 @@ export async function loadAvatar(
     bodyScene,
     faceScene,
     headBone: manifest.headBone,
-    headMode: "auto",
+    headMode: cfg?.headMode ?? "auto",
   });
 
   const root = new THREE.Group();
