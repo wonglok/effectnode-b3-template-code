@@ -14,6 +14,14 @@ import type { Axis, OffsetKey } from "./useAvatarStore";
 import { Chip, MONO, Section, SliderRow, SUB, ToggleRow } from "./panel";
 
 /**
+ * Stop sidebar events from bubbling to the document/window listeners owned by
+ * the 3D rig (NavMeshRig + ImmersiveControls attach pointer / wheel / touch /
+ * key handlers globally). Without this, dragging a slider or typing in a field
+ * would also aim the walker, zoom the camera, or move the character.
+ */
+const stopEvent = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+/**
  * Avatar-tuning sidebar for the DevPage nav-rig: two tabs only (Character +
  * Motion — no stage lighting). Every control writes straight into the avatar
  * store, which NavMeshRig consumes live, so the walker retunes in real time.
@@ -141,7 +149,20 @@ export function AvatarTuning() {
   }, [notice, setNotice]);
 
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden bg-studio-900 text-ice-200">
+    <aside
+      className="flex h-full w-full flex-col overflow-hidden bg-studio-900 text-ice-200"
+      onPointerDown={stopEvent}
+      onPointerMove={stopEvent}
+      onPointerUp={stopEvent}
+      onPointerCancel={stopEvent}
+      onWheel={stopEvent}
+      onTouchStart={stopEvent}
+      onTouchMove={stopEvent}
+      onTouchEnd={stopEvent}
+      onKeyDown={stopEvent}
+      onKeyUp={stopEvent}
+      onContextMenu={stopEvent}
+    >
       {/* tab switcher: character · motion */}
       <div className="flex shrink-0 gap-1 border-b border-studio-700 px-3 py-2">
         {(["character", "motion"] as const).map((value) => {

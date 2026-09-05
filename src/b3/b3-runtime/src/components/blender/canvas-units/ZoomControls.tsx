@@ -60,8 +60,6 @@ export function ZoomControls() {
     const el = gl.domElement;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      // e.stopImmediatePropagation()
-      // e.stopPropagation()
       dolly(-e.deltaY * 0.015);
     };
     el.addEventListener("wheel", onWheel, { passive: false });

@@ -237,8 +237,6 @@ export function ImmersiveControls ({ player = new Object3D() }) {
         };
 
         const handleWheel = (event: WheelEvent) => {
-            // event.stopPropagation()
-            // event.stopImmediatePropagation()
             spherical.radius +=  event.deltaY / 75
 
             if (spherical.radius <= MIN_ZOOM_DISTANCE) {
