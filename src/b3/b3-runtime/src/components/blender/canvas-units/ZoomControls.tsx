@@ -37,7 +37,7 @@ export function ZoomControls() {
   const lastPinchDist = useRef<number | null>(null);
 
   const initPosition = useMemo(() =>{
-    return new THREE.Vector3(0,15,15)
+    return new THREE.Vector3(0,1.5,1.5)
   }, [])
   const playerPosition = useMemo(() =>{
     return new THREE.Vector3(0,0,0)
