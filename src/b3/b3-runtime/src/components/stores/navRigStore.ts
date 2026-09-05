@@ -43,8 +43,8 @@ interface NavRigState {
 }
 
 /** Min / max camera distance from the player (world units). */
-export const MIN_CAMERA_DISTANCE = 0.5;
-export const MAX_CAMERA_DISTANCE = 100;
+export const MIN_CAMERA_DISTANCE = 1.0;
+export const MAX_CAMERA_DISTANCE = 200;
 
 export const useNavRigStore = create<NavRigState>((set, get) => ({
   settings: {
