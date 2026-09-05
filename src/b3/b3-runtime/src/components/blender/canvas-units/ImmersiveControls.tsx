@@ -4,7 +4,7 @@ import { Object3D, Vector3 } from "three";
 
 // Zoom orbit radius limits (world units from the player). 0.5 lets the camera
 // get very close to the character.
-const MIN_ZOOM_DISTANCE = 0.5;
+const MIN_ZOOM_DISTANCE = 1.25;
 const MAX_ZOOM_DISTANCE = 250;
 // The camera orbits / looks at a focus point this high above the player's feet —
 // roughly the character's centre, so zooming in keeps the body framed.

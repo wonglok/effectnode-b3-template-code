@@ -76,7 +76,7 @@ export interface EmotionDef {
 }
 
 /** Min / max camera distance from the player (world units). */
-export const MIN_CAMERA_DISTANCE = 2.0;
+export const MIN_CAMERA_DISTANCE = 0.5;
 export const MAX_CAMERA_DISTANCE = 200;
 
 export const useNavRigStore = create<NavRigState>((set, get) => ({
