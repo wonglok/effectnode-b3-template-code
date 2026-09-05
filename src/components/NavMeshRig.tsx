@@ -33,7 +33,7 @@ import {
   avatarConfigSnapshot,
   useAvatarStore,
 } from "./avatar/useAvatarStore";
-import { ImmersiveControls } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
+import { ImmersiveControls, CAMERA_INITIAL_RADIUS } from "../b3/b3-runtime/src/components/blender/canvas-units/ImmersiveControls";
 import { Spherical } from "three";
 import { Vector3 } from "three";
 import { useGameGlobal } from "./useGameGlobal";
@@ -238,7 +238,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
     const playerGroup = new THREE.Group();
     playerGroup.name = "player"; // ZoomControls follows this group
     playerGroup.position.set(0, 2, 0);
-    playerGroup.userData.spherical = new Spherical(10, 0, 0) 
+    playerGroup.userData.spherical = new Spherical(CAMERA_INITIAL_RADIUS, 0, 0)
     scene.add(playerGroup);
 
     useGameGlobal.setState({

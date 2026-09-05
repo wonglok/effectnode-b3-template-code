@@ -37,7 +37,9 @@ export function ZoomControls() {
   const lastPinchDist = useRef<number | null>(null);
 
   const initPosition = useMemo(() =>{
-    return new THREE.Vector3(0,1.5,1.5)
+    // Initial camera = player position + (0, 1.3, 2). Keep in sync with
+    // ImmersiveControls' CAMERA_INITIAL_OFFSET.
+    return new THREE.Vector3(0,1.3,2)
   }, [])
   const playerPosition = useMemo(() =>{
     return new THREE.Vector3(0,0,0)

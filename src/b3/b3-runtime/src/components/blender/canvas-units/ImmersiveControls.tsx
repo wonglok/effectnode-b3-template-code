@@ -9,6 +9,20 @@ const MAX_ZOOM_DISTANCE = 250;
 // The camera orbits / looks at a focus point this high above the player's feet —
 // roughly the character's centre, so zooming in keeps the body framed.
 const CAMERA_TARGET_Y = 0.85;
+// The camera's resting position = the player's position + this offset. Keep in
+// sync with ZoomControls' initPosition.
+export const CAMERA_INITIAL_OFFSET = Object.freeze({ x: 0, y: 1.3, z: 2 });
+// The orbit is measured from the focus point (player.y + CAMERA_TARGET_Y), so
+// the orbit vector that lands the camera at player + CAMERA_INITIAL_OFFSET is
+// that offset minus the focus lift (vertical = y - 0.85, horizontal = z).
+const INITIAL_ORBIT_VERT = CAMERA_INITIAL_OFFSET.y - CAMERA_TARGET_Y; // 0.45
+export const CAMERA_INITIAL_RADIUS = Math.hypot(
+  CAMERA_INITIAL_OFFSET.z,
+  INITIAL_ORBIT_VERT,
+); // ≈ 2.05
+// Starting polar tilt (degrees from +Y) that reproduces the orbit vector above.
+const INITIAL_POLAR_DEG =
+  (Math.atan2(CAMERA_INITIAL_OFFSET.z, INITIAL_ORBIT_VERT) * 180) / Math.PI; // ≈ 77.3
 
 export function ImmersiveControls ({ player = new Object3D() }) {
     const camera = useThree((r) => {
@@ -30,7 +44,8 @@ export function ImmersiveControls ({ player = new Object3D() }) {
     // Reused focus point the camera orbits around and looks at each frame.
     const focus = useMemo(() => new Vector3(), [])
 
-    const polarAngle = useRef(30)
+    // Start tilted so the camera sits at player + CAMERA_INITIAL_OFFSET.
+    const polarAngle = useRef(INITIAL_POLAR_DEG)
     const azAngle = useRef(0)
 
     // --- Joystick (nipplejs) -------------------------------------------
