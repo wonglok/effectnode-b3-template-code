@@ -12,7 +12,7 @@ import { useRef } from "react";
 
 declare module "@react-three/fiber" {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
+  interface ThreeElemente extends ThreeToJSXElements<typeof THREE> {}
 }
 
 extend(THREE as any);
