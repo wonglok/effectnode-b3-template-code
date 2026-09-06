@@ -11,15 +11,15 @@ export function AppRouter() {
             <Route path='/dev' element={<DevPage />} />
             <Route path='/preview' element={<PreviewPage />} />
             <Route path='/production' element={<ProductionPage />} />
+            <Route
+                path='/deployment'
+                element={
+                    <>
+                        <ProductionPage></ProductionPage>
+                    </>
+                }
+            />
             <Route path='*' element={<HomePage />} />
         </Routes>
     )
 }
-
-//
-//
-//
-
-//
-//
-//
