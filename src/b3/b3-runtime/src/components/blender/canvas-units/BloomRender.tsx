@@ -45,10 +45,10 @@ export function BloomRender({ params }: BloomRenderProps) {
 
     // // MRT: output color + emissive (RGB from material, alpha from output)
     const mrtNode = mrt({
-      output: output,
-      emissive: emissive,
+        output: output,
+        emissive: vec4( emissive, output.a )
     });
-    // mrtNode.setBlendMode("emissive", new THREE.BlendMode(THREE.NormalBlending));
+    mrtNode.setBlendMode("emissive", new THREE.BlendMode(THREE.NormalBlending));
     scenePass.setMRT(mrtNode);
 
     // Extract passes
