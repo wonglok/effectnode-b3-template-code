@@ -109,6 +109,17 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
     }, [texData, texData.size, texData.values()])
 
+    const reflection = useMemo(() => {
+        const reflection = reflector({ resolutionScale: 1.0, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
+        reflection.target.rotateX(-Math.PI / 2)
+
+        return reflection
+    }, [])
+
+    useFrame(() => {
+        reflection.target.position.copy(playerGroup.position)
+    })
+
     useEffect(() => {
         if (!playerGroup) {
             return
@@ -122,6 +133,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         let onClean = (v: () => void) => {
             cleans.push(v)
         }
+        //
         let onLoop = (fnc: () => void) => {
             let tskKey = '_' + Math.random()
             tasks[tskKey] = fnc
@@ -143,6 +155,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             if (done.get(name) === sig) {
                 return
             }
+            scene.add(reflection.target)
+            onClean(() => {
+                reflection.target.removeFromParent()
+            })
 
             let collider = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
@@ -158,15 +174,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial = collider.material
                 }
-                const reflection = reflector({ resolutionScale: 1.0, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
-                reflection.target.rotateX(-Math.PI / 2)
-                scene.add(reflection.target)
-                onLoop(() => {
-                    reflection.target.position.copy(playerGroup.position)
-                })
-                onClean(() => {
-                    reflection.target.removeFromParent()
-                })
 
                 roughnessMap.wrapS = RepeatWrapping
                 roughnessMap.wrapT = RepeatWrapping
@@ -192,13 +199,18 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         )
                             .mul(honeyCombThinBase)
                             .mul(honeyCombPulse.oneMinus())
-                            .mul(2.5),
+                            .mul(20.5),
                         1.0,
                     )
                 })()
 
                 floorMaterial.colorNode = Fn(() => {
-                    const reflectionNode = reflection.rgb
+                    //
+
+                    const reflectionNode = textureBicubic(
+                        reflection,
+                        pulseMotion.mul(roughnessTexture.r.oneMinus()),
+                    ).rgb
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
