@@ -182,7 +182,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 const roughnessTexture = texture(roughnessMap, uv())
 
                 const floorMaterial = new MeshPhysicalNodeMaterial()
-                floorMaterial.metalnessNode = roughnessTexture.r
+                floorMaterial.metalnessNode = roughnessTexture.r.oneMinus()
+                floorMaterial.roughnessNode = roughnessTexture.r
+
                 floorMaterial.transparent = true
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
@@ -200,7 +202,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                             .mul(honeyCombThinBase)
                             .mul(honeyCombPulse.oneMinus())
                             .mul(20.5),
-                        1.0,
+                        float(10.0),
                     )
                 })()
 
