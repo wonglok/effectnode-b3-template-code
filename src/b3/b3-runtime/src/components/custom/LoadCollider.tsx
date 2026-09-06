@@ -117,7 +117,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     }, [])
 
     useFrame(() => {
-        reflection.target.position.copy(playerGroup.position)
+        if (playerGroup) {
+            reflection?.target?.position?.copy(playerGroup?.position)
+        }
     })
 
     useEffect(() => {
