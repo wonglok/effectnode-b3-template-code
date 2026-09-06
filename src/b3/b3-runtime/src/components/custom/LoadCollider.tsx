@@ -158,7 +158,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial = collider.material
                 }
-                const reflection = reflector({ resolutionScale: 0.5, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
+                const reflection = reflector({ resolutionScale: 1.0, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
                 reflection.target.rotateX(-Math.PI / 2)
                 scene.add(reflection.target)
                 onLoop(() => {
@@ -175,34 +175,36 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 const roughnessTexture = texture(roughnessMap, uv())
 
                 const floorMaterial = new MeshPhysicalNodeMaterial()
-                floorMaterial.opacityNode = roughnessTexture.r
+                floorMaterial.metalnessNode = roughnessTexture.r
                 floorMaterial.transparent = true
-
-                floorMaterial.roughnessNode = roughnessTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
                 const pulseMotion = circlePulse(uPlayerPosition, float(2.3333), float(10.0))
+                const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
-                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
                     return vec4(
-                        vec3(color('#ffff00').rgb).mul(honeyCombThinBase).mul(honeyCombPulse.oneMinus()).mul(2.5),
+                        vec3(
+                            //
+                            color('#ffff00').rgb,
+                        )
+                            .mul(honeyCombThinBase)
+                            .mul(honeyCombPulse.oneMinus())
+                            .mul(2.5),
                         1.0,
                     )
                 })()
 
                 floorMaterial.colorNode = Fn(() => {
-                    const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus())
+                    const reflectionNode = reflection.rgb
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
                     const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
 
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
-
-                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
 
                     done.set(name, `${colliderInfo?.version}${JSON.stringify([objects])}`)
 
