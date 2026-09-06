@@ -227,8 +227,8 @@ export interface AvatarRig {
      *     steering/walking while it plays (no park).
      * Interrupts any emotion currently playing. While it runs `isEmotionActive()`
      * is true — the emotion owns the mixers (locomotion weight forced to 0). The
-     * clip's root translation is frozen so it can't drag the player around.
-     * `def.startAt` skips an authored preamble (e.g. the gesture library's
+     * clip plays as-authored: its root translation is preserved, so the player is
+     * not locked in place. `def.startAt` skips an authored preamble (e.g. the gesture library's
      * ~0.14s "get up from the floor" intro) so a one-shot begins standing. */
     playEmotionOnce(def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }): void
     /** True while an emotion is playing. */
@@ -405,9 +405,9 @@ export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promis
     // a *dance* loops in place until cancelEmotion() (tap again / pick another).
     // ------------------------------------------------------------------
     // Clips load through the SDK's module FBX cache and are remapped onto the
-    // body skeleton; the root translation is frozen so a clip can't drag the
-    // player around inside the navmesh-owned group — moving around is done by
-    // steering the player group, so a dancing character can still be walked.
+    // body skeleton. Each clip plays as-authored: its root translation is left
+    // intact, so the character is not locked in place and an emotion with real
+    // root motion can carry it (e.g. a dance with steps).
     // `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
     // "get up from the floor" intro) so a one-shot begins standing.
     let emotionActiveFlag = false
@@ -465,7 +465,7 @@ export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promis
 
     const startEmotionClip = (clip: THREE.AnimationClip, def: { startAt?: number; dance?: boolean; id?: string }) => {
         const startAt = def.startAt ?? 0
-        const bodyClip = freezeClipRootPosition(clip, bodyScene)
+        const bodyClip = clip
         const makeAction = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
             const action = m.clipAction(c)
             action.loop = def.dance ? THREE.LoopRepeat : THREE.LoopOnce

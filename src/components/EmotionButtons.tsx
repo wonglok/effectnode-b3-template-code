@@ -39,8 +39,8 @@ const GESTURES: EmotionDef[] = [
     {
         id: 'annoyed-head-shake',
         name: 'annoyed-head-shake',
-        label: 'Annoyed head shake',
-        url: '/char/motion-2/fbx/gesture/annoyed-head-shake.fbx',
+        label: 'Break dance',
+        url: '/char/motion-2/fbx/breakdance/breakdance-freeze-var-2.fbx',
         startAt: 0.14,
     },
 ]
