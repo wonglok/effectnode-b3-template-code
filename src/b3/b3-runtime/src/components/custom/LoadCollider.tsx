@@ -182,7 +182,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
 
                 floorMaterial.colorNode = Fn(() => {
-                    const reflectionNode = textureBicubic(reflection, roughnessTexture.r)
+                    const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus())
 
                     const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0))
 
