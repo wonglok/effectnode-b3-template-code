@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { Mesh, RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from 'three'
+import { Mesh, RepeatWrapping, SRGBColorSpace } from 'three'
 import {
     Fn,
     vec2,
@@ -132,11 +132,12 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
         let run = async () => {
             const name = 'collider'
-            let colliderInfo = (objects.find((r: any) => {
+            let colliderInfo = objects.find((r: any) => {
                 return r.name === name
-            }) as any) || { version: '0' }
+            }) as any
 
-            let getSig = () => `${colliderInfo?.version}${JSON.stringify([objects, roughnessMap.uuid])}`
+            let getSig = () => `${JSON.stringify(colliderInfo?.version)}${JSON.stringify([objects, roughnessMap.uuid])}`
+
             let sig = getSig()
 
             if (done.get(name) === sig) {
@@ -157,7 +158,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial = collider.material
                 }
-                const reflection = reflector({ resolutionScale: 1.0, bounces: false, generateMipmaps: false }) // 0.5 is half of the rendering view
+                const reflection = reflector({ resolutionScale: 0.5, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
                 reflection.target.rotateX(-Math.PI / 2)
                 scene.add(reflection.target)
                 onLoop(() => {
@@ -174,12 +175,23 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 const roughnessTexture = texture(roughnessMap, uv())
 
                 const floorMaterial = new MeshPhysicalNodeMaterial()
-                floorMaterial.opacityNode = roughnessTexture.r.oneMinus()
+                floorMaterial.opacityNode = roughnessTexture.r
                 floorMaterial.transparent = true
 
                 floorMaterial.roughnessNode = roughnessTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
+
+                floorMaterial.emissiveNode = Fn(() => {
+                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
+                    const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0))
+                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
+
+                    return vec4(
+                        vec3(color('#f34f4c').rgb.mul(2.5)).mul(honeyCombThinBase).mul(honeyCombPulse.oneMinus()),
+                        1.0,
+                    )
+                })()
 
                 floorMaterial.colorNode = Fn(() => {
                     const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus())
@@ -200,7 +212,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         //
                         reflectionNode.rgb.add(
                             //
-                            honeyCombThinBase.mul(noiseUV.mul(0.25)).mul(color('#f0ff4d')),
+                            honeyCombThinBase.mul(noiseUV.mul(0.5)).mul(color('#e9f84a')),
                         ),
                         float(
                             //
@@ -263,7 +275,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             if (edge) {
                 const edgeMat = new MeshPhysicalNodeMaterial()
                 edgeMat.emissiveNode = Fn(() => {
-                    return vec3(1.0, 1.0, 0.0).mul(0.15)
+                    return vec3(1.0, 1.0, 0.0).mul(0.25)
                 })()
 
                 onClean(() => {
