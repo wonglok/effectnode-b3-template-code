@@ -37,8 +37,8 @@ const GESTURES: EmotionDef[] = [
         startAt: 0.14,
     },
     {
-        id: 'annoyed-head-shake',
-        name: 'annoyed-head-shake',
+        id: 'break-dance',
+        name: 'break-dance',
         label: 'Break dance',
         url: '/char/motion-2/fbx/breakdance/breakdance-freeze-var-2.fbx',
         startAt: 0.14,
@@ -101,7 +101,7 @@ function EmotionIcon({ id, className }: { id: string; className?: string }) {
                 </>
             )}
 
-            {(id === 'lengthy-head-nod' || id === 'annoyed-head-shake') && (
+            {(id === 'lengthy-head-nod' || id === 'break-dance') && (
                 <>
                     {/* head + neck + shoulders */}
                     <circle cx='10.5' cy='8.5' r='4.6' />
@@ -112,7 +112,7 @@ function EmotionIcon({ id, className }: { id: string; className?: string }) {
                     <path d='M11 7.7h1.2' />
                     <path
                         d={
-                            id === 'annoyed-head-shake'
+                            id === 'break-dance'
                                 ? 'M8.2 10.7h4.6' // straight "meh" line while shaking
                                 : 'M8.6 10.2c.6.7 1.5.9 2.4.6 1.2-.4 2.1-.1 2.7.6' // soft smile (nod)
                         }
@@ -128,7 +128,7 @@ function EmotionIcon({ id, className }: { id: string; className?: string }) {
                 </>
             )}
 
-            {id === 'annoyed-head-shake' && (
+            {id === 'break-dance' && (
                 <>
                     {/* annoyed brows */}
                     <path d='M6.9 6.9l1.6.3' />

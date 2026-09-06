@@ -1,0 +1,7 @@
+{
+    "watch": ["src/effectnode-intelligence/src/"],
+    "ext": "ts",
+    "exec": "node --import tsx src/effectnode-intelligence/src/server.ts",
+    "signal": "SIGTERM",
+    "delay": "500"
+}

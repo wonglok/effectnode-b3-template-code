@@ -85,7 +85,7 @@ export function AvatarPicker() {
                 onClick={() => setOpen(true)}
                 aria-label='Customize avatar'
                 title='Customize avatar'
-                className='pointer-events-auto absolute right-4 top-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-tiffany-400/30 bg-studio-900/80 text-tiffany-300 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm transition hover:scale-105 hover:border-tiffany-300 hover:text-white active:scale-95'
+                className='pointer-events-auto absolute left-4 top-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-tiffany-400/30 bg-studio-900/80 text-tiffany-300 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm transition hover:scale-105 hover:border-tiffany-300 hover:text-white active:scale-95'
             >
                 <PersonIcon className='h-6 w-6' />
             </button>
