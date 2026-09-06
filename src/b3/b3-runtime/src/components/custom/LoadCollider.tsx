@@ -268,54 +268,5 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         }
     }, [playerGroup, objects, roughnessMap])
 
-    useEffect(() => {
-        let cleans: (() => void)[] = []
-        let onClean = (v: () => void) => {
-            cleans.push(v)
-        }
-        let run = async () => {
-            const name = 'edge'
-
-            let colliderInfo = objects.find((r: any) => {
-                return r.name === name
-            }) as any
-
-            if (done.get(name) === colliderInfo?.version) {
-                return
-            }
-
-            let edge = await new Promise<Mesh>((resolve) => {
-                let interval = setInterval(() => {
-                    let obj = scene.getObjectByName(name)
-                    if (obj) {
-                        clearInterval(interval)
-                        resolve(obj as Mesh)
-                    }
-                }, 1)
-            })
-
-            if (edge) {
-                const edgeMat = new MeshPhysicalNodeMaterial()
-                edgeMat.emissiveNode = Fn(() => {
-                    return vec3(1.0, 1.0, 0.0).mul(0.25)
-                })()
-
-                onClean(() => {
-                    edgeMat.dispose()
-                })
-
-                edge.material = edgeMat
-                done.set(name, colliderInfo?.version)
-            }
-        }
-
-        run()
-        return () => {
-            cleans.forEach((cl) => {
-                cl()
-            })
-        }
-    }, [objects, texData])
-
     return <></>
 }
