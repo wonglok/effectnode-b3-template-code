@@ -12,10 +12,72 @@ export const _geoMaterialCache = new Map<
   { geometry: THREE.BufferGeometry; material: THREE.MeshPhysicalNodeMaterial }
 >();
 
-/** Three.js Textures built from encoded image data via TextureLoader, keyed by `name:kind`. */
+/** Three.js Textures built from encoded image data, keyed by `name:kind`. */
 const _textureCache = new Map<string, THREE.Texture>();
 
 export type TexKind = "color" | "noncolor";
+
+/** Round a dimension to the nearest power of two. */
+function nearestPOT(value: number): number {
+  return Math.pow(2, Math.round(Math.log2(value)));
+}
+
+/**
+ * Decode encoded PNG / JPEG / WebP bytes, then draw them onto an offscreen
+ * canvas resized to the nearest power of two — mirroring `loadAndResizePOTTexture`.
+ * POT textures keep mipmap generation + RepeatWrapping working on renderers that
+ * require them (WebGL1 / some GPU stacks) and shrink large images before GPU
+ * upload. Sources that are already POT are returned untouched, avoiding a lossy
+ * resample and an extra canvas allocation.
+ *
+ * Decoding goes through the browser's native decoder via a Blob URL, so the
+ * resulting image data (and sRGB handling) matches the previous TextureLoader
+ * path.
+ */
+function decodeImageToPOT(
+  bytes: ArrayBuffer,
+  mime: string,
+): Promise<HTMLImageElement | HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+
+      const width = nearestPOT(image.width);
+      const height = nearestPOT(image.height);
+      if (width === image.width && height === image.height) {
+        resolve(image);
+        return;
+      }
+
+      // Scale the decoded image onto a POT-sized offscreen canvas.
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(
+          new Error("getOrCreateTexture: could not get a 2D canvas context."),
+        );
+        return;
+      }
+      ctx.drawImage(image, 0, 0, width, height);
+      resolve(canvas);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(
+        new Error(`getOrCreateTexture: failed to decode image bytes (${mime}).`),
+      );
+    };
+
+    image.src = url;
+  });
+}
 
 export function getOrCreateTexture(
   name: string,
@@ -29,11 +91,12 @@ export function getOrCreateTexture(
   const texEntry = texData.get(name);
   if (!texEntry) return null;
 
-  // Create a Blob URL from the encoded image bytes so the browser's native
-  // PNG / JPEG / WebP decoder handles the sRGB → linear conversion correctly.
-  const blob = new File([texEntry.bytes], "image.png", { type: texEntry.mime });
-  const url = URL.createObjectURL(blob);
-  const texture = new THREE.TextureLoader().load(url);
+  // Reserve the texture immediately: callers build materials and cache keys
+  // from its stable uuid right away, and the POT-resized image is published
+  // onto it once the native decode finishes (same async contract as the old
+  // TextureLoader call).
+  const texture = new THREE.Texture();
+  _textureCache.set(cacheKey, texture);
 
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
@@ -41,7 +104,15 @@ export function getOrCreateTexture(
   texture.colorSpace =
     kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
 
-  _textureCache.set(cacheKey, texture);
+  decodeImageToPOT(texEntry.bytes, texEntry.mime)
+    .then((image) => {
+      texture.image = image;
+      texture.needsUpdate = true;
+    })
+    .catch((error) => {
+      console.error(`getOrCreateTexture: failed to load texture "${name}"`, error);
+    });
+
   return texture;
 }
 

@@ -1,6 +1,6 @@
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
-import { Mesh,  RepeatWrapping, SRGBColorSpace, TextureLoader } from "three";
+import { Mesh,  RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from "three";
 import { Fn, vec2 , mx_noise_float, vec4, texture, uv, textureBicubic, reflector, time, vec3, float, select, lessThan, abs, max, step, uniform, color } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, Node } from "three/webgpu";
 import { useGameGlobal } from "../../../../../components/useGameGlobal";
@@ -8,6 +8,7 @@ import { useGameGlobal } from "../../../../../components/useGameGlobal";
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 //
 import {  positionWorld,  distance,  smoothstep, mod } from 'three/tsl';
+import { getOrCreateTexture } from "../utils/meshBuilder";
 
 // Define the TSL function taking a character position vector, speed, and max radius
 const circlePulse: (a: Node<"vec3">, b : Node<"float">,c: Node<"float">) => Node<"float"> = Fn(([characterPos, speed, maxRadius]: any) => {
@@ -73,14 +74,17 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
 
     const playerGroup = useGameGlobal((r)=>r.playerGroup)
 
-    const normalMapData = useMemo(() => {
-        return texData.get("Chip005_4K-PNG_NormalGL.png")
-    }, [texData])
+    const tasks: any = useMemo(() =>{
+        return {}
+    }, [])
 
-    const roughnessMapData = useMemo(() => {
-        return texData.get("Chip003_4K-PNG_Roughness.png")
-    }, [texData])
-
+    useFrame((_,dt) =>{
+        Object.values(tasks).map((tsk: any) => {
+            if (typeof tsk === 'function') {
+                tsk(_,dt)
+            }
+        })   
+    })
     useEffect(() => {
         if (!playerGroup) {
             return
@@ -89,6 +93,15 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
         let onClean = (v: () => void) => {
             cleans.push(v)
         }
+        let onLoop = (fnc: () => void) => {
+            let tskKey = '_' + Math.random()
+            tasks[tskKey] = fnc()
+            onClean(() =>{
+                tasks[tskKey] = () => { }
+                delete tasks[tskKey]
+            })
+        }
+
         let run = async () => {
             const name = 'collider'
             let colliderInfo = objects.find((r: any)=>{
@@ -110,62 +123,81 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 }, 1)
             });
 
-            if(collider?.material && normalMapData && roughnessMapData){
+            // const normalMap = getOrCreateTexture("Chip005_4K-PNG_NormalGL.png", texData, "color") as Texture;
+            const roughnessMap = getOrCreateTexture("Chip003_4K-PNG_Roughness.png", texData, "noncolor") as Texture;
+            
+            if(collider?.material && roughnessMap){
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial =  collider.material
                 }
-                const reflection = reflector( { resolutionScale: .5, bounces: false, generateMipmaps: true } ); // 0.5 is half of the rendering view
+                const reflection = reflector( { resolutionScale: 1.0, bounces: false, generateMipmaps: false } ); // 0.5 is half of the rendering view
 				reflection.target.rotateX( - Math.PI / 2 );
 				scene.add( reflection.target );
+                onLoop(() =>{
+                    reflection.target.position.copy(playerGroup.position)
+                })
                 onClean(() =>{
                     reflection.target.removeFromParent()
                 })
 
-                const textureLoader = new TextureLoader();
+				// normalMap.wrapS = RepeatWrapping;
+				// normalMap.wrapT = RepeatWrapping;
+				// normalMap.colorSpace = SRGBColorSpace;
+                // playerGroup.position
 
-                const normalMap = textureLoader.load(
-                    URL.createObjectURL(new Blob([normalMapData.bytes], {type: normalMapData.mime})) 
-                );
-				normalMap.wrapS = RepeatWrapping;
-				normalMap.wrapT = RepeatWrapping;
-				normalMap.colorSpace = SRGBColorSpace;
-
-                const roughnessMap = textureLoader.load(
-                    URL.createObjectURL(new Blob([roughnessMapData.bytes], {type: roughnessMapData.mime})) 
-                );
 				roughnessMap.wrapS = RepeatWrapping;
 				roughnessMap.wrapT = RepeatWrapping;
 				roughnessMap.colorSpace = SRGBColorSpace;
 
-                const animatedUV = uv()
+                // const animatedUV = uv()
 
-				const normlTexture = texture( normalMap, animatedUV )
-				const roughnessTexture = texture( roughnessMap, animatedUV ).r.mul( 1.0 ).saturate();
+				// const normlTexture = texture( normalMap, uv() )
+				const roughnessTexture = texture( roughnessMap, uv() );
 
 				const floorMaterial = new MeshPhysicalNodeMaterial();
-                // floorMaterial.normalNode = normlTexture;
+                floorMaterial.opacityNode = roughnessTexture.r.oneMinus();
                 floorMaterial.transparent = true;
-				// floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
+                // floorMaterial.opacityNode = roughnessTexture.r.oneMinus();
+				// // floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
 				floorMaterial.roughnessNode = roughnessTexture;
-                floorMaterial.iridescenceNode = normlTexture
+                // floorMaterial.iridescenceNode = normlTexture
                 // floorMaterial.normalNode = normlTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3');
 
                 floorMaterial.colorNode = Fn( () => {
-					const reflectionNode = textureBicubic(reflection, roughnessTexture);
+					const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus());
 
                     const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0));
 
-                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.1)) as Node<"float">;
+                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<"float">;
 
                     const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<"float">;
 
-                    const honeyCombBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
+                    const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
 
-                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<"float">;
+                    const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<"float">;
 
-					return vec4(reflectionNode.rgb.add(honeyCombThinBase.mul(noiseUV.mul(0.25)).mul(color('#f0ff4d'))),  float(honeyCombPulse.mul(1.5)).mul(float(pulseMotion)).oneMinus().add(honeyCombBase.mul(noiseUV.mul(2))) );
+					return vec4(
+                        //
+                        reflectionNode.rgb.add(
+                            //
+                            honeyCombThinBase.mul(
+                                noiseUV.mul(0.25)).mul(color('#f0ff4d'))
+                            ),  
+                            float(
+                                honeyCombPulse.mul(1.5)
+                            )
+                            .mul(
+                                float(pulseMotion)
+                            )
+                            .oneMinus()
+                            .add(
+                                honeyCombBase.mul(
+                                    noiseUV.mul(2)
+                                )
+                            )
+                    );
 				} )();
                 
                 //
@@ -184,7 +216,7 @@ export function LoadCollider ({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [playerGroup, objects, normalMapData, roughnessMapData]);
+    }, [playerGroup, objects, texData]);
 
     useEffect(() => {
         let cleans: (() => void)[] = []

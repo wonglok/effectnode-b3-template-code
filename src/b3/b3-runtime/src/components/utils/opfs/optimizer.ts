@@ -120,8 +120,8 @@ async function encodeTexture(
 ): Promise<{ blob: Blob; mime: string }> {
   const {
     quality = 0.5,
-    maxWidth = 4096,
-    maxHeight = 4096,
+    maxWidth = 2048,
+    maxHeight = 2048,
   } = {
     ...DEFAULT_TEXTURE_OPTIONS,
     ...options,
@@ -371,8 +371,8 @@ export class OpfsOptimiser {
             texData.mime,
             {
               quality: 0.5,
-              maxHeight: 2048,
-              maxWidth: 2048,
+              maxHeight: 1024,
+              maxWidth: 1024,
             },
           );
           const ext = mime.split("/")[1] ?? "avif";
