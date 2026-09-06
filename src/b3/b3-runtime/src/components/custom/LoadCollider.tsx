@@ -195,14 +195,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
                 floorMaterial.transparent = true
 
-                const accumulate = uniform(1, 'float')
+                // const accumulate = uniform(1, 'float')
                 const placeOfPlayer = new Vector3()
                 onLoop(() => {
                     placeOfPlayer.copy(playerGroup.position)
                 })
 
                 const uPlayerPosition = uniform(placeOfPlayer, 'vec3')
-                const pulseMotion = circlePulse(accumulate.add(time), uPlayerPosition, float(2.5), float(7.0))
+                const pulseMotion = circlePulse(time, uPlayerPosition, float(2.5), float(7.0))
                 const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
