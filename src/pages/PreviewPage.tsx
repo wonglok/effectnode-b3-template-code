@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ProductionViewer } from '../b3/b3-runtime/src'
+import { opfs, ProductionViewer, useBlenderStore } from '../b3/b3-runtime/src'
 import { BloomRender } from '../b3/b3-runtime/src/components/blender/canvas-units/BloomRender'
 import { SiteMenu } from '../components/SiteMenu'
 import { NavMeshRig } from '../components/NavMeshRig'
@@ -11,17 +11,14 @@ import { JumpButton } from '../components/JumpButton'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { AvatarPicker } from '../components/avatar/AvatarPicker'
 
-const DEPLOY_URL = '/deploy/scene.zip'
-
 /**
- * Deployed — renders a packaged deployment zip served statically.
+ * Production — optimised deployment preview.
  *
- * Fetches `/deploy/place.zip` and plays it through the production viewer, with
- * the in-canvas navmesh + character rig layered on top so the deployed scene
- * can be walked on (the rig falls back to the deployed scene's *collider*
- * meshes when no live Blender sync is present).
+ * Loads the deployment zip produced by the dev page's snapshot pipeline from
+ * OPFS and renders it through the production viewer.
  */
-export function DeployedPage() {
+export function PreviewPage() {
+    const deploymentVersion = useBlenderStore((s) => s.deploymentVersion)
     const [zipBuffer, setZipBuffer] = useState<ArrayBuffer | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -33,13 +30,10 @@ export function DeployedPage() {
             setLoading(true)
             setError(null)
             try {
-                const res = await fetch(DEPLOY_URL)
-                if (!res.ok) {
-                    throw new Error(`Failed to load deployment (${res.status})`)
-                }
-                const buf = await res.arrayBuffer()
+                const buf = await opfs.readDeployment()
                 if (cancelled) return
                 setZipBuffer(buf)
+                if (!buf) setError(null) // not an error — nothing deployed yet
             } catch (err) {
                 if (cancelled) return
                 setError(err instanceof Error ? err.message : 'Failed to load deployment')
@@ -53,11 +47,11 @@ export function DeployedPage() {
         return () => {
             cancelled = true
         }
-    }, [])
+    }, [deploymentVersion])
 
     return (
-        <div className='w-full h-full relative flex flex-col bg-studio-950'>
-            <SiteMenu active='deployment' />
+        <div className='w-full h-full flex flex-col bg-studio-950'>
+            <SiteMenu active='production' />
 
             {/* On-screen joystick + emotion buttons to drive the deployed character */}
             {zipBuffer ? (
@@ -70,28 +64,45 @@ export function DeployedPage() {
             ) : null}
 
             <div className='flex-1 min-h-0 relative'>
-                {/* Fetching the deployment zip */}
+                {/* Loading the deployment zip */}
                 {loading && !zipBuffer && (
                     <div className='h-full w-full flex items-center justify-center bg-surface-primary/50 text-text-muted text-xs font-mono'>
                         <span>Loading deployment…</span>
                     </div>
                 )}
 
-                {/* Fetch failed */}
+                {/* Reading failed */}
                 {error && (
                     <div className='h-full w-full flex items-center justify-center bg-surface-primary/50 text-status-red text-xs font-mono'>
                         <span>{error}</span>
                     </div>
                 )}
 
-                {/* No file served */}
+                {/* Nothing deployed yet */}
                 {!loading && !error && !zipBuffer && (
                     <div className='h-full w-full flex flex-col items-center justify-center gap-2 bg-surface-primary/50 text-text-muted text-xs font-mono'>
-                        <span className='opacity-60'>No deployment zip at {DEPLOY_URL}</span>
+                        <svg
+                            width='24'
+                            height='24'
+                            viewBox='0 0 24 24'
+                            fill='none'
+                            stroke='currentColor'
+                            strokeWidth='1.5'
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            className='opacity-40'
+                        >
+                            <rect x='3' y='3' width='18' height='18' rx='2' ry='2' />
+                            <line x1='3' y1='9' x2='21' y2='9' />
+                            <line x1='9' y1='21' x2='9' y2='9' />
+                        </svg>
+                        <span className='opacity-60'>
+                            No deployment yet — connect Blender and save a snapshot on the Dev page.
+                        </span>
                     </div>
                 )}
 
-                {/* Ready — render the deployed scene with the character rig */}
+                {/* Ready — render the optimised deployment */}
                 {zipBuffer && (
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
