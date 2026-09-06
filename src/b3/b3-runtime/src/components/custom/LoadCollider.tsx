@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { MathUtils, Mesh, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three'
+import { Mesh, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -212,6 +212,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         vec3(
                             //
                             color('#ffff00').rgb,
+                            //
                         )
                             .mul(honeyCombThinBase)
                             .mul(honeyCombPulse.oneMinus()),
