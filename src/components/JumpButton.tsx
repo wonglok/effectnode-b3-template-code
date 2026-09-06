@@ -3,13 +3,16 @@
 import { useNavRigStore } from '../b3/b3-runtime/src/components/stores/navRigStore'
 
 /**
- * Bottom-right on-screen jump button.
+ * Bottom-left on-screen jump button.
  *
  * Pressing it fires a single jump request through the nav rig store
  * (`requestJump`, nonce advances each tap). NavMeshRig consumes the request once
  * per nonce in its frame loop — identical to pressing Space — so the jump only
  * happens while grounded and not mid-gesture. Rendered as a fixed overlay so it
  * floats above the 3D canvas on whichever page mounts it.
+ *
+ * Sits directly under the Walk/Run toggle and shares its `w-[132px]` width so
+ * the bottom-left dock reads as one clean column.
  */
 export function JumpButton() {
     const jump = () => useNavRigStore.getState().requestJump()
