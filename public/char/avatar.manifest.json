@@ -4,14 +4,14 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/swat.glb",
-    "face": "/char/male/face/mexican.glb"
+    "body": "/char/male/body/army-1.glb",
+    "face": "/char/male/face/mexican2.glb"
   },
   "headBone": null,
   "head": {
     "position": [
       0,
-      0,
+      0.01,
       0
     ],
     "rotation": [
@@ -20,9 +20,9 @@
       0
     ],
     "scale": [
-      1,
-      1,
-      1
+      0.95,
+      0.95,
+      0.95
     ]
   },
   "body": {
@@ -3196,6 +3196,44 @@
           0.9
         ]
       }
+    },
+    {
+      "bodyUrl": "/char/male/body/swat.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     }
   ],
   "motion": {
@@ -3240,8 +3278,8 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/swat.glb",
-      "face": "/char/male/face/mexican.glb"
+      "body": "/char/male/body/army-1.glb",
+      "face": "/char/male/face/mexican2.glb"
     },
     "female": {
       "body": "/char/female/body/teal-polo.glb",
