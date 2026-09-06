@@ -879,6 +879,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const stick = useNavRigStore.getState().stick;
         const stickActive = Math.hypot(stick.x, stick.y) > 0.12;
         const anySteer = anyKey || stickActive;
+        // Run when Shift is held OR the bottom-left Walk/Run toggle is on.
+        const runActive = sprint || useNavRigStore.getState().running;
 
         // Manual input (keys or joystick) cancels click-to-move
         if (anySteer && path.length > 0) {
@@ -921,7 +923,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             movement.vector.x += stick.x;
             movement.vector.z -= stick.y;
           }
-          const scalar = sprint
+          const scalar = runActive
             ? settings.runningSpeed
             : settings.walkingSpeed;
 
@@ -936,7 +938,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           const dist = Math.hypot(dx, dz);
 
           movement.vector.set(dx, 0, dz);
-          const scalar = sprint
+          const scalar = runActive
             ? settings.runningSpeed
             : settings.walkingSpeed;
           movement.vector.normalize().multiplyScalar(scalar * clamped);
@@ -984,7 +986,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           }
           firstPositionUpdate = false;
         }
-        movement.sprinting = sprint;
+        movement.sprinting = runActive;
       }
 
       // --- animation ---

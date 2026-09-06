@@ -8,6 +8,7 @@ import { NavMeshRig } from "../components/NavMeshRig";
 import { VirtualJoystick } from "../components/VirtualJoystick";
 import { EmotionButtons } from "../components/EmotionButtons";
 import { JumpButton } from "../components/JumpButton";
+import { RunToggleButton } from "../components/RunToggleButton";
 import { AvatarPicker } from "../components/avatar/AvatarPicker";
 
 /**
@@ -59,6 +60,7 @@ export function ProductionPage() {
         <>
           <VirtualJoystick />
           <EmotionButtons />
+          <RunToggleButton />
           <JumpButton />
         </>
       ) : null}

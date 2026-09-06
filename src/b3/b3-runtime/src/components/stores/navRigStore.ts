@@ -49,6 +49,14 @@ interface NavRigState {
   /** Replace the current joystick deflection (0,0 on release/unmount). */
   setStick: (value: { x: number; y: number }) => void;
 
+  /** Run toggle set by the bottom-left Walk/Run button — when true the
+   *  character moves at `runningSpeed` without holding Shift (like Shift held
+   *  the whole time). Defaults to false (walk). */
+  running: boolean;
+
+  /** Turn the run toggle on/off. */
+  setRunning: (running: boolean) => void;
+
   /** Last one-shot gesture/dance requested by an emotion button. `nonce`
    *  advances on every request so even the same gesture can be re-triggered;
    *  NavMeshRig consumes it once per nonce and plays the clip then returns to
@@ -110,12 +118,15 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
 
   zoomRadius: 0,
   stick: { x: 0, y: 0 },
+  running: false,
   emotionRequest: null,
   jumpRequest: null,
 
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
   setStick: (stick) => set({ stick }),
+
+  setRunning: (running) => set({ running }),
 
   requestEmotion: (def) =>
     set((s) => ({

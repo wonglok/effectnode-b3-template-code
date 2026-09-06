@@ -20,6 +20,7 @@ import { AvatarPicker } from '../components/avatar/AvatarPicker'
 import { VirtualJoystick } from '../components/VirtualJoystick'
 import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
+import { RunToggleButton } from '../components/RunToggleButton'
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the
@@ -185,6 +186,7 @@ export function DevPage() {
                         <>
                             <VirtualJoystick />
                             <EmotionButtons />
+                            <RunToggleButton />
                             <JumpButton />
                         </>
                     ) : null}
