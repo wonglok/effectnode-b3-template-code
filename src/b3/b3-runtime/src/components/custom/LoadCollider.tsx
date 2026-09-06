@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { Mesh, RepeatWrapping, SRGBColorSpace } from 'three'
+import { MathUtils, Mesh, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -30,8 +30,8 @@ import { positionWorld, distance, smoothstep, mod } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
 
 // Define the TSL function taking a character position vector, speed, and max radius
-const circlePulse: (a: Node<'vec3'>, b: Node<'float'>, c: Node<'float'>) => Node<'float'> = Fn(
-    ([characterPos, speed, maxRadius]: any) => {
+const circlePulse: (time: Node<'float'>, a: Node<'vec3'>, b: Node<'float'>, c: Node<'float'>) => Node<'float'> = Fn(
+    ([time, characterPos, speed, maxRadius]: any) => {
         // Calculate distance on the XZ plane (ground) from the character uniform
         const dist = distance(positionWorld.xz, characterPos.xz)
 
@@ -116,11 +116,25 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return reflection
     }, [])
 
-    useFrame(() => {
+    const loops: any[] = useMemo(() => {
+        return []
+    }, [])
+    useEffect(() => {
+        return () => {
+            loops.splice(0, loops.length)
+        }
+    }, [])
+
+    useFrame((_, dt) => {
         if (playerGroup) {
             reflection?.target?.position?.copy(playerGroup?.position)
         }
+        loops.forEach((t: any) => t(_, dt))
     })
+
+    let onLoop = (v: any) => {
+        loops.push(v)
+    }
 
     useEffect(() => {
         if (!playerGroup) {
@@ -181,12 +195,18 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
                 floorMaterial.transparent = true
 
-                const uPlayerPosition = uniform(playerGroup.position, 'vec3')
-                const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(7.0))
-                const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
+                const accumulate = uniform(1, 'float')
+                const placeOfPlayer = new Vector3()
+                onLoop(() => {
+                    placeOfPlayer.copy(playerGroup.position)
+                })
+
+                const uPlayerPosition = uniform(placeOfPlayer, 'vec3')
+                const pulseMotion = circlePulse(accumulate.add(time), uPlayerPosition, float(2.5), float(7.0))
+                const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
-                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
+                    const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
 
                     return vec4(
                         vec3(
@@ -194,8 +214,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                             color('#ffff00').rgb,
                         )
                             .mul(honeyCombThinBase)
-                            .mul(honeyCombPulse.oneMinus())
-                            .mul(20.5),
+                            .mul(honeyCombPulse.oneMinus()),
                         float(10.0),
                     )
                 })()
