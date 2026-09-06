@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 /**
  * Avatar loader for the NavMeshRig character, rebuilt on the AvatarSDK.
@@ -23,29 +23,25 @@
  * controller the NavMeshRig's existing per-frame engine can drive unchanged.
  */
 
-import * as THREE from "three";
+import * as THREE from 'three'
 
+import { UPRIGHT_REVEAL, applyBodyOffset, uprightFraction } from '../b3/b3-runtime/src/components/AvatarSDK/avatarPose'
+import { loadGLB } from '../b3/b3-runtime/src/components/AvatarSDK/decoders'
 import {
-  UPRIGHT_REVEAL,
-  applyBodyOffset,
-  uprightFraction,
-} from "../b3/b3-runtime/src/components/AvatarSDK/avatarPose";
-import { loadGLB } from "../b3/b3-runtime/src/components/AvatarSDK/decoders";
-import {
-  classifyHeadCompose,
-  createHeadAttachment,
-  type HeadComposePlan,
-} from "../b3/b3-runtime/src/components/AvatarSDK/headCompose";
-import { parseManifest } from "../b3/b3-runtime/src/components/AvatarSDK/manifest";
-import { loadMotionClips } from "../b3/b3-runtime/src/components/AvatarSDK/motionLibrary";
-import { findBone, restrictClipToRoot } from "../b3/b3-runtime/src/components/AvatarSDK/rig";
-import { makeDefaultManifest } from "../b3/b3-runtime/src/components/AvatarSDK/sample/charAssets";
+    classifyHeadCompose,
+    createHeadAttachment,
+    type HeadComposePlan,
+} from '../b3/b3-runtime/src/components/AvatarSDK/headCompose'
+import { parseManifest } from '../b3/b3-runtime/src/components/AvatarSDK/manifest'
+import { loadMotionClips } from '../b3/b3-runtime/src/components/AvatarSDK/motionLibrary'
+import { findBone, restrictClipToRoot } from '../b3/b3-runtime/src/components/AvatarSDK/rig'
+import { makeDefaultManifest } from '../b3/b3-runtime/src/components/AvatarSDK/sample/charAssets'
 import type {
-  AvatarManifest,
-  BodyInsertion,
-  HeadInsertion,
-  MotionClipDef,
-} from "../b3/b3-runtime/src/components/AvatarSDK/types";
+    AvatarManifest,
+    BodyInsertion,
+    HeadInsertion,
+    MotionClipDef,
+} from '../b3/b3-runtime/src/components/AvatarSDK/types'
 
 // ---------------------------------------------------------------------------
 // Look + motion configuration
@@ -58,12 +54,12 @@ import type {
  *   `public/char/avatar.manifest.json`  →  GET `/char/avatar.manifest.json`
  * It is the sole source of the NavMeshRig character data.
  */
-export const DEFAULT_MANIFEST_URL = "/char/avatar.manifest.json";
+export const DEFAULT_MANIFEST_URL = '/char/avatar.manifest.json'
 
 /** Locomotion states the NavMeshRig blends between. */
-export type LocomotionKey = "idle" | "walk" | "run" | "jump";
+export type LocomotionKey = 'idle' | 'walk' | 'run' | 'jump'
 /** Target weights (0..1) per locomotion state, fed to `AvatarRig.blend`. */
-export type LocomotionTargets = Record<LocomotionKey, number>;
+export type LocomotionTargets = Record<LocomotionKey, number>
 
 /**
  * Names the SDK's stay library (`/char/motion-2/fbx/stay`) gives each
@@ -71,18 +67,18 @@ export type LocomotionTargets = Record<LocomotionKey, number>;
  * unknown names fall back to the same stay folder.
  */
 const LOCOMOTION_SYNONYMS: Record<LocomotionKey, string[]> = {
-  idle: ["idle-breathing", "idle-neutral", "idle-pose"],
-  walk: ["walking", "walking2"],
-  run: ["running", "rush"],
-  jump: ["jumping", "jump"],
-};
-const STAY_FBX = "/char/motion-2/fbx/stay";
+    idle: ['idle-breathing', 'idle-neutral', 'idle-pose'],
+    walk: ['walking', 'walking2'],
+    run: ['running', 'rush'],
+    jump: ['jumping', 'jump'],
+}
+const STAY_FBX = '/char/motion-2/fbx/stay'
 
 /** The four locomotion states a NavMeshRig avatar blends between. */
-export const LOCOMOTION_KEYS: LocomotionKey[] = ["idle", "walk", "run", "jump"];
+export const LOCOMOTION_KEYS: LocomotionKey[] = ['idle', 'walk', 'run', 'jump']
 
 /** Cadence correction for the walk clip (matches the character's navmesh speed). */
-const WALK_TIMESCALE = 1.5;
+const WALK_TIMESCALE = 1.5
 
 /**
  * GET the persisted character manifest over HTTP and validate it. Throws when
@@ -91,31 +87,26 @@ const WALK_TIMESCALE = 1.5;
  * (e.g. switching the look in `avatar.manifest.json`) show up on the next load.
  */
 export async function loadSavedManifest(): Promise<AvatarManifest> {
-  const res = await fetch(DEFAULT_MANIFEST_URL, {
-    method: "GET",
-    cache: "no-cache",
-  });
-  if (!res.ok) {
-    throw new Error(
-      `[avatarLoader] GET ${DEFAULT_MANIFEST_URL} → HTTP ${res.status}`,
-    );
-  }
-  return parseManifest(await res.json());
+    const res = await fetch(DEFAULT_MANIFEST_URL, {
+        method: 'GET',
+        cache: 'no-cache',
+    })
+    if (!res.ok) {
+        throw new Error(`[avatarLoader] GET ${DEFAULT_MANIFEST_URL} → HTTP ${res.status}`)
+    }
+    return parseManifest(await res.json())
 }
 
 /** Convenience used by `loadAvatar()`: the saved manifest from
  *  `public/char/avatar.manifest.json` (via GET), with the SDK's sample default
  *  male look (swat × chinese) only as a last resort when the GET/parse fails. */
 export async function fetchSavedManifest(): Promise<AvatarManifest> {
-  try {
-    return await loadSavedManifest();
-  } catch (error) {
-    console.warn(
-      "[avatarLoader] Failed to GET saved manifest — using sample default.",
-      error,
-    );
-    return makeDefaultManifest({ gender: "male" });
-  }
+    try {
+        return await loadSavedManifest()
+    } catch (error) {
+        console.warn('[avatarLoader] Failed to GET saved manifest — using sample default.', error)
+        return makeDefaultManifest({ gender: 'male' })
+    }
 }
 
 /**
@@ -125,16 +116,13 @@ export async function fetchSavedManifest(): Promise<AvatarManifest> {
  * manifest whose motion list only carries, say, breakdance poses.
  */
 function resolveLocomotionDefs(manifest: AvatarManifest): Record<LocomotionKey, MotionClipDef> {
-  const byName = new Map(manifest.motion.clips.map((c) => [c.name, c]));
-  const out = {} as Record<LocomotionKey, MotionClipDef>;
-  for (const key of LOCOMOTION_KEYS) {
-    const found = LOCOMOTION_SYNONYMS[key]
-      .map((name) => byName.get(name))
-      .find((c): c is MotionClipDef => !!c);
-    out[key] =
-      found ?? { name: LOCOMOTION_SYNONYMS[key][0], url: `${STAY_FBX}/${LOCOMOTION_SYNONYMS[key][0]}.fbx` };
-  }
-  return out;
+    const byName = new Map(manifest.motion.clips.map((c) => [c.name, c]))
+    const out = {} as Record<LocomotionKey, MotionClipDef>
+    for (const key of LOCOMOTION_KEYS) {
+        const found = LOCOMOTION_SYNONYMS[key].map((name) => byName.get(name)).find((c): c is MotionClipDef => !!c)
+        out[key] = found ?? { name: LOCOMOTION_SYNONYMS[key][0], url: `${STAY_FBX}/${LOCOMOTION_SYNONYMS[key][0]}.fbx` }
+    }
+    return out
 }
 
 // ---------------------------------------------------------------------------
@@ -143,12 +131,12 @@ function resolveLocomotionDefs(manifest: AvatarManifest): Record<LocomotionKey, 
 
 /** First bone under a scene (the mixamo rig always roots at the hips). */
 function findFirstBone(root: THREE.Object3D): THREE.Bone | null {
-  let hit: THREE.Bone | null = null;
-  root.traverse((o) => {
-    const b = o as THREE.Bone;
-    if (!hit && b.isBone) hit = b;
-  });
-  return hit;
+    let hit: THREE.Bone | null = null
+    root.traverse((o) => {
+        const b = o as THREE.Bone
+        if (!hit && b.isBone) hit = b
+    })
+    return hit
 }
 
 /**
@@ -159,48 +147,43 @@ function findFirstBone(root: THREE.Object3D): THREE.Bone | null {
  * pose and sinks the model while the action is running.
  */
 function freezeClipRootPosition(clip: THREE.AnimationClip, bodyScene: THREE.Object3D): THREE.AnimationClip {
-  const root =
-    findBone(bodyScene, "mixamorig:Hips") ??
-    findBone(bodyScene, "Hips") ??
-    findFirstBone(bodyScene);
-  if (!root) return clip;
+    const root = findBone(bodyScene, 'mixamorig:Hips') ?? findBone(bodyScene, 'Hips') ?? findFirstBone(bodyScene)
+    if (!root) return clip
 
-  const trackName = `${root.name}.position`;
-  const source = clip.tracks.find((t) => t.name === trackName);
-  if (!source) return clip;
+    const trackName = `${root.name}.position`
+    const source = clip.tracks.find((t) => t.name === trackName)
+    if (!source) return clip
 
-  const TrackClass = source.constructor as new (
-    name: string,
-    times: ArrayLike<number>,
-    values: ArrayLike<number>,
-  ) => THREE.KeyframeTrack;
-  const size = source.getValueSize();
-  const times = source.times.slice();
-  const base = source.values.slice(0, size);
-  const values = new Float32Array(times.length * size);
-  for (let i = 0; i < times.length; i++) values.set(base, i * size);
+    const TrackClass = source.constructor as new (
+        name: string,
+        times: ArrayLike<number>,
+        values: ArrayLike<number>,
+    ) => THREE.KeyframeTrack
+    const size = source.getValueSize()
+    const times = source.times.slice()
+    const base = source.values.slice(0, size)
+    const values = new Float32Array(times.length * size)
+    for (let i = 0; i < times.length; i++) values.set(base, i * size)
 
-  const next = clip.clone();
-  next.tracks = clip.tracks.map((t) =>
-    t.name === trackName ? new TrackClass(trackName, times, values) : t,
-  );
-  return next;
+    const next = clip.clone()
+    next.tracks = clip.tracks.map((t) => (t.name === trackName ? new TrackClass(trackName, times, values) : t))
+    return next
 }
 
 /** Start one looping clip on a mixer at a given weight. */
 function playClip(
-  mixer: THREE.AnimationMixer,
-  clip: THREE.AnimationClip | null,
-  weight: number,
-  timeScale = 1,
+    mixer: THREE.AnimationMixer,
+    clip: THREE.AnimationClip | null,
+    weight: number,
+    timeScale = 1,
 ): THREE.AnimationAction | null {
-  if (!clip) return null;
-  const action = mixer.clipAction(clip);
-  action.loop = THREE.LoopRepeat;
-  action.weight = weight;
-  action.timeScale = timeScale;
-  action.play();
-  return action;
+    if (!clip) return null
+    const action = mixer.clipAction(clip)
+    action.loop = THREE.LoopRepeat
+    action.weight = weight
+    action.timeScale = timeScale
+    action.play()
+    return action
 }
 
 // ---------------------------------------------------------------------------
@@ -214,75 +197,75 @@ function playClip(
  */
 /** Which clip each rig state uses (built from a manifest by default). */
 export interface AvatarConfig {
-  /** Composed look (body/face assets, head bone, body + head offsets). */
-  manifest: AvatarManifest;
-  /** Optional per-state stay-clip overrides (what the Motion tab retunes). */
-  clips?: Partial<Record<LocomotionKey, MotionClipDef>>;
-  /** Rigged-head composition: `'auto'` (geometry decides) or `'seat'` (force
-   * seat-glue at authored size, no dual-drive). Defaults to `'auto'`. */
-  headMode?: "auto" | "seat";
+    /** Composed look (body/face assets, head bone, body + head offsets). */
+    manifest: AvatarManifest
+    /** Optional per-state stay-clip overrides (what the Motion tab retunes). */
+    clips?: Partial<Record<LocomotionKey, MotionClipDef>>
+    /** Rigged-head composition: `'auto'` (geometry decides) or `'seat'` (force
+     * seat-glue at authored size, no dual-drive). Defaults to `'auto'`. */
+    headMode?: 'auto' | 'seat'
 }
 
 export interface AvatarRig {
-  /** Composed avatar root (body + seated/dual-drive head), upright "home"
-   * applied. Add this under the player group — it carries the whole character. */
-  readonly scene: THREE.Group;
-  /** Crossfade the idle/walk/run/jump weights (on body *and* dual-drive head
-   * mixers) toward `targets`. `alpha` is the frame lerp factor. */
-  blend(targets: LocomotionTargets, alpha: number): void;
-  /** Advance all mixers, re-glue the head to the live head bone, and reveal the
-   * avatar once its skeleton stands (hides a floor-splayed clip intro). */
-  advance(delta: number): void;
-  /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
-   * matches the ballistic launch). */
-  startJumpAt(time: number): void;
-  /** Play an emotion. `def.dance` toggles between the two modes:
-   *   - gesture (default): plays the clip once then returns to the caller's
-   *     blend (idle). The character parks in place while it plays.
-   *   - dance: loops the clip in place until {@link cancelEmotion} is called
-   *     (tap the same button again / pick another emotion); the character keeps
-   *     steering/walking while it plays (no park).
-   * Interrupts any emotion currently playing. While it runs `isEmotionActive()`
-   * is true — the emotion owns the mixers (locomotion weight forced to 0). The
-   * clip's root translation is frozen so it can't drag the player around.
-   * `def.startAt` skips an authored preamble (e.g. the gesture library's
-   * ~0.14s "get up from the floor" intro) so a one-shot begins standing. */
-  playEmotionOnce(def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }): void;
-  /** True while an emotion is playing. */
-  isEmotionActive(): boolean;
-  /** True when the active emotion is a looping dance (tap again to stop). */
-  isEmotionDance(): boolean;
-  /** Clip id of the currently active emotion (null when none is playing). */
-  getEmotionId(): string | null;
-  /** Stop the current emotion (dance or one-shot) and hand back to the caller's
-   *  blend immediately. */
-  cancelEmotion(): void;
+    /** Composed avatar root (body + seated/dual-drive head), upright "home"
+     * applied. Add this under the player group — it carries the whole character. */
+    readonly scene: THREE.Group
+    /** Crossfade the idle/walk/run/jump weights (on body *and* dual-drive head
+     * mixers) toward `targets`. `alpha` is the frame lerp factor. */
+    blend(targets: LocomotionTargets, alpha: number): void
+    /** Advance all mixers, re-glue the head to the live head bone, and reveal the
+     * avatar once its skeleton stands (hides a floor-splayed clip intro). */
+    advance(delta: number): void
+    /** Restart the jump clip at `time` (skips the anticipation crouch so the pose
+     * matches the ballistic launch). */
+    startJumpAt(time: number): void
+    /** Play an emotion. `def.dance` toggles between the two modes:
+     *   - gesture (default): plays the clip once then returns to the caller's
+     *     blend (idle). The character parks in place while it plays.
+     *   - dance: loops the clip in place until {@link cancelEmotion} is called
+     *     (tap the same button again / pick another emotion); the character keeps
+     *     steering/walking while it plays (no park).
+     * Interrupts any emotion currently playing. While it runs `isEmotionActive()`
+     * is true — the emotion owns the mixers (locomotion weight forced to 0). The
+     * clip's root translation is frozen so it can't drag the player around.
+     * `def.startAt` skips an authored preamble (e.g. the gesture library's
+     * ~0.14s "get up from the floor" intro) so a one-shot begins standing. */
+    playEmotionOnce(def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }): void
+    /** True while an emotion is playing. */
+    isEmotionActive(): boolean
+    /** True when the active emotion is a looping dance (tap again to stop). */
+    isEmotionDance(): boolean
+    /** Clip id of the currently active emotion (null when none is playing). */
+    getEmotionId(): string | null
+    /** Stop the current emotion (dance or one-shot) and hand back to the caller's
+     *  blend immediately. */
+    cancelEmotion(): void
 
-  // ---- live retuning (no rebuild — cheap, called on store changes) ----
-  /** Body placement offset → applyBodyOffset on the composed root. */
-  setBodyOffset(offset: BodyInsertion): void;
-  /** Head-insertion offset → re-seat the face on the live head bone. */
-  setHeadOffset(offset: HeadInsertion): void;
-  /** Show/hide the body and/or face meshes of the composed avatar. */
-  setVisibility(visibility: { body?: boolean; face?: boolean }): void;
-  /** Global playback speed × (1 = natural). Multiplies every action's own
-   * timescale (walk runs at 1.5× naturally). */
-  setSpeed(factor: number): void;
-  /** Pause/resume the whole character's animation. */
-  setPaused(paused: boolean): void;
+    // ---- live retuning (no rebuild — cheap, called on store changes) ----
+    /** Body placement offset → applyBodyOffset on the composed root. */
+    setBodyOffset(offset: BodyInsertion): void
+    /** Head-insertion offset → re-seat the face on the live head bone. */
+    setHeadOffset(offset: HeadInsertion): void
+    /** Show/hide the body and/or face meshes of the composed avatar. */
+    setVisibility(visibility: { body?: boolean; face?: boolean }): void
+    /** Global playback speed × (1 = natural). Multiplies every action's own
+     * timescale (walk runs at 1.5× naturally). */
+    setSpeed(factor: number): void
+    /** Pause/resume the whole character's animation. */
+    setPaused(paused: boolean): void
 
-  /** Stop mixers/actions and detach the head mount. GPU disposal of `scene` is
-   * the caller's job (NavMeshRig disposes it on teardown). */
-  dispose(): void;
+    /** Stop mixers/actions and detach the head mount. GPU disposal of `scene` is
+     * the caller's job (NavMeshRig disposes it on teardown). */
+    dispose(): void
 }
 
 /** Clone an offset group so store mutations can't alias into the rig. */
 function cloneOffset(o: BodyInsertion): BodyInsertion {
-  return {
-    position: [...o.position] as BodyInsertion["position"],
-    rotation: [...o.rotation] as BodyInsertion["rotation"],
-    scale: [...o.scale] as BodyInsertion["scale"],
-  };
+    return {
+        position: [...o.position] as BodyInsertion['position'],
+        rotation: [...o.rotation] as BodyInsertion['rotation'],
+        scale: [...o.scale] as BodyInsertion['scale'],
+    }
 }
 
 /**
@@ -290,336 +273,327 @@ function cloneOffset(o: BodyInsertion): BodyInsertion {
  * saved `/char` look + motion library) defaults to `fetchSavedManifest()`;
  * `config.clips` overrides which stay clips feed the four rig states.
  */
-export async function loadAvatar(
-  config?: AvatarConfig | AvatarManifest,
-): Promise<AvatarRig> {
-  const cfg: AvatarConfig | undefined = config
-    ? "assets" in config
-      ? { manifest: config }
-      : config
-    : undefined;
-  const manifest = cfg?.manifest ?? (await fetchSavedManifest());
+export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promise<AvatarRig> {
+    const cfg: AvatarConfig | undefined = config ? ('assets' in config ? { manifest: config } : config) : undefined
+    const manifest = cfg?.manifest ?? (await fetchSavedManifest())
 
-  // --- load + compose body & face on the shared mixamorig skeleton ----------
-  const [bodyGltf, faceGltf] = await Promise.all([
-    loadGLB(manifest.assets.body),
-    loadGLB(manifest.assets.face),
-  ]);
-  const bodyScene = bodyGltf.scene;
-  const faceScene = faceGltf.scene;
+    // --- load + compose body & face on the shared mixamorig skeleton ----------
+    const [bodyGltf, faceGltf] = await Promise.all([loadGLB(manifest.assets.body), loadGLB(manifest.assets.face)])
+    const bodyScene = bodyGltf.scene
+    const faceScene = faceGltf.scene
 
-  // Classify (congruent dual-drive vs cross-look seat) while both scenes are
-  // still unparented so the measurement can't be skewed by the upright rotation.
-  const plan: HeadComposePlan = classifyHeadCompose({
-    bodyScene,
-    faceScene,
-    headBone: manifest.headBone,
-    headMode: cfg?.headMode ?? "auto",
-  });
+    // Classify (congruent dual-drive vs cross-look seat) while both scenes are
+    // still unparented so the measurement can't be skewed by the upright rotation.
+    const plan: HeadComposePlan = classifyHeadCompose({
+        bodyScene,
+        faceScene,
+        headBone: manifest.headBone,
+        headMode: cfg?.headMode ?? 'auto',
+    })
 
-  const root = new THREE.Group();
-  root.name = "Avatar";
-  // Hidden until the reveal gate (in advance) sees the skeleton standing — a
-  // clip can open with the character floor-splayed and stand over the first
-  // seconds; that intro must never render on the navmesh.
-  root.visible = false;
-  root.add(bodyScene);
+    const root = new THREE.Group()
+    root.name = 'Avatar'
+    // Hidden until the reveal gate (in advance) sees the skeleton standing — a
+    // clip can open with the character floor-splayed and stand over the first
+    // seconds; that intro must never render on the navmesh.
+    root.visible = false
+    root.add(bodyScene)
 
-  // Body mixer bound to the root: the clips are remapped onto the body bone
-  // names, which the mixer resolves through the root's subtree.
-  const mixer = new THREE.AnimationMixer(root);
-  const attachment = createHeadAttachment({ root, faceScene, plan });
-  const mount = attachment.mount;
-  const faceGroup = attachment.group;
+    // Body mixer bound to the root: the clips are remapped onto the body bone
+    // names, which the mixer resolves through the root's subtree.
+    const mixer = new THREE.AnimationMixer(root)
+    const attachment = createHeadAttachment({ root, faceScene, plan })
+    const mount = attachment.mount
+    const faceGroup = attachment.group
 
-  // Live offset copies the tuning panel writes through `setBody/HeadOffset`.
-  let bodyOffset = cloneOffset(manifest.body);
-  let headOffset = cloneOffset(manifest.head) as HeadInsertion;
-  applyBodyOffset(root, bodyOffset);
-  mount?.update(headOffset);
+    // Live offset copies the tuning panel writes through `setBody/HeadOffset`.
+    let bodyOffset = cloneOffset(manifest.body)
+    let headOffset = cloneOffset(manifest.head) as HeadInsertion
+    applyBodyOffset(root, bodyOffset)
+    mount?.update(headOffset)
 
-  // --- load + remap the four locomotion clips --------------------------------
-  const baseDefs = resolveLocomotionDefs(manifest);
-  const defs = {} as Record<LocomotionKey, MotionClipDef>;
-  for (const key of LOCOMOTION_KEYS) {
-    defs[key] = cfg?.clips?.[key] ?? baseDefs[key];
-  }
-  const loaded = await loadMotionClips(LOCOMOTION_KEYS.map((k) => defs[k]), bodyScene);
-
-  const clips: Record<LocomotionKey, THREE.AnimationClip | null> = {
-    idle: null,
-    walk: null,
-    run: null,
-    jump: null,
-  };
-  for (const key of LOCOMOTION_KEYS) {
-    const clip = loaded.get(defs[key].name) ?? null;
-    clips[key] = key === "jump" && clip ? freezeClipRootPosition(clip, bodyScene) : clip;
-  }
-
-  // The face's own rig (dual-drive heads only — cross-look heads are rigid-glued
-  // onto the body head bone and need no clip of their own) plays the same clips
-  // restricted to the bones that actually exist under the face skeleton.
-  const headMixer = attachment.headMixer;
-  const headClips: Record<LocomotionKey, THREE.AnimationClip | null> = {
-    idle: null,
-    walk: null,
-    run: null,
-    jump: null,
-  };
-  if (headMixer) {
+    // --- load + remap the four locomotion clips --------------------------------
+    const baseDefs = resolveLocomotionDefs(manifest)
+    const defs = {} as Record<LocomotionKey, MotionClipDef>
     for (const key of LOCOMOTION_KEYS) {
-      headClips[key] = clips[key] ? restrictClipToRoot(clips[key]!, faceScene) : null;
+        defs[key] = cfg?.clips?.[key] ?? baseDefs[key]
     }
-  }
+    const loaded = await loadMotionClips(
+        LOCOMOTION_KEYS.map((k) => defs[k]),
+        bodyScene,
+    )
 
-  // --- actions (idle at full weight; the rig crossfades from there) ----------
-  // Walk naturally runs at 1.5×; every action is scaled further by `speedFactor`
-  // so the tuning panel's playback speed stays live-tunable.
-  const BASE_TIMESCALE: Record<LocomotionKey, number> = {
-    idle: 1,
-    walk: WALK_TIMESCALE,
-    run: 1,
-    jump: 1,
-  };
-  const bodyActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
-  const headActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>;
-  for (const key of LOCOMOTION_KEYS) {
-    const ts = BASE_TIMESCALE[key];
-    bodyActions[key] = playClip(mixer, clips[key], key === "idle" ? 1 : 0, ts);
-    if (headMixer) headActions[key] = playClip(headMixer, headClips[key], key === "idle" ? 1 : 0, ts);
-  }
-
-  // --- reveal gate -----------------------------------------------------------
-  let revealed = false;
-  let hiddenElapsed = 0;
-  const maybeReveal = (dt: number) => {
-    if (revealed) return;
-    hiddenElapsed += dt;
-    // Refresh world matrices so the standing test reads live bone positions.
-    root.updateMatrixWorld(true);
-    const up = uprightFraction(plan.bone, plan.hips);
-    // No head/hips to measure → don't gate; also un-hide after ~1.6s no matter
-    // what so a clip with no obvious "stand" never leaves the avatar invisible.
-    if (up === null || up >= UPRIGHT_REVEAL || hiddenElapsed > 1.6) {
-      revealed = true;
-      root.visible = true;
+    const clips: Record<LocomotionKey, THREE.AnimationClip | null> = {
+        idle: null,
+        walk: null,
+        run: null,
+        jump: null,
     }
-  };
-
-  // Live-playback state (set by the tuning panel / NavMeshRig).
-  let speedFactor = 1;
-  let paused = false;
-  const applySpeed = () => {
     for (const key of LOCOMOTION_KEYS) {
-      const target = BASE_TIMESCALE[key] * speedFactor;
-      const body = bodyActions[key];
-      if (body) body.timeScale = target;
-      const head = headActions[key];
-      if (head) head.timeScale = target;
+        const clip = loaded.get(defs[key].name) ?? null
+        clips[key] = key === 'jump' && clip ? freezeClipRootPosition(clip, bodyScene) : clip
     }
-  };
 
-  // ------------------------------------------------------------------
-  // One-shot emotion (gesture / dance). No fade in/out: whichever emotion is
-  // active owns the mixers outright — its clip at full weight, every locomotion
-  // action (body + dual-drive head) forced to 0 — so nothing underneath leaks
-  // through. A *gesture* plays one pass then hands back to the caller's blend;
-  // a *dance* loops in place until cancelEmotion() (tap again / pick another).
-  // ------------------------------------------------------------------
-  // Clips load through the SDK's module FBX cache and are remapped onto the
-  // body skeleton; the root translation is frozen so a clip can't drag the
-  // player around inside the navmesh-owned group — moving around is done by
-  // steering the player group, so a dancing character can still be walked.
-  // `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
-  // "get up from the floor" intro) so a one-shot begins standing.
-  let emotionActiveFlag = false;
-  let emotionToken = 0;
-  let emotionId: string | null = null;
-  let emotionDance = false;
-  let emotionElapsed = 0; // playback seconds into the current pass (one-shots)
-  let emotionDuration = 0;
-  let emotionAction: THREE.AnimationAction | null = null;
-  let emotionHeadAction: THREE.AnimationAction | null = null;
-
-  const stopEmotion = () => {
-    if (emotionAction) {
-      emotionAction.enabled = false;
-      emotionAction.stop();
-      emotionAction = null;
+    // The face's own rig (dual-drive heads only — cross-look heads are rigid-glued
+    // onto the body head bone and need no clip of their own) plays the same clips
+    // restricted to the bones that actually exist under the face skeleton.
+    const headMixer = attachment.headMixer
+    const headClips: Record<LocomotionKey, THREE.AnimationClip | null> = {
+        idle: null,
+        walk: null,
+        run: null,
+        jump: null,
     }
-    if (emotionHeadAction) {
-      emotionHeadAction.enabled = false;
-      emotionHeadAction.stop();
-      emotionHeadAction = null;
-    }
-    emotionActiveFlag = false;
-    emotionId = null;
-    emotionDance = false;
-    emotionElapsed = 0;
-    emotionDuration = 0;
-  };
-
-  // Emotion owns the mixers outright: its clip at full weight, every locomotion
-  // action at 0 — re-asserted each frame so the caller's blend() can't creep
-  // idle back up underneath it.
-  const applyEmotionWeights = () => {
-    for (const key of LOCOMOTION_KEYS) {
-      const body = bodyActions[key];
-      if (body) body.weight = 0;
-      const head = headActions[key];
-      if (head) head.weight = 0;
-    }
-    if (emotionAction) emotionAction.weight = 1;
-    if (emotionHeadAction) emotionHeadAction.weight = 1;
-  };
-
-  // Snap the locomotion back to a full idle stance (used the frame an emotion
-  // finishes, so there is no bind-pose flash before the caller re-asserts idle).
-  const settleIdle = () => {
-    for (const key of LOCOMOTION_KEYS) {
-      const value = key === "idle" ? 1 : 0;
-      const body = bodyActions[key];
-      if (body) body.weight = value;
-      const head = headActions[key];
-      if (head) head.weight = value;
-    }
-  };
-
-  const startEmotionClip = (
-    clip: THREE.AnimationClip,
-    def: { startAt?: number; dance?: boolean; id?: string },
-  ) => {
-    const startAt = def.startAt ?? 0;
-    const bodyClip = freezeClipRootPosition(clip, bodyScene);
-    const makeAction = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
-      const action = m.clipAction(c);
-      action.loop = def.dance ? THREE.LoopRepeat : THREE.LoopOnce;
-      // A gesture holds its last frame until the cut; a dance just loops.
-      action.clampWhenFinished = !def.dance;
-      action.weight = 0;
-      action.timeScale = speedFactor;
-      action.play();
-      // Skip the clip's authored preamble so a one-shot starts standing.
-      if (startAt > 0) action.time = startAt;
-      return action;
-    };
-    emotionId = def.id ?? clip.name;
-    emotionDance = !!def.dance;
-    emotionAction = makeAction(mixer, bodyClip);
     if (headMixer) {
-      // Dual-drive faces play the emotion restricted to the bones under the face
-      // skeleton (head nods / shakes drive the seated head too). When nothing
-      // survives the restriction (e.g. a body-only clip), the face just rests.
-      const headClip = restrictClipToRoot(bodyClip, faceScene);
-      if (headClip) emotionHeadAction = makeAction(headMixer, headClip);
+        for (const key of LOCOMOTION_KEYS) {
+            headClips[key] = clips[key] ? restrictClipToRoot(clips[key]!, faceScene) : null
+        }
     }
-    emotionDuration = Math.max(0.001, bodyClip.duration - startAt);
-    emotionElapsed = 0;
-    emotionActiveFlag = true;
-    applyEmotionWeights();
-  };
 
-  const triggerEmotion = (
-    def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string },
-  ) => {
-    const token = ++emotionToken;
-    stopEmotion(); // interrupt any emotion already playing
-    loadMotionClips([def], bodyScene).then((loaded) => {
-      if (token !== emotionToken) return; // superseded by a newer request
-      const clip = loaded.get(def.name);
-      if (!clip) {
-        console.warn(`[avatarLoader] emotion "${def.name}" has no clip.`);
-        return;
-      }
-      startEmotionClip(clip, def);
-    });
-  };
-
-  // One-shots count the single pass and cut to idle at its end; dances loop
-  // until cancelEmotion(). Weights are asserted by applyEmotionWeights() at the
-  // top of advance(), not here.
-  const advanceEmotion = (dt: number) => {
-    if (!emotionActiveFlag) return;
-    if (emotionDance) return; // keep dancing until explicitly stopped
-    emotionElapsed += dt * speedFactor;
-    if (emotionElapsed >= emotionDuration) {
-      settleIdle();
-      stopEmotion();
+    // --- actions (idle at full weight; the rig crossfades from there) ----------
+    // Walk naturally runs at 1.5×; every action is scaled further by `speedFactor`
+    // so the tuning panel's playback speed stays live-tunable.
+    const BASE_TIMESCALE: Record<LocomotionKey, number> = {
+        idle: 1,
+        walk: WALK_TIMESCALE,
+        run: 1,
+        jump: 1,
     }
-  };
+    const bodyActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>
+    const headActions = {} as Record<LocomotionKey, THREE.AnimationAction | null>
+    for (const key of LOCOMOTION_KEYS) {
+        const ts = BASE_TIMESCALE[key]
+        bodyActions[key] = playClip(mixer, clips[key], key === 'idle' ? 1 : 0, ts)
+        if (headMixer) headActions[key] = playClip(headMixer, headClips[key], key === 'idle' ? 1 : 0, ts)
+    }
 
-  return {
-    scene: root,
-    blend(targets, alpha) {
-      for (const key of LOCOMOTION_KEYS) {
-        const body = bodyActions[key];
-        if (body) body.weight = THREE.MathUtils.lerp(body.weight, targets[key], alpha);
-        const head = headActions[key];
-        if (head) head.weight = THREE.MathUtils.lerp(head.weight, targets[key], alpha);
-      }
-    },
-    advance(delta) {
-      const dt = paused ? 0 : delta;
-      // While an emotion is active it owns the mixers: force the gesture to
-      // full weight and every locomotion action to 0 before this update, so
-      // the caller's blend can't leak idle in underneath.
-      if (emotionActiveFlag) applyEmotionWeights();
-      mixer.update(dt);
-      if (headMixer) headMixer.update(dt);
-      advanceEmotion(dt);
-      // Re-seat the face on the *live* head bone (both rigid glue and the
-      // dual-drive offset nudge recompute against the bone's current transform).
-      mount?.update(headOffset);
-      maybeReveal(delta);
-    },
-    startJumpAt(time) {
-      const body = bodyActions.jump;
-      if (body) body.time = time;
-      const head = headActions.jump;
-      if (head) head.time = time;
-    },
-    playEmotionOnce(def) {
-      triggerEmotion(def);
-    },
-    isEmotionActive() {
-      return emotionActiveFlag;
-    },
-    isEmotionDance() {
-      return emotionDance;
-    },
-    getEmotionId() {
-      return emotionId;
-    },
-    cancelEmotion() {
-      if (!emotionActiveFlag) return;
-      settleIdle();
-      stopEmotion();
-    },
-    setBodyOffset(offset) {
-      bodyOffset = cloneOffset(offset);
-      applyBodyOffset(root, bodyOffset);
-    },
-    setHeadOffset(offset) {
-      headOffset = cloneOffset(offset) as HeadInsertion;
-      mount?.update(headOffset);
-    },
-    setVisibility(visibility) {
-      if (visibility.body !== undefined) bodyScene.visible = visibility.body;
-      if (visibility.face !== undefined && faceGroup) faceGroup.visible = visibility.face;
-    },
-    setSpeed(factor) {
-      speedFactor = factor;
-      applySpeed();
-    },
-    setPaused(value) {
-      paused = value;
-    },
-    dispose() {
-      stopEmotion();
-      mixer.stopAllAction();
-      if (headMixer) headMixer.stopAllAction();
-      attachment.dispose();
-    },
-  };
+    // --- reveal gate -----------------------------------------------------------
+    let revealed = false
+    let hiddenElapsed = 0
+    const maybeReveal = (dt: number) => {
+        if (revealed) return
+        hiddenElapsed += dt
+        // Refresh world matrices so the standing test reads live bone positions.
+        root.updateMatrixWorld(true)
+        const up = uprightFraction(plan.bone, plan.hips)
+        // No head/hips to measure → don't gate; also un-hide after ~1.6s no matter
+        // what so a clip with no obvious "stand" never leaves the avatar invisible.
+        if (up === null || up >= UPRIGHT_REVEAL || hiddenElapsed > 1.6) {
+            revealed = true
+            root.visible = true
+        }
+    }
+
+    // Live-playback state (set by the tuning panel / NavMeshRig).
+    let speedFactor = 1
+    let paused = false
+    const applySpeed = () => {
+        for (const key of LOCOMOTION_KEYS) {
+            const target = BASE_TIMESCALE[key] * speedFactor
+            const body = bodyActions[key]
+            if (body) body.timeScale = target
+            const head = headActions[key]
+            if (head) head.timeScale = target
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // One-shot emotion (gesture / dance). No fade in/out: whichever emotion is
+    // active owns the mixers outright — its clip at full weight, every locomotion
+    // action (body + dual-drive head) forced to 0 — so nothing underneath leaks
+    // through. A *gesture* plays one pass then hands back to the caller's blend;
+    // a *dance* loops in place until cancelEmotion() (tap again / pick another).
+    // ------------------------------------------------------------------
+    // Clips load through the SDK's module FBX cache and are remapped onto the
+    // body skeleton; the root translation is frozen so a clip can't drag the
+    // player around inside the navmesh-owned group — moving around is done by
+    // steering the player group, so a dancing character can still be walked.
+    // `startAt` skips an authored preamble (e.g. the gesture library's ~0.14s
+    // "get up from the floor" intro) so a one-shot begins standing.
+    let emotionActiveFlag = false
+    let emotionToken = 0
+    let emotionId: string | null = null
+    let emotionDance = false
+    let emotionElapsed = 0 // playback seconds into the current pass (one-shots)
+    let emotionDuration = 0
+    let emotionAction: THREE.AnimationAction | null = null
+    let emotionHeadAction: THREE.AnimationAction | null = null
+
+    const stopEmotion = () => {
+        if (emotionAction) {
+            emotionAction.enabled = false
+            emotionAction.stop()
+            emotionAction = null
+        }
+        if (emotionHeadAction) {
+            emotionHeadAction.enabled = false
+            emotionHeadAction.stop()
+            emotionHeadAction = null
+        }
+        emotionActiveFlag = false
+        emotionId = null
+        emotionDance = false
+        emotionElapsed = 0
+        emotionDuration = 0
+    }
+
+    // Emotion owns the mixers outright: its clip at full weight, every locomotion
+    // action at 0 — re-asserted each frame so the caller's blend() can't creep
+    // idle back up underneath it.
+    const applyEmotionWeights = () => {
+        for (const key of LOCOMOTION_KEYS) {
+            const body = bodyActions[key]
+            if (body) body.weight = 0
+            const head = headActions[key]
+            if (head) head.weight = 0
+        }
+        if (emotionAction) emotionAction.weight = 1
+        if (emotionHeadAction) emotionHeadAction.weight = 1
+    }
+
+    // Snap the locomotion back to a full idle stance (used the frame an emotion
+    // finishes, so there is no bind-pose flash before the caller re-asserts idle).
+    const settleIdle = () => {
+        for (const key of LOCOMOTION_KEYS) {
+            const value = key === 'idle' ? 1 : 0
+            const body = bodyActions[key]
+            if (body) body.weight = value
+            const head = headActions[key]
+            if (head) head.weight = value
+        }
+    }
+
+    const startEmotionClip = (clip: THREE.AnimationClip, def: { startAt?: number; dance?: boolean; id?: string }) => {
+        const startAt = def.startAt ?? 0
+        const bodyClip = freezeClipRootPosition(clip, bodyScene)
+        const makeAction = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
+            const action = m.clipAction(c)
+            action.loop = def.dance ? THREE.LoopRepeat : THREE.LoopOnce
+            // A gesture holds its last frame until the cut; a dance just loops.
+            action.clampWhenFinished = !def.dance
+            action.weight = 0
+            action.timeScale = speedFactor
+            action.play()
+            // Skip the clip's authored preamble so a one-shot starts standing.
+            if (startAt > 0) action.time = startAt
+            return action
+        }
+        emotionId = def.id ?? clip.name
+        emotionDance = !!def.dance
+        emotionAction = makeAction(mixer, bodyClip)
+        if (headMixer) {
+            // Dual-drive faces play the emotion restricted to the bones under the face
+            // skeleton (head nods / shakes drive the seated head too). When nothing
+            // survives the restriction (e.g. a body-only clip), the face just rests.
+            const headClip = restrictClipToRoot(bodyClip, faceScene)
+            if (headClip) {
+                emotionHeadAction = makeAction(headMixer, headClip)
+            }
+        }
+        emotionDuration = Math.max(0.001, bodyClip.duration - startAt)
+        emotionElapsed = 0
+        emotionActiveFlag = true
+        applyEmotionWeights()
+    }
+
+    const triggerEmotion = (def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }) => {
+        const token = ++emotionToken
+        stopEmotion() // interrupt any emotion already playing
+        loadMotionClips([def], bodyScene).then((loaded) => {
+            if (token !== emotionToken) return // superseded by a newer request
+            const clip = loaded.get(def.name)
+            if (!clip) {
+                console.warn(`[avatarLoader] emotion "${def.name}" has no clip.`)
+                return
+            }
+            startEmotionClip(clip, def)
+        })
+    }
+
+    // One-shots count the single pass and cut to idle at its end; dances loop
+    // until cancelEmotion(). Weights are asserted by applyEmotionWeights() at the
+    // top of advance(), not here.
+    const advanceEmotion = (dt: number) => {
+        if (!emotionActiveFlag) return
+        if (emotionDance) return // keep dancing until explicitly stopped
+        emotionElapsed += dt * speedFactor
+        if (emotionElapsed >= emotionDuration) {
+            settleIdle()
+            stopEmotion()
+        }
+    }
+
+    return {
+        scene: root,
+        blend(targets, alpha) {
+            for (const key of LOCOMOTION_KEYS) {
+                const body = bodyActions[key]
+                if (body) body.weight = THREE.MathUtils.lerp(body.weight, targets[key], alpha)
+                const head = headActions[key]
+                if (head) head.weight = THREE.MathUtils.lerp(head.weight, targets[key], alpha)
+            }
+        },
+        advance(delta) {
+            const dt = paused ? 0 : delta
+            // While an emotion is active it owns the mixers: force the gesture to
+            // full weight and every locomotion action to 0 before this update, so
+            // the caller's blend can't leak idle in underneath.
+            if (emotionActiveFlag) applyEmotionWeights()
+            mixer.update(dt)
+            if (headMixer) headMixer.update(dt)
+            advanceEmotion(dt)
+            // Re-seat the face on the *live* head bone (both rigid glue and the
+            // dual-drive offset nudge recompute against the bone's current transform).
+            mount?.update(headOffset)
+            maybeReveal(delta)
+        },
+        startJumpAt(time) {
+            const body = bodyActions.jump
+            if (body) body.time = time
+            const head = headActions.jump
+            if (head) head.time = time
+        },
+        playEmotionOnce(def) {
+            triggerEmotion(def)
+        },
+        isEmotionActive() {
+            return emotionActiveFlag
+        },
+        isEmotionDance() {
+            return emotionDance
+        },
+        getEmotionId() {
+            return emotionId
+        },
+        cancelEmotion() {
+            if (!emotionActiveFlag) return
+            settleIdle()
+            stopEmotion()
+        },
+        setBodyOffset(offset) {
+            bodyOffset = cloneOffset(offset)
+            applyBodyOffset(root, bodyOffset)
+        },
+        setHeadOffset(offset) {
+            headOffset = cloneOffset(offset) as HeadInsertion
+            mount?.update(headOffset)
+        },
+        setVisibility(visibility) {
+            if (visibility.body !== undefined) bodyScene.visible = visibility.body
+            if (visibility.face !== undefined && faceGroup) faceGroup.visible = visibility.face
+        },
+        setSpeed(factor) {
+            speedFactor = factor
+            applySpeed()
+        },
+        setPaused(value) {
+            paused = value
+        },
+        dispose() {
+            stopEmotion()
+            mixer.stopAllAction()
+            if (headMixer) headMixer.stopAllAction()
+            attachment.dispose()
+        },
+    }
 }
