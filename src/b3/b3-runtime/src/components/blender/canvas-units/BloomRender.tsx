@@ -41,9 +41,7 @@ export function BloomRender({ params }: BloomRenderProps) {
     if (!needsSetup.current) return;
     needsSetup.current = false;
 
-    const scenePass = pass(scene, camera, {
-      
-    });
+    const scenePass = pass(scene, camera, {});
 
     // // MRT: output color + emissive (RGB from material, alpha from output)
     const mrtNode = mrt({
@@ -53,26 +51,22 @@ export function BloomRender({ params }: BloomRenderProps) {
     // mrtNode.setBlendMode("emissive", new THREE.BlendMode(THREE.NormalBlending));
     scenePass.setMRT(mrtNode);
 
-    // // Optimize emissive texture bandwidth
-    // const emissiveTexture = scenePass.getTexture("emissive");
-    // emissiveTexture.type = THREE.UnsignedByteType;
-
     // Extract passes
-    const outputPass = scenePass.getTextureNode();
+    const outputPass = scenePass.getTextureNode("output");
     const emissivePass = scenePass.getTextureNode("emissive");
 
     // Bloom from the emissive channel
     const bloomNode = bloom(
       emissivePass,
-      params?.strength ?? 2.5,
+      params?.strength ?? 1.0,
       params?.radius ?? 0.5,
-      0.0,
+      0.5,
     );
     bloomRef.current = bloomNode;
 
     // Combine: scene color + bloom glow
     const postProcessing = new THREE.RenderPipeline(gl);
-    postProcessing.outputNode = outputPass.add(bloomNode);
+    postProcessing.outputNode = vec4(outputPass.rgb.add(bloomNode.rgb), output.a);
     pipelineRef.current = postProcessing;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
