@@ -39,7 +39,7 @@ export function AvatarPreviewCanvas({ motion }: { motion: string }) {
   const head = useAvatarStore((s) => s.head);
 
   // Pause the turntable while the user drags the orbit camera.
-  const [interacting, setInteracting] = useState(false);
+  // const [interacting, setInteracting] = useState(false);
 
   // Rebuild the manifest whenever the look or its stored tune changes. The stay
   // clips always ride along so every motion chip can be previewed without a
@@ -106,10 +106,6 @@ export function AvatarPreviewCanvas({ motion }: { motion: string }) {
         object-position={[0,1.0, 2.5]}
         minPolarAngle={0.35}
         maxPolarAngle={Math.PI / 2 - 0.04}
-        autoRotate={!interacting}
-        autoRotateSpeed={1.6}
-        onStart={() => setInteracting(true)}
-        onEnd={() => setInteracting(false)}
       />
     </Canvas>
   );
