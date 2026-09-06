@@ -7,6 +7,7 @@ import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { VirtualJoystick } from "../components/VirtualJoystick";
 import { EmotionButtons } from "../components/EmotionButtons";
+import { AvatarPicker } from "../components/avatar/AvatarPicker";
 
 /**
  * Production — optimised deployment preview.
@@ -107,6 +108,9 @@ export function ProductionPage() {
             <BloomRender />
           </ProductionViewer>
         )}
+
+        {/* Avatar customizer — bottom-right of the 3D canvas */}
+        {zipBuffer ? <AvatarPicker /> : null}
       </div>
     </div>
   );

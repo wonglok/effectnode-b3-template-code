@@ -16,6 +16,7 @@ import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-unit
 import { SiteMenu } from "../components/SiteMenu";
 import { NavMeshRig } from "../components/NavMeshRig";
 import { AvatarTuning } from "../components/avatar/AvatarTuning";
+import { AvatarPicker } from "../components/avatar/AvatarPicker";
 import { VirtualJoystick } from "../components/VirtualJoystick";
 import { EmotionButtons } from "../components/EmotionButtons";
 
@@ -196,6 +197,9 @@ export function DevPage() {
             )}
             <BloomRender />
           </CanvasGPU>
+
+          {/* Avatar customizer — bottom-right of the navmesh canvas */}
+          {navmeshMode ? <AvatarPicker /> : null}
         </div>
 
         {/* Sync controls + snapshot + OPFS browser */}
