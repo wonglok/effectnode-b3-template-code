@@ -58,6 +58,15 @@ interface NavRigState {
   /** Fire a one-shot gesture/dance once — the rig plays the clip, then blends
    *  back to the idle locomotion state. */
   requestEmotion: (def: EmotionDef) => void;
+
+  /** One-shot jump requested by the on-screen button. `nonce` advances on every
+   *  request so a quick re-tap is never swallowed; NavMeshRig consumes it once
+   *  per nonce, exactly like the Space key. */
+  jumpRequest: { nonce: number } | null;
+
+  /** Fire a single jump — one impulse per tap (the rig only jumps while
+   *  grounded and not mid-gesture). */
+  requestJump: () => void;
 }
 
 /** A one-shot emotion (dance / gesture) mapped to an on-screen button. */
@@ -102,6 +111,7 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   zoomRadius: 0,
   stick: { x: 0, y: 0 },
   emotionRequest: null,
+  jumpRequest: null,
 
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
@@ -110,6 +120,11 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   requestEmotion: (def) =>
     set((s) => ({
       emotionRequest: { def, nonce: (s.emotionRequest?.nonce ?? 0) + 1 },
+    })),
+
+  requestJump: () =>
+    set((s) => ({
+      jumpRequest: { nonce: (s.jumpRequest?.nonce ?? 0) + 1 },
     })),
 
   dolly: (delta) => {

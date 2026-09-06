@@ -151,7 +151,10 @@ export function EmotionButtons() {
     const fire = (def: EmotionDef) => useNavRigStore.getState().requestEmotion(def)
 
     return (
-        <div className='pointer-events-none fixed left-1/2 z-40' style={{ bottom: 104, transform: 'translateX(-50%)' }}>
+        <div
+            className='pointer-events-none absolute bottom-6 right-6 z-40'
+            style={{ bottom: 104, transform: 'translateX(-50%)' }}
+        >
             {GESTURES.map((g, i) => {
                 const s = SLOTS[i % SLOTS.length]
                 return (

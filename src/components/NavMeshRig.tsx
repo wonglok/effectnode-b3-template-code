@@ -732,6 +732,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
       avatarRig?.playEmotionOnce(def);
     };
 
+    // The on-screen button requests one jump per tap via navRigStore (nonce
+    // advances on every request); consumed once per nonce in the movement loop,
+    // exactly like the Space key.
+    let lastJumpNonce = 0;
+
     const movementTarget = new THREE.Vector3();
     const raycasterOrigin = new THREE.Vector3();
     const raycasterDirection = new THREE.Vector3();
@@ -882,9 +887,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
           targetMarker.visible = false;
         }
 
-        // Jump on Space press — one impulse per tap, only while grounded and
-        // not mid-emotion (a gesture owns the mixers, so no jumping on top).
-        if (input.jump) {
+        // Jump on Space press or the on-screen button — one impulse per tap,
+        // only while grounded and not mid-emotion (a gesture owns the mixers,
+        // so no jumping on top).
+        const jumpRequest = useNavRigStore.getState().jumpRequest;
+        const buttonJump = !!jumpRequest && jumpRequest.nonce !== lastJumpNonce;
+        if (jumpRequest && jumpRequest.nonce !== lastJumpNonce) {
+          lastJumpNonce = jumpRequest.nonce;
+        }
+        if (input.jump || buttonJump) {
           input.jump = false;
           if (!isJumping && !emotionActive) {
             isJumping = true;

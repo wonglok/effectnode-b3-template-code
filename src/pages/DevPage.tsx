@@ -1,42 +1,41 @@
-"use client";
+'use client'
 
-import { useEffect, useRef, useState } from "react";
-import localforage from "localforage";
+import { useEffect, useRef, useState } from 'react'
+import localforage from 'localforage'
 import {
-  OpfsBrowser,
-  Sidebar,
-  BlenderConnection,
-  CanvasGPU,
-  SyncViewer,
-  CameraSync,
-  opfs,
-  useBlenderStore,
-} from "../b3/b3-runtime/src";
-import { BloomRender } from "../b3/b3-runtime/src/components/blender/canvas-units/BloomRender";
-import { SiteMenu } from "../components/SiteMenu";
-import { NavMeshRig } from "../components/NavMeshRig";
-import { AvatarTuning } from "../components/avatar/AvatarTuning";
-import { AvatarPicker } from "../components/avatar/AvatarPicker";
-import { VirtualJoystick } from "../components/VirtualJoystick";
-import { EmotionButtons } from "../components/EmotionButtons";
+    OpfsBrowser,
+    Sidebar,
+    BlenderConnection,
+    CanvasGPU,
+    SyncViewer,
+    CameraSync,
+    opfs,
+    useBlenderStore,
+} from '../b3/b3-runtime/src'
+import { BloomRender } from '../b3/b3-runtime/src/components/blender/canvas-units/BloomRender'
+import { SiteMenu } from '../components/SiteMenu'
+import { NavMeshRig } from '../components/NavMeshRig'
+import { AvatarTuning } from '../components/avatar/AvatarTuning'
+import { AvatarPicker } from '../components/avatar/AvatarPicker'
+import { VirtualJoystick } from '../components/VirtualJoystick'
+import { EmotionButtons } from '../components/EmotionButtons'
+import { JumpButton } from '../components/JumpButton'
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the
 // handle through structured clone, so it comes back as a live handle.
-const EXPORT_FOLDER_KEY = "b3:export-folder-handle";
+const EXPORT_FOLDER_KEY = 'b3:export-folder-handle'
 
 const exportFolderStore = localforage.createInstance({
-  name: "effectnode-b3",
-  storeName: "b3_export",
-  driver: localforage.INDEXEDDB,
-});
+    name: 'effectnode-b3',
+    storeName: 'b3_export',
+    driver: localforage.INDEXEDDB,
+})
 
-const saveDirHandle = (handle: FileSystemDirectoryHandle) =>
-  exportFolderStore.setItem(EXPORT_FOLDER_KEY, handle);
+const saveDirHandle = (handle: FileSystemDirectoryHandle) => exportFolderStore.setItem(EXPORT_FOLDER_KEY, handle)
 
 const loadDirHandle = async (): Promise<FileSystemDirectoryHandle | null> =>
-  (await exportFolderStore.getItem<FileSystemDirectoryHandle>(EXPORT_FOLDER_KEY)) ??
-  null;
+    (await exportFolderStore.getItem<FileSystemDirectoryHandle>(EXPORT_FOLDER_KEY)) ?? null
 
 /**
  * Dev — live Blender receiver.
@@ -49,278 +48,250 @@ const loadDirHandle = async (): Promise<FileSystemDirectoryHandle | null> =>
  * inside the same CanvasGPU.
  */
 export function DevPage() {
-  // Bumped by every snapshot — re-reads the OPFS tree so the space freed by
-  // pruning is actually visible after pressing save.
-  const deploymentVersion = useBlenderStore((s) => s.deploymentVersion);
+    // Bumped by every snapshot — re-reads the OPFS tree so the space freed by
+    // pruning is actually visible after pressing save.
+    const deploymentVersion = useBlenderStore((s) => s.deploymentVersion)
 
-  // Navmesh mode renders the character rig inside CanvasGPU (instead of the
-  // live camera sync) so the Blender content is experienced in the same canvas.
-  const [navmeshMode, setNavmeshMode] = useState(true);
+    // Navmesh mode renders the character rig inside CanvasGPU (instead of the
+    // live camera sync) so the Blender content is experienced in the same canvas.
+    const [navmeshMode, setNavmeshMode] = useState(true)
 
-  // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
-  const guiContainerRef = useRef<HTMLDivElement>(null);
+    // lil-gui mounts into this div inside the sidebar when navmesh mode is on.
+    const guiContainerRef = useRef<HTMLDivElement>(null)
 
-  // Download the current deployment zip from OPFS.
-  const [downloadStatus, setDownloadStatus] = useState<
-    "idle" | "saving" | "done" | "empty" | "error"
-  >("idle");
+    // Download the current deployment zip from OPFS.
+    const [downloadStatus, setDownloadStatus] = useState<'idle' | 'saving' | 'done' | 'empty' | 'error'>('idle')
 
-  // Browser File System API — pick a folder to auto-export scene.zip after
-  // every snapshot.
-  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(
-    null,
-  );
-  const [exportStatus, setExportStatus] = useState<
-    "idle" | "writing" | "done" | "no-deployment" | "error"
-  >("idle");
+    // Browser File System API — pick a folder to auto-export scene.zip after
+    // every snapshot.
+    const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
+    const [exportStatus, setExportStatus] = useState<'idle' | 'writing' | 'done' | 'no-deployment' | 'error'>('idle')
 
-  const writeDeployment = async (dir: FileSystemDirectoryHandle) => {
-    try {
-      setExportStatus("writing");
-      const buf = await opfs.readDeployment();
-      if (!buf) {
-        setExportStatus("no-deployment");
-        return;
-      }
-      const fileHandle = await dir.getFileHandle("scene.zip", {
-        create: true,
-      });
-      const writable = await fileHandle.createWritable();
-      await writable.write(new Blob([buf], { type: "application/zip" }));
-      await writable.close();
-      setExportStatus("done");
-    } catch (err) {
-      console.error("[DevPage] Failed to write scene.zip to folder:", err);
-      setExportStatus("error");
-    }
-  };
-
-  const selectFolder = async () => {
-    try {
-      // File System Access API isn't in every TS lib version — cast it.
-      const picker = (
-        window as Window & {
-          showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+    const writeDeployment = async (dir: FileSystemDirectoryHandle) => {
+        try {
+            setExportStatus('writing')
+            const buf = await opfs.readDeployment()
+            if (!buf) {
+                setExportStatus('no-deployment')
+                return
+            }
+            const fileHandle = await dir.getFileHandle('scene.zip', {
+                create: true,
+            })
+            const writable = await fileHandle.createWritable()
+            await writable.write(new Blob([buf], { type: 'application/zip' }))
+            await writable.close()
+            setExportStatus('done')
+        } catch (err) {
+            console.error('[DevPage] Failed to write scene.zip to folder:', err)
+            setExportStatus('error')
         }
-      ).showDirectoryPicker;
-      if (!picker) {
-        console.warn(
-          "[DevPage] File System Access API not supported in this browser",
-        );
-        return;
-      }
-      const handle = await picker();
-      setDirHandle(handle);
-      void saveDirHandle(handle);
-    } catch {
-      // user cancelled the picker — no-op
     }
-  };
 
-  // Restore the persisted export folder after a reload so the sidebar keeps
-  // showing it. Deliberately does NOT re-export here: if the folder lives inside
-  // the vite project (e.g. public/deploy), writing scene.zip triggers a
-  // full page reload, which re-runs this effect and re-writes — an infinite
-  // reload loop. Exports happen only on snapshot (onSnapshotComplete below).
-  useEffect(() => {
-    let cancelled = false;
-    void loadDirHandle().then((handle) => {
-      if (!cancelled && handle) setDirHandle(handle);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const downloadDeployment = async () => {
-    try {
-      setDownloadStatus("saving");
-      const buf = await opfs.readDeployment();
-      if (!buf) {
-        setDownloadStatus("empty");
-        setTimeout(() => setDownloadStatus("idle"), 2000);
-        return;
-      }
-      const blob = new Blob([buf], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "scene.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setDownloadStatus("done");
-      setTimeout(() => setDownloadStatus("idle"), 2000);
-    } catch (err) {
-      console.error("[DevPage] Failed to download deployment:", err);
-      setDownloadStatus("error");
-      setTimeout(() => setDownloadStatus("idle"), 2000);
+    const selectFolder = async () => {
+        try {
+            // File System Access API isn't in every TS lib version — cast it.
+            const picker = (
+                window as Window & {
+                    showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>
+                }
+            ).showDirectoryPicker
+            if (!picker) {
+                console.warn('[DevPage] File System Access API not supported in this browser')
+                return
+            }
+            const handle = await picker()
+            setDirHandle(handle)
+            void saveDirHandle(handle)
+        } catch {
+            // user cancelled the picker — no-op
+        }
     }
-  };
 
-  // Save Snapshot in the sidebar also writes scene.zip to the selected folder.
-  const onSnapshotComplete = (): Promise<void> => {
-    if (!dirHandle) return Promise.resolve();
-    return writeDeployment(dirHandle);
-  };
+    // Restore the persisted export folder after a reload so the sidebar keeps
+    // showing it. Deliberately does NOT re-export here: if the folder lives inside
+    // the vite project (e.g. public/deploy), writing scene.zip triggers a
+    // full page reload, which re-runs this effect and re-writes — an infinite
+    // reload loop. Exports happen only on snapshot (onSnapshotComplete below).
+    useEffect(() => {
+        let cancelled = false
+        void loadDirHandle().then((handle) => {
+            if (!cancelled && handle) setDirHandle(handle)
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [])
 
-  return (
-    <div className="relative w-full h-full flex flex-col bg-studio-950">
-      <SiteMenu active="dev" />
+    const downloadDeployment = async () => {
+        try {
+            setDownloadStatus('saving')
+            const buf = await opfs.readDeployment()
+            if (!buf) {
+                setDownloadStatus('empty')
+                setTimeout(() => setDownloadStatus('idle'), 2000)
+                return
+            }
+            const blob = new Blob([buf], { type: 'application/zip' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'scene.zip'
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(url)
+            setDownloadStatus('done')
+            setTimeout(() => setDownloadStatus('idle'), 2000)
+        } catch (err) {
+            console.error('[DevPage] Failed to download deployment:', err)
+            setDownloadStatus('error')
+            setTimeout(() => setDownloadStatus('idle'), 2000)
+        }
+    }
 
-      {/* On-screen joystick to walk the navmesh character (navmesh mode only) */}
-      {navmeshMode ? (
-        <>
-          <VirtualJoystick />
-          <EmotionButtons />
-        </>
-      ) : null}
+    // Save Snapshot in the sidebar also writes scene.zip to the selected folder.
+    const onSnapshotComplete = (): Promise<void> => {
+        if (!dirHandle) return Promise.resolve()
+        return writeDeployment(dirHandle)
+    }
 
-      <div className="flex-1 min-h-0 flex">
-        {/* Starts / stops the WebSocket connection to Blender */}
-        <BlenderConnection />
+    return (
+        <div className='relative w-full h-full flex flex-col bg-studio-950'>
+            <SiteMenu active='dev' />
 
-        {/* Character + Motion tuning (drives the navmesh walker's avatar) */}
-        <div className="relative h-full w-[300px] shrink-0 overflow-hidden border-r border-studio-700">
-          <AvatarTuning />
-        </div>
+            <div className='flex-1 min-h-0 flex'>
+                {/* Starts / stops the WebSocket connection to Blender */}
+                <BlenderConnection />
 
-        {/* Live synced canvas — navmesh rig swaps the camera sync while active */}
-        <div className="flex-1 min-w-0 relative">
-          <CanvasGPU>
-            <SyncViewer />
-            {navmeshMode ? (
-              <NavMeshRig guiContainer={guiContainerRef} />
-            ) : (
-              <CameraSync />
-            )}
-            <BloomRender />
-          </CanvasGPU>
-
-          {/* Avatar customizer — bottom-right of the navmesh canvas */}
-          {navmeshMode ? <AvatarPicker /> : null}
-        </div>
-
-        {/* Sync controls + snapshot + OPFS browser */}
-        <Sidebar
-          onSnapshotComplete={onSnapshotComplete}
-          moreButtons={
-            <>
-              <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest text-text-muted">
-                  Deployment
+                {/* Character + Motion tuning (drives the navmesh walker's avatar) */}
+                <div className='relative h-full w-[300px] shrink-0 overflow-hidden border-r border-studio-700'>
+                    <AvatarTuning />
                 </div>
-                <button
-                  onClick={downloadDeployment}
-                  className={`
-                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
-                    bg-surface-secondary border border-border
-                    text-text-secondary text-[11px] font-semibold
-                    hover:bg-surface-tertiary hover:text-text-primary
-                    transition-colors
-                    ${
-                      downloadStatus === "done"
-                        ? "border-status-green/40 text-status-green"
-                        : ""
-                    }
-                    ${
-                      downloadStatus === "error"
-                        ? "border-status-red/40 text-status-red"
-                        : ""
-                    }
-                  `}
-                  title="Download the current deployment zip from OPFS"
-                >
-                  {downloadStatus === "saving"
-                    ? "Preparing…"
-                    : downloadStatus === "done"
-                      ? "Downloaded"
-                      : downloadStatus === "empty"
-                        ? "No deployment yet"
-                        : downloadStatus === "error"
-                          ? "Failed"
-                          : "Download scene.zip"}
-                </button>
 
-                {/* Browser File System API — auto-export scene.zip on snapshot */}
-                <button
-                  onClick={selectFolder}
-                  className={`
+                {/* Live synced canvas — navmesh rig swaps the camera sync while active */}
+                <div className='flex-1 min-w-0 relative'>
+                    <CanvasGPU>
+                        <SyncViewer />
+                        {navmeshMode ? <NavMeshRig guiContainer={guiContainerRef} /> : <CameraSync />}
+                        <BloomRender />
+                    </CanvasGPU>
+
+                    {/* Avatar customizer — bottom-right of the navmesh canvas */}
+                    {navmeshMode ? <AvatarPicker /> : null}
+
+                    {/* On-screen joystick to walk the navmesh character (navmesh mode only) */}
+                    {navmeshMode ? (
+                        <>
+                            <VirtualJoystick />
+                            <EmotionButtons />
+                            <JumpButton />
+                        </>
+                    ) : null}
+                </div>
+
+                {/* Sync controls + snapshot + OPFS browser */}
+                <Sidebar
+                    onSnapshotComplete={onSnapshotComplete}
+                    moreButtons={
+                        <>
+                            <div className='space-y-1.5'>
+                                <div className='text-[10px] uppercase tracking-widest text-text-muted'>Deployment</div>
+                                <button
+                                    onClick={downloadDeployment}
+                                    className={`
                     w-full px-2.5 py-1.5 rounded flex items-center justify-center
                     bg-surface-secondary border border-border
                     text-text-secondary text-[11px] font-semibold
                     hover:bg-surface-tertiary hover:text-text-primary
                     transition-colors
-                    ${dirHandle ? "border-accent/40 text-accent" : ""}
+                    ${downloadStatus === 'done' ? 'border-status-green/40 text-status-green' : ''}
+                    ${downloadStatus === 'error' ? 'border-status-red/40 text-status-red' : ''}
                   `}
-                  title="Pick a folder to auto-save scene.zip on every snapshot"
-                >
-                  {dirHandle
-                    ? `Export → ${dirHandle.name}`
-                    : "Select Export Folder"}
-                </button>
-                {dirHandle && (
-                  <div
-                    className={`
+                                    title='Download the current deployment zip from OPFS'
+                                >
+                                    {downloadStatus === 'saving'
+                                        ? 'Preparing…'
+                                        : downloadStatus === 'done'
+                                          ? 'Downloaded'
+                                          : downloadStatus === 'empty'
+                                            ? 'No deployment yet'
+                                            : downloadStatus === 'error'
+                                              ? 'Failed'
+                                              : 'Download scene.zip'}
+                                </button>
+
+                                {/* Browser File System API — auto-export scene.zip on snapshot */}
+                                <button
+                                    onClick={selectFolder}
+                                    className={`
+                    w-full px-2.5 py-1.5 rounded flex items-center justify-center
+                    bg-surface-secondary border border-border
+                    text-text-secondary text-[11px] font-semibold
+                    hover:bg-surface-tertiary hover:text-text-primary
+                    transition-colors
+                    ${dirHandle ? 'border-accent/40 text-accent' : ''}
+                  `}
+                                    title='Pick a folder to auto-save scene.zip on every snapshot'
+                                >
+                                    {dirHandle ? `Export → ${dirHandle.name}` : 'Select Export Folder'}
+                                </button>
+                                {dirHandle && (
+                                    <div
+                                        className={`
                       text-[10px] pl-1 leading-relaxed
                       ${
-                        exportStatus === "error"
-                          ? "text-status-red"
-                          : exportStatus === "done"
-                            ? "text-status-green"
-                            : "text-text-muted"
+                          exportStatus === 'error'
+                              ? 'text-status-red'
+                              : exportStatus === 'done'
+                                ? 'text-status-green'
+                                : 'text-text-muted'
                       }
                     `}
-                  >
-                    {exportStatus === "writing"
-                      ? "Writing scene.zip…"
-                      : exportStatus === "done"
-                        ? "scene.zip exported"
-                        : exportStatus === "no-deployment"
-                          ? "No deployment to export yet"
-                          : exportStatus === "error"
-                            ? "Export failed"
-                            : "Auto-export on every snapshot"}
-                  </div>
-                )}
-              </div>
+                                    >
+                                        {exportStatus === 'writing'
+                                            ? 'Writing scene.zip…'
+                                            : exportStatus === 'done'
+                                              ? 'scene.zip exported'
+                                              : exportStatus === 'no-deployment'
+                                                ? 'No deployment to export yet'
+                                                : exportStatus === 'error'
+                                                  ? 'Export failed'
+                                                  : 'Auto-export on every snapshot'}
+                                    </div>
+                                )}
+                            </div>
 
-              <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest text-text-muted">
-                  Experience
-                </div>
-                <button
-                  onClick={() => setNavmeshMode((m) => !m)}
-                  className={`
+                            <div className='space-y-1.5'>
+                                <div className='text-[10px] uppercase tracking-widest text-text-muted'>Experience</div>
+                                <button
+                                    onClick={() => setNavmeshMode((m) => !m)}
+                                    className={`
                     w-full px-2.5 py-1.5 rounded flex items-center justify-center
                     bg-surface-secondary border border-border
                     text-text-secondary text-[11px] font-semibold
                     hover:bg-surface-tertiary hover:text-text-primary
                     transition-colors
-                    ${navmeshMode ? "border-accent/40 text-accent" : ""}
+                    ${navmeshMode ? 'border-accent/40 text-accent' : ''}
                   `}
-                >
-                  {navmeshMode ? "Navmesh Mode: ON" : "Navmesh Mode: OFF"}
-                </button>
+                                >
+                                    {navmeshMode ? 'Navmesh Mode: ON' : 'Navmesh Mode: OFF'}
+                                </button>
 
-                {/* lil-gui mounts here when navmesh mode is active */}
-                {navmeshMode && (
-                  <div
-                    ref={guiContainerRef}
-                    className="b3-gui mt-2 max-h-80 overflow-y-auto"
-                  />
-                )}
-              </div>
-            </>
-          }
-          bottomRow={
-            <div className="px-3.5 py-2.5 border-t border-border h-[400px] overflow-y-scroll">
-              <OpfsBrowser refreshKey={deploymentVersion} />
+                                {/* lil-gui mounts here when navmesh mode is active */}
+                                {navmeshMode && (
+                                    <div ref={guiContainerRef} className='b3-gui mt-2 max-h-80 overflow-y-auto' />
+                                )}
+                            </div>
+                        </>
+                    }
+                    bottomRow={
+                        <div className='px-3.5 py-2.5 border-t border-border h-[400px] overflow-y-scroll'>
+                            <OpfsBrowser refreshKey={deploymentVersion} />
+                        </div>
+                    }
+                />
             </div>
-          }
-        />
-      </div>
-    </div>
-  );
+        </div>
+    )
 }
