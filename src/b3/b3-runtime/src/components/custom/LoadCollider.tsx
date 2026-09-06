@@ -135,14 +135,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         let onClean = (v: () => void) => {
             cleans.push(v)
         }
-        //
-        let onLoop = (fnc: () => void) => {
-            let tskKey = '_' + Math.random()
-            tasks[tskKey] = fnc
-            onClean(() => {
-                tasks[tskKey] = () => {}
-            })
-        }
 
         let run = async () => {
             const name = 'collider'
