@@ -105,20 +105,28 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             }
         })
     })
+    const roughnessMap = useMemo(() => {
+        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
+    }, [texData, texData.size, texData.values()])
+
     useEffect(() => {
         if (!playerGroup) {
             return
         }
+
+        if (!roughnessMap) {
+            return
+        }
+
         let cleans: (() => void)[] = []
         let onClean = (v: () => void) => {
             cleans.push(v)
         }
         let onLoop = (fnc: () => void) => {
             let tskKey = '_' + Math.random()
-            tasks[tskKey] = fnc()
+            tasks[tskKey] = fnc
             onClean(() => {
                 tasks[tskKey] = () => {}
-                delete tasks[tskKey]
             })
         }
 
@@ -128,7 +136,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return r.name === name
             }) as any) || { version: '0' }
 
-            let sig = `${colliderInfo?.version}${JSON.stringify([objects])}`
+            let getSig = () => `${colliderInfo?.version}${JSON.stringify([objects, roughnessMap.uuid])}`
+            let sig = getSig()
+
             if (done.get(name) === sig) {
                 return
             }
@@ -143,10 +153,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 }, 1)
             })
 
-            // const normalMap = getOrCreateTexture("Chip005_4K-PNG_NormalGL.png", texData, "color") as Texture;
-            const roughnessMap = getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor') as Texture
-
-            if (collider?.material && roughnessMap) {
+            if (collider && roughnessMap) {
                 if (!collider.userData.oMaterial) {
                     collider.userData.oMaterial = collider.material
                 }
@@ -160,33 +167,22 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     reflection.target.removeFromParent()
                 })
 
-                // normalMap.wrapS = RepeatWrapping;
-                // normalMap.wrapT = RepeatWrapping;
-                // normalMap.colorSpace = SRGBColorSpace;
-                // playerGroup.position
-
                 roughnessMap.wrapS = RepeatWrapping
                 roughnessMap.wrapT = RepeatWrapping
                 roughnessMap.colorSpace = SRGBColorSpace
 
-                // const animatedUV = uv()
-
-                // const normlTexture = texture( normalMap, uv() )
                 const roughnessTexture = texture(roughnessMap, uv())
 
                 const floorMaterial = new MeshPhysicalNodeMaterial()
                 floorMaterial.opacityNode = roughnessTexture.r.oneMinus()
                 floorMaterial.transparent = true
-                // floorMaterial.opacityNode = roughnessTexture.r.oneMinus();
-                // // floorMaterial.metalnessNode = float(roughnessTexture).oneMinus();
+
                 floorMaterial.roughnessNode = roughnessTexture
-                // floorMaterial.iridescenceNode = normlTexture
-                // floorMaterial.normalNode = normlTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
 
                 floorMaterial.colorNode = Fn(() => {
-                    const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus())
+                    const reflectionNode = textureBicubic(reflection, roughnessTexture.r)
 
                     const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0))
 
@@ -197,6 +193,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
 
                     const honeyCombThinBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
+
+                    done.set(name, `${colliderInfo?.version}${JSON.stringify([objects])}`)
 
                     return vec4(
                         //
@@ -210,17 +208,21 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         )
                             .mul(float(pulseMotion))
                             .oneMinus()
-                            .add(honeyCombBase.mul(noiseUV.mul(2))),
+                            .add(
+                                //
+                                honeyCombBase.mul(
+                                    //
+                                    noiseUV.mul(2),
+                                ),
+                            ),
                     )
                 })()
 
-                //
-
                 floorMaterial.transparent = true
 
-                collider.material = floorMaterial
+                done.set(name, getSig())
 
-                done.set(name, `${colliderInfo?.version}${JSON.stringify([objects])}`)
+                collider.material = floorMaterial
             }
         }
 
@@ -230,7 +232,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [playerGroup, objects, texData])
+    }, [playerGroup, objects, roughnessMap])
 
     useEffect(() => {
         let cleans: (() => void)[] = []
