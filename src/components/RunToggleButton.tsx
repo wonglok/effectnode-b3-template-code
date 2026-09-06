@@ -25,8 +25,11 @@ export function RunToggleButton() {
             title={label}
             onClick={() => setRunning(turnOn)}
             className={[
-                'pointer-events-auto flex h-8 items-center justify-center rounded-full',
-                'px-3.5 text-[11px] font-semibold uppercase tracking-wider',
+                // flex-1 splits the pill 50/50; width is shared with JumpButton
+                // (both pinned to the same fixed `w-[132px]`) so the bottom-left
+                // dock lines up as one clean column.
+                'pointer-events-auto flex h-8 flex-1 items-center justify-center rounded-full',
+                'text-[11px] font-semibold uppercase tracking-wider',
                 'transition-colors duration-150',
                 active
                     ? 'bg-tiffany-400 text-studio-950 shadow-[0_2px_10px_rgba(129,216,208,0.45)]'
@@ -40,7 +43,7 @@ export function RunToggleButton() {
     return (
         <div className='pointer-events-none absolute bottom-24 left-6 z-40 select-none'>
             {/* Segmented pill: the lit segment shows the current movement mode */}
-            <div className='pointer-events-auto flex items-center gap-0.5 rounded-full border border-tiffany-400/25 bg-studio-900/80 p-1 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm'>
+            <div className='pointer-events-auto flex w-[132px] items-center gap-0.5 rounded-full border border-tiffany-400/25 bg-studio-900/80 p-1 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm'>
                 {segment(!running, 'Walk', false)}
                 {segment(running, 'Run', true)}
             </div>

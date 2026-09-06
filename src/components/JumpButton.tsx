@@ -21,7 +21,7 @@ export function JumpButton() {
                 aria-label='Jump'
                 title='Jump (Space)'
                 onPointerDown={jump}
-                className='pointer-events-auto flex h-14 w-14 touch-none items-center justify-center rounded-full border border-tiffany-400/30 bg-studio-900/80 text-tiffany-300 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm transition hover:scale-105 hover:border-tiffany-300 hover:text-white active:scale-95'
+                className='pointer-events-auto flex h-14 w-[132px] touch-none items-center justify-center rounded-full border border-tiffany-400/30 bg-studio-900/80 text-tiffany-300 shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur-sm transition hover:scale-105 hover:border-tiffany-300 hover:text-white active:scale-95'
             >
                 {/* Upward arrow — reads as "jump up" at a glance */}
                 <svg
