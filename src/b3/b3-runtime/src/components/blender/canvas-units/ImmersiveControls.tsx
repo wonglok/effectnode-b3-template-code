@@ -1,11 +1,14 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { Object3D, Vector3 } from 'three'
+import { MathUtils, Object3D, Vector3 } from 'three'
 
 // Zoom orbit radius limits (world units from the player). 0.5 lets the camera
 // get very close to the character.
 const MIN_ZOOM_DISTANCE = 1.25
 const MAX_ZOOM_DISTANCE = 250
+// Exponential ease rate (per second) that the orbit radius follows toward the
+// wheel's requested zoom. Higher = snappier, lower = floatier.
+const ZOOM_DAMP_LAMBDA = 8
 // The camera orbits / looks at a focus point this high above the player's feet —
 // roughly the character's centre, so zooming in keeps the body framed.
 const CAMERA_TARGET_Y = 0.85
@@ -41,12 +44,16 @@ export function ImmersiveControls({ player = new Object3D() }) {
     const orbit = useMemo(() => {
         return new Object3D()
     }, [])
+
     // Reused focus point the camera orbits around and looks at each frame.
     const focus = useMemo(() => new Vector3(), [])
 
     // Start tilted so the camera sits at player + CAMERA_INITIAL_OFFSET.
     const polarAngle = useRef(INITIAL_POLAR_DEG)
     const azAngle = useRef(0)
+    // The orbit radius the camera eases toward each frame. The wheel updates this
+    // target; the live spherical.radius follows with damping (see ZOOM_DAMP_LAMBDA).
+    const radiusTarget = useRef(CAMERA_INITIAL_RADIUS)
 
     // --- Joystick (nipplejs) -------------------------------------------
     // Normalized joystick deflection (-1..1 per axis), read every frame.
@@ -169,9 +176,12 @@ export function ImmersiveControls({ player = new Object3D() }) {
             // Two-finger pinch dollies the orbit radius.
             const d = pinchDist(e.touches)
             if (lastPinchDist != null) {
-                // Spreading fingers (positive delta) pulls the camera in.
+                // Spreading fingers (positive delta) pulls the camera in. The live
+                // radius moves immediately and the damp target follows it, so the
+                // wheel's eased zoom never fights a pinch.
                 spherical.radius -= (d - lastPinchDist) * 0.03
                 spherical.radius = Math.min(MAX_ZOOM_DISTANCE, Math.max(MIN_ZOOM_DISTANCE, spherical.radius))
+                radiusTarget.current = spherical.radius
             }
             lastPinchDist = d
         }
@@ -247,14 +257,10 @@ export function ImmersiveControls({ player = new Object3D() }) {
         }
 
         const handleWheel = (event: WheelEvent) => {
-            spherical.radius += event.deltaY / 75
-
-            if (spherical.radius <= MIN_ZOOM_DISTANCE) {
-                spherical.radius += (event.deltaY / 75) * -1
-            }
-            if (spherical.radius >= MAX_ZOOM_DISTANCE) {
-                spherical.radius += (event.deltaY / 75) * -1
-            }
+            // Move the damped *target* (clamped to the zoom range); the live radius
+            // eases to it in useFrame via ZOOM_DAMP_LAMBDA.
+            radiusTarget.current += event.deltaY / 75
+            radiusTarget.current = Math.min(MAX_ZOOM_DISTANCE, Math.max(MIN_ZOOM_DISTANCE, radiusTarget.current))
         }
         el.addEventListener('wheel', handleWheel)
         window.addEventListener('keydown', handleKeyDown)
@@ -291,10 +297,11 @@ export function ImmersiveControls({ player = new Object3D() }) {
 
         // Keep polar angle within the above-horizon band so the camera never
         // rolls underneath the character or flips poles.
-        polarAngle.current = Math.min(
-            MAX_POLAR_ANGLE,
-            Math.max(MIN_POLAR_ANGLE, polarAngle.current),
-        )
+        polarAngle.current = Math.min(MAX_POLAR_ANGLE, Math.max(MIN_POLAR_ANGLE, polarAngle.current))
+
+        // Ease the orbit radius toward the wheel's requested zoom (a no-op while
+        // pinching, because a pinch writes the live radius and syncs the target).
+        spherical.radius = MathUtils.damp(spherical.radius, radiusTarget.current, ZOOM_DAMP_LAMBDA, dt)
 
         // Orbit + look target = the player's position, raised to the character's
         // centre (player.y + CAMERA_TARGET_Y), so zoom is centred on the body.
