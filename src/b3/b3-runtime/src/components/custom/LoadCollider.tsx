@@ -45,7 +45,7 @@ const circlePulse: (a: Node<'vec3'>, b: Node<'float'>, c: Node<'float'>) => Node
         const intensity = smoothstep(1.0, 0.0, ringDist)
 
         // Fade out the pulse as it reaches maxRadius
-        const fade = smoothstep(maxRadius, maxRadius.mul(0.6), radius)
+        const fade = smoothstep(maxRadius, maxRadius.mul(0.25), radius)
 
         return intensity.mul(fade)
     },
@@ -181,22 +181,20 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 floorMaterial.roughnessNode = roughnessTexture
 
                 const uPlayerPosition = uniform(playerGroup.position, 'vec3')
+                const pulseMotion = circlePulse(uPlayerPosition, float(2.3333), float(20.0))
 
                 floorMaterial.emissiveNode = Fn(() => {
                     const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
-                    const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0))
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
                     return vec4(
-                        vec3(color('#f34f4c').rgb.mul(2.5)).mul(honeyCombThinBase).mul(honeyCombPulse.oneMinus()),
+                        vec3(color('#4cddf3').rgb.mul(2.5)).mul(honeyCombThinBase).mul(honeyCombPulse.oneMinus()),
                         1.0,
                     )
                 })()
 
                 floorMaterial.colorNode = Fn(() => {
                     const reflectionNode = textureBicubic(reflection, roughnessTexture.r.oneMinus())
-
-                    const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(10.0))
 
                     const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
