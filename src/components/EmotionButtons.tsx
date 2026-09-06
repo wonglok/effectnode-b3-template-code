@@ -51,10 +51,10 @@ const GESTURES: EmotionDef[] = [
  * buttons never sit on top of the drag zone. dy is measured upward from centre.
  */
 const SLOTS: ReadonlyArray<{ dx: number; dy: number }> = [
-    { dx: -96, dy: 52 },
-    { dx: -42, dy: 112 },
-    { dx: 42, dy: 112 },
-    { dx: 96, dy: 52 },
+    { dx: 12 + -200, dy: -50 - 10 },
+    { dx: 12 + -200, dy: 50 - 10 },
+    { dx: 12 + -150, dy: 120 - 10 },
+    { dx: 12 + -60, dy: 140 - 10 },
 ]
 
 /** Open palm (fingers up) reused by the wave + dismiss icons. */
