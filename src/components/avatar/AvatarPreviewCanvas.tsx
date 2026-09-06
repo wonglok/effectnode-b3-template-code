@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { ContactShadows, OrbitControls, Stage } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import { Avatar, createMotionCatalog, makeDefaultManifest } from '../../b3/b3-runtime/src/components/AvatarSDK'
 import { useAvatarStore } from './useAvatarStore'
 

@@ -20,7 +20,7 @@ export async function runSetup({ port = 4000 }) {
     )
     app.use(express.json({ limit: '100gb' }))
 
-    app.get('/api/health', (req, res) => {
+    app.get('/api/health', (_req, res) => {
         res.json({ uptime: new Date().getTime() - start })
     })
 

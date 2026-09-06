@@ -6,7 +6,7 @@ type IntelligenceStore = {
     makeSocket: () => () => void
 }
 
-export const useIntelligence = create<IntelligenceStore>((set, get) => {
+export const useIntelligence = create<IntelligenceStore>((set) => {
     return {
         socket: null,
         makeSocket: () => {
