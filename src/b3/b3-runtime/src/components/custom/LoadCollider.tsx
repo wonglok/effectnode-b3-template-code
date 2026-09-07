@@ -19,6 +19,7 @@ import {
     step,
     uniform,
     color,
+    mix,
 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
@@ -194,19 +195,18 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             //     return
             // }
 
-            const roughnessTexture = texture(rm, uv())
+            const roughnessMapValue = texture(rm, uv())
 
-            const pulseMotion = circlePulse(uPlayerPosition, float(7.7), uPulseProgress.oneMinus(), uPulseProgress)
+            const pulseMotion = circlePulse(uPlayerPosition, float(7.7), float(7.7 * 0.15), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
-            mat.roughnessNode = roughnessTexture.r.oneMinus()
-            mat.metalnessNode = roughnessTexture.r
+            mat.roughnessNode = roughnessMapValue.r.oneMinus()
+            mat.metalnessNode = roughnessMapValue.r
 
             mat.emissiveNode = Fn(() => {
-                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
-
+                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.0015)) as Node<'float'>
                 return vec4(
                     vec3(
                         //
@@ -221,11 +221,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             })()
 
             mat.colorNode = Fn(() => {
+                const noisePattern = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
                 const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
-
-                const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
-
-                const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
 
                 return vec4(
                     //
@@ -234,27 +231,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         honeyCombThinBase
                             .mul(
                                 //
-                                noiseUV.mul(1.5),
+                                noisePattern.pow(5.0).abs().mul(1.5),
                             )
                             .mul(
                                 //
                                 color('#ffff00'),
                             ),
                     ),
-                    float(
-                        //
-                        honeyCombPulse,
-                    )
-                        .mul(float(pulseMotion))
-                        .oneMinus()
-                        .add(
-                            //
-                            honeyCombBase.mul(
-                                //
-                                noiseUV.mul(2),
-                            ),
-                        )
-                        .mul(1.0),
+                    mix(roughnessMapValue.r, 0.5, honeyCombPulse.oneMinus()),
                 )
             })()
 
