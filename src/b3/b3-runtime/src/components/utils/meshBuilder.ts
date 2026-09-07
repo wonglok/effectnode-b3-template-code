@@ -109,8 +109,10 @@ export function getOrCreateTexture(
             // after the assignment makes the renderer (re)create the GPU texture
             // at the source's true size and upload it.
             texture.image = source
+            texture.generateMipmaps = false
+            texture.magFilter = THREE.NearestFilter
+            texture.minFilter = THREE.NearestFilter
             texture.needsUpdate = true
-            texture.userData.ready = true
         })
         .catch((error) => {
             console.error(`getOrCreateTexture: failed to load texture "${name}"`, error)
