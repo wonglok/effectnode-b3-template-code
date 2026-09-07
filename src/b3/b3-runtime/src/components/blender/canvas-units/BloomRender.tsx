@@ -5,6 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import { pass, mrt, output, emissive, vec4 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { trackPipeline } from '../../../../../../effectnode-intelligence/src/clients/store/useRuntimePerf'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,6 +105,7 @@ export function BloomRender({ params }: BloomRenderProps) {
         const postProcessing = new THREE.RenderPipeline(gl)
         postProcessing.outputNode = vec4(outputPass.rgb.add(bloomNode.rgb), outputPass.a)
         pipelineRef.current = postProcessing
+        trackPipeline('bloom', postProcessing)
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     // ------------------------------------------------------------------

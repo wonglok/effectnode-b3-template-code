@@ -110,7 +110,7 @@ function materialOf(object: Object3D): MaterialScalars | MaterialScalars[] | nul
 }
 
 /**
- * Full scene graph for /api/scene/query — every node with name, type, and its
+ * Full scene graph for /api/query/scene — every node with name, type, and its
  * material(s), recursing into children. Deliberately excludes geometry and any
  * texture/map data so the reply stays a structural digest of the scene.
  */

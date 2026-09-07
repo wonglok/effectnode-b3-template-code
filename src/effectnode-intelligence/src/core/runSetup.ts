@@ -6,7 +6,7 @@ import cors from 'cors'
 import { createServer } from 'node:http'
 import { createWSRoutes } from './createWSRoutes'
 
-export async function runSetup({ port = 4000 }) {
+export async function runSetup({ port = 4343 }) {
     //
     //
     const start = new Date().getTime()

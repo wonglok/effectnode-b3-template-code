@@ -19,6 +19,7 @@ import {
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { trackPipeline } from "../../../../../../effectnode-intelligence/src/clients/store/useRuntimePerf";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -193,6 +194,7 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     // Build pipeline
     const postProcessing = new THREE.RenderPipeline(gl);
     pipelineRef.current = postProcessing;
+    trackPipeline("ssgi", postProcessing);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ------------------------------------------------------------------

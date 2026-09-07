@@ -1,6 +1,6 @@
 import { createBackendServer } from './index.js'
 
-const port = Number(process.env.BACKEND_PORT ?? 4000)
+const port = Number(process.env.BACKEND_PORT ?? 4343)
 
 async function main(): Promise<void> {
     //

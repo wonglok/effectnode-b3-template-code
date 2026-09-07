@@ -18,16 +18,16 @@ export default defineConfig({
     },
     server: {
         proxy: {
-            // Socket.io backend (Intelligence WS, port 4000). `ws: true` forwards
+            // Socket.io backend (Intelligence WS, port 4343). `ws: true` forwards
             // the engine.io websocket upgrade in addition to the initial HTTP
             // long-poll handshake, so a same-origin io() client works through Vite.
             '/socket.io': {
-                target: 'ws://localhost:4000',
+                target: 'ws://localhost:4343',
                 ws: true,
             },
             // Intelligence REST API is mounted at /api on the same backend.
             '/api': {
-                target: 'http://localhost:4000',
+                target: 'http://localhost:4343',
                 changeOrigin: true,
             },
         },
