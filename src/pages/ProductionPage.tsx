@@ -57,7 +57,7 @@ export function ProductionPage() {
 
     return (
         <div className='w-full h-full relative flex flex-col bg-studio-950'>
-            <SiteMenu active='deployment' />
+            <SiteMenu active='production' />
 
             {/* On-screen joystick + emotion buttons to drive the deployed character */}
             {zipBuffer ? (

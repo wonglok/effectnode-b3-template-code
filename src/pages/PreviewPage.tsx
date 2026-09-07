@@ -52,7 +52,7 @@ export function PreviewPage() {
 
     return (
         <div className='w-full h-full flex flex-col bg-studio-950'>
-            <SiteMenu active='production' />
+            <SiteMenu active='preview' />
 
             {/* On-screen joystick + emotion buttons to drive the deployed character */}
             {zipBuffer ? (

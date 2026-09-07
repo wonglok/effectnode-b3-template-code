@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { CubeIcon } from './Icons'
 
-type PageKey = 'home' | 'dev' | 'preview' | 'production' | 'deployment'
+type PageKey = 'home' | 'dev' | 'preview' | 'production'
 
 interface SiteMenuProps {
     active?: PageKey

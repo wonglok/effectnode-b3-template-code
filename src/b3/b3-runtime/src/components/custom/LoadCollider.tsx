@@ -110,7 +110,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     }, [texData, texData.size, texData.values()])
 
     const reflection = useMemo(() => {
-        const reflection = reflector({ resolutionScale: 1.0, bounces: true, generateMipmaps: true }) // 0.5 is half of the rendering view
+        const reflection = reflector({
+            depth: false,
+            samples: 1,
+            resolutionScale: 1024 / Math.min(window.innerWidth, window.innerHeight),
+            bounces: false,
+            generateMipmaps: true,
+        }) // 0.5 is half of the rendering view
+
         reflection.target.rotateX(-Math.PI / 2)
 
         return reflection
