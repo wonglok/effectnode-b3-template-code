@@ -34,10 +34,7 @@ function nearestPOT(value: number): number {
  * resulting image data (and sRGB handling) matches the previous TextureLoader
  * path.
  */
-function decodeImageToPOT(
-    bytes: ArrayBuffer,
-    mime: string,
-): Promise<HTMLImageElement | HTMLCanvasElement> {
+function decodeImageToPOT(bytes: ArrayBuffer, mime: string): Promise<HTMLImageElement | HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
         const blob = new Blob([bytes], { type: mime })
         const url = URL.createObjectURL(blob)

@@ -181,13 +181,16 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             if (!collider.userData.oMaterial) {
                 collider.userData.oMaterial = collider.material
             }
+            if (collider.material.userData.applied) {
+                return
+            }
 
             const roughnessTexture = texture(rm, uv())
 
             const pulseMotion = circlePulse(uPlayerPosition, float(7.7), uPulseProgress.oneMinus(), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
-            const mat = new MeshPhysicalNodeMaterial()
+            const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
             mat.roughnessNode = roughnessTexture.r.oneMinus()
             mat.metalnessNode = roughnessTexture.r
@@ -275,15 +278,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [
-        scene,
-        roughnessMap,
-        objects
-            .map((r: any) => {
-                return JSON.stringify(r)
-            })
-            .join('_'),
-    ])
+    }, [scene, roughnessMap, objects])
 
     return <></>
 }
