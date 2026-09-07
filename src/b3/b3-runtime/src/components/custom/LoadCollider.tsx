@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo } from 'react'
-import { Mesh, Texture, Vector3 } from 'three'
+import { DoubleSide, Mesh, Texture, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -20,6 +20,9 @@ import {
     uniform,
     color,
     mix,
+    viewportLinearDepth,
+    linearDepth,
+    viewportSharedTexture,
 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
@@ -27,6 +30,7 @@ import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
+import { hashBlur } from 'three/examples/jsm/tsl/display/hashBlur.js'
 
 const circlePulse: (
     characterPos: Node<'vec3'>,
@@ -199,7 +203,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const pulseMotion = circlePulse(uPlayerPosition, float(7.7), float(7.7 * 0.15), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(2.5), float(0.35)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(1.0), float(0.35)) as Node<'float'>
+            const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
@@ -207,11 +212,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             mat.metalnessNode = roughnessValue.r
 
             mat.emissiveNode = Fn(() => {
-                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.0015)) as Node<'float'>
+                const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015)) as Node<'float'>
                 return vec4(
                     vec3(
                         //
-                        color('#c3ff00').rgb.add(0.15),
+                        color('#ff0088').rgb.add(0.15),
                         //
                     )
                         .mul(honeyCombThinBase)
@@ -225,21 +230,38 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             mat.colorNode = Fn(() => {
                 return vec4(
                     //
-                    vec3(0.0).add(
-                        //
-                        honeyCombThinBase
-                            .mul(
-                                //
-                                noisePattern.pow(3.0).abs().mul(3.5),
-                            )
-                            .mul(
-                                //
-                                color('#ffff00'),
-                            ),
-                    ),
-                    mix(roughnessValue.r, 0.5, noisePattern),
+                    honeyCombThinBase
+                        .mul(
+                            //
+                            noisePattern.pow(3.0).abs().mul(3.5),
+                        )
+                        .mul(
+                            //
+                            color('#ffff00'),
+                        ),
+                    roughnessValue.r.add(0.5),
                 )
             })()
+
+            // compare depth from viewportLinearDepth with linearDepth() to create a distance field
+            // viewportLinearDepth return the linear depth of the scene
+            // linearDepth() returns the linear depth of the mesh
+            // const depthDistance = viewportLinearDepth.distance(linearDepth())
+
+            // const depthAlphaNode = depthDistance.oneMinus().smoothstep(0.9, 2).mul(10).saturate()
+            // const depthBlurred = hashBlur(
+            //     viewportSharedTexture(),
+            //     depthDistance.smoothstep(0, 0.6).mul(2.0).clamp().mul(0.1),
+            // )
+
+            // mat.backdropNode = depthBlurred.add(depthAlphaNode.mix(color(0x003399).mul(0.3), 0))
+
+            // mat.backdropNode = mix(viewportSharedTexture(), honeyCombPulse, roughnessValue.r)
+
+            mat.transparent = true
+            mat.side = DoubleSide
+
+            // mat.backdropNode = honeyCombPulse
 
             collider.material = mat
 
