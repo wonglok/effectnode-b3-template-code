@@ -10,8 +10,12 @@ export const useIntelligence = create<IntelligenceStore>((set) => {
     return {
         socket: null,
         makeSocket: () => {
-            let socket = io('http://localhost:4000', {
+            let socket = io({
                 withCredentials: true,
+            })
+
+            socket.on('connected', (data) => {
+                console.log(socket.id, 'connected', data)
             })
 
             set({ socket: socket })
@@ -20,6 +24,5 @@ export const useIntelligence = create<IntelligenceStore>((set) => {
                 socket.disconnect()
             }
         },
-        //
     }
 })

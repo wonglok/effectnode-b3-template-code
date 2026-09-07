@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useIntelligence } from './store/useIntelligence'
 import { useThree } from '@react-three/fiber'
-import { collectSceneSummary } from './collectSceneSummary'
+import { collectSceneGraph } from './collectSceneGraph'
 
 export function IntelligenceScan() {
     const makeSocket = useIntelligence((r) => r.makeSocket)
@@ -30,12 +30,13 @@ export function IntelligenceScan() {
 
             // Collect the actual scene content the server asked for, then reply on
             // the fixed res:scene channel; the server matches by reqID.
-            const summary = collectSceneSummary(scene)
-            console.log('[IntelligenceScan] answering', reqID, summary)
-            socket.emit('res:scene', { reqID, summary })
+            const sceneGraph = collectSceneGraph(scene)
+            console.log('[IntelligenceScan] answering', reqID, sceneGraph)
+            socket.emit('res:scene', { reqID, sceneGraph })
         }
 
         socket.on('req:scene', onReqScene)
+
         return () => {
             socket.off('req:scene', onReqScene)
         }
@@ -43,3 +44,5 @@ export function IntelligenceScan() {
 
     return <></>
 }
+
+//

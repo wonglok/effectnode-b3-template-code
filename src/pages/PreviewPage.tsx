@@ -10,6 +10,7 @@ import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { AvatarPicker } from '../components/avatar/AvatarPicker'
+import { IntelligenceScan } from '../effectnode-intelligence/src/clients/IntelligenceScan'
 
 /**
  * Production — optimised deployment preview.
@@ -107,6 +108,7 @@ export function PreviewPage() {
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
                         <BloomRender />
+                        <IntelligenceScan></IntelligenceScan>
                     </ProductionViewer>
                 )}
 

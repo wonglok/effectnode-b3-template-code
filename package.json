@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n vite,intelligence \"npm run dev:vite\"  \"npm run dev:effectnode-intelligence\"",
-    "dev:vite": "vite",
+    "dev:vite": "vite --host",
     "dev:effectnode-intelligence": "nodemon",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
