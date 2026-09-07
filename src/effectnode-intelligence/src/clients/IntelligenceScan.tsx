@@ -61,12 +61,14 @@ export function IntelligenceScan() {
             // the fixed res:scene channel; the server matches by reqID.
             const sceneGraph = collectSceneGraph(scene)
             const performance = collectScenePerformance(scene)
+
             console.log('[IntelligenceScan] answering', reqID, {
                 objects: performance.totals.objects,
                 geometries: performance.totals.uniqueGeometries,
                 vertices: performance.totals.drawnVertices,
                 triangles: performance.totals.drawnTriangles,
             })
+
             socket.emit('res:scene', { reqID, sceneGraph, performance })
         }
 

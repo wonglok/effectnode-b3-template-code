@@ -809,7 +809,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 if (jumpRequest && jumpRequest.nonce !== lastJumpNonce) {
                     lastJumpNonce = jumpRequest.nonce
                 }
-                if (input.jump || buttonJump) {
+                const jumpFromSpace = input.jump
+                if (jumpFromSpace || buttonJump) {
                     input.jump = false
                     if (!isJumping && !emotionActive) {
                         isJumping = true
@@ -817,6 +818,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                         // Restart the jump clip at its launch frame (skipping the
                         // anticipation crouch so the pose matches the takeoff).
                         avatarRig?.startJumpAt(JUMP_CLIP_START)
+                        // Space never touches the navRig store (the on-screen button
+                        // does), so broadcast a jump nonce here too — the floor pulse
+                        // in LoadCollider keys off the store and plays once per jump.
+                        if (jumpFromSpace && !buttonJump) {
+                            useNavRigStore.getState().requestJump()
+                        }
                     }
                 }
 

@@ -22,34 +22,40 @@ import {
     color,
 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
+import gsap from 'gsap'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
+// import { useNavRigStore } from '../stores/navRigStore'
 //
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 //
-import { positionWorld, distance, smoothstep, mod } from 'three/tsl'
+import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
+import { useNavRigStore } from '../stores/navRigStore'
 
-// Define the TSL function taking a character position vector, speed, and max radius
-const circlePulse: (time: Node<'float'>, a: Node<'vec3'>, b: Node<'float'>, c: Node<'float'>) => Node<'float'> = Fn(
-    ([time, characterPos, speed, maxRadius]: any) => {
-        // Calculate distance on the XZ plane (ground) from the character uniform
+const circlePulse: (characterPos: Node<'vec3'>, maxRadius: Node<'float'>, progress: Node<'float'>) => Node<'float'> =
+    Fn(([characterPos, maxRadius, progress = float(0)]: any) => {
+        // Ground-plane distance from the character (XZ — the ring lives on the floor)
         const dist = distance(positionWorld.xz, characterPos.xz)
 
-        // Create an expanding radius that loops using mod
-        const radius = mod(time.mul(speed), maxRadius)
+        // Ring edge travels outwards from the character (progress 0) to maxRadius (1)
+        const radius = maxRadius.mul(progress)
 
-        // Calculate distance from the current ring edge
+        // How far this fragment is from the ring edge
         const ringDist = abs(dist.sub(radius))
 
-        // Sharpness/width of the pulse line (1.0 width with smooth edges)
-        const intensity = smoothstep(1.0, 0.0, ringDist)
+        // The pulse is a 1.0-world-unit band centred on the ring edge with smooth
+        // (not hard) edges — the same thin travelling ring as before.
+        const band = smoothstep(1.0, 0.0, ringDist)
 
-        // Fade out the pulse as it reaches maxRadius
-        const fade = smoothstep(maxRadius, maxRadius.mul(0.25), radius)
+        // Envelope, expressed on progress ([0,1]) so it's invariant to maxRadius:
+        // fade in over the first 8% of the sweep (so progress 0 does not park a
+        // bright dot under the character) and fade out over the last 10% so the
+        // one-shot sweep ends cleanly instead of clipping mid-travel.
+        const fadeIn = smoothstep(0.0, 0.08, progress)
+        const fadeOut = float(1.0).sub(smoothstep(0.9, 1.0, progress))
 
-        return intensity.mul(fade)
-    },
-) as any
+        return band.mul(fadeIn).mul(fadeOut)
+    }) as any
 
 const getHoneyComb: (p: Node<'float'>, r: Node<'float'>) => Node<'float'> = Fn(
     ([pulse = float(1.0), thickness = float(0.125)]: any) => {
@@ -209,7 +215,41 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 })
 
                 const uPlayerPosition = uniform(placeOfPlayer, 'vec3')
-                const pulseMotion = circlePulse(time, uPlayerPosition, float(2.5), float(7.0))
+
+                // One-shot ring per jump tap: watch the navRigStore jump nonce
+                // (same pattern NavMeshRig uses). Each new nonce tweens
+                // uPulseProgress 0 -> 1 once with gsap; re-tapping mid-flight kills
+                // the in-flight tween and restarts, so it never stacks.
+                const uPulseProgress = uniform(0.0, 'float')
+                const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
+                const playPulse = () => {
+                    console.log('[LoadCollider] pulse triggered') // TEMP debug — remove once visible
+                    gsap.killTweensOf(uPulseProgress)
+                    uPulseProgress.value = 0
+                    gsap.to(uPulseProgress, {
+                        value: 1,
+                        duration: PULSE_DURATION,
+                        ease: 'sine.inOut', // slow out of the centre and into the edge
+                        onComplete: () => {
+                            uPulseProgress.value = 0
+                        },
+                    })
+                }
+                onClean(() => gsap.killTweensOf(uPulseProgress))
+
+                playPulse()
+
+                let lastJumpNonce = useNavRigStore.getState().jumpRequest?.nonce ?? 0
+                onLoop(() => {
+                    const jumpRequest = useNavRigStore.getState().jumpRequest
+                    const nonce = jumpRequest ? jumpRequest.nonce : 0
+                    if (nonce !== lastJumpNonce) {
+                        lastJumpNonce = nonce
+                        playPulse()
+                    }
+                })
+
+                const pulseMotion = circlePulse(uPlayerPosition, float(7.0), uPulseProgress)
                 const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
@@ -218,12 +258,13 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     return vec4(
                         vec3(
                             //
-                            color('#ffff00').rgb,
+                            color('#ff7b00').rgb,
                             //
                         )
                             .mul(honeyCombThinBase)
-                            .mul(honeyCombPulse.oneMinus()),
-                        float(10.0),
+                            .mul(honeyCombPulse.oneMinus())
+                            .mul(pulseMotion),
+                        float(1.0),
                     )
                 })()
 
@@ -287,7 +328,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [playerGroup, objects, roughnessMap])
+    }, [playerGroup, roughnessMap])
 
     return <></>
 }
