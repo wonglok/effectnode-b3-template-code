@@ -211,7 +211,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return vec4(
                     vec3(
                         //
-                        color('#00ccff').rgb,
+                        color('#ff0000').rgb.add(0.15),
                         //
                     )
                         .mul(honeyCombThinBase)
@@ -230,7 +230,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         honeyCombThinBase
                             .mul(
                                 //
-                                noisePattern.pow(3.0).abs().mul(2.5),
+                                noisePattern.pow(3.0).abs().mul(3.5),
                             )
                             .mul(
                                 //
