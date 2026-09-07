@@ -255,7 +255,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     }
                 })
 
-                const pulseMotion = circlePulse(uPlayerPosition, float(5.0), uPulseProgress.oneMinus(), uPulseProgress)
+                const pulseMotion = circlePulse(uPlayerPosition, float(7.7), uPulseProgress.oneMinus(), uPulseProgress)
                 const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
