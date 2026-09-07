@@ -113,28 +113,22 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         })
     })
     const roughnessMap = useMemo(() => {
-        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
+        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData)
     }, [texData, texData.size, texData.values()])
 
     // useEffect(() => {}, [])
 
-    const loops: any[] = useMemo(() => {
-        return []
-    }, [])
-
-    useEffect(() => {
-        return () => {
-            loops.splice(0, loops.length)
-        }
+    const loops: { tasks: any[] } = useMemo(() => {
+        return { tasks: [] }
     }, [])
 
     useFrame((_, dt) => {
-        loops.forEach((t: any) => t(_, dt))
+        loops.tasks.forEach((t: any) => t(_, dt))
     })
 
     let onLoop = useMemo(() => {
         return (v: any) => {
-            loops.push(v)
+            loops.tasks.push(v)
         }
     }, [])
 
@@ -186,16 +180,12 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 reflection.target.removeFromParent()
                 reflection.dispose()
             })
+
             onLoop(() => {
                 if (playerGroup) {
                     reflection?.target?.position?.copy(playerGroup?.position)
                 }
             })
-
-            roughnessMap.wrapS = RepeatWrapping
-            roughnessMap.wrapT = RepeatWrapping
-            roughnessMap.colorSpace = NoColorSpace
-
             const roughnessTexture = texture(roughnessMap, uv())
 
             const floorMaterial = new MeshPhysicalNodeMaterial({
@@ -319,6 +309,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
         run()
         return () => {
+            loops.tasks = []
             cleans.forEach((cl) => {
                 cl()
             })
