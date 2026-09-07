@@ -175,18 +175,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return r.name === name
             }) as any
 
-            let getSig = () => `${JSON.stringify(colliderInfo?.version)}${JSON.stringify([objects, roughnessMap.uuid])}`
-
-            let sig = getSig()
-
-            if (done.get(name) === sig) {
-                return
-            }
-            scene.add(reflection.target)
-            onClean(() => {
-                reflection.target.removeFromParent()
-            })
-
             let collider = await new Promise<Mesh>((resolve) => {
                 let interval = setInterval(() => {
                     let obj = scene.getObjectByName(name)
@@ -195,6 +183,19 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         resolve(obj as Mesh)
                     }
                 }, 1)
+            })
+
+            let getSig = () => `${JSON.stringify(colliderInfo?.version)}${JSON.stringify([objects, roughnessMap.uuid])}`
+
+            let sig = getSig()
+
+            if (done.get(name) === sig) {
+                return
+            }
+
+            scene.add(reflection.target)
+            onClean(() => {
+                reflection.target.removeFromParent()
             })
 
             if (collider && roughnessMap) {
@@ -334,7 +335,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [playerGroup, roughnessMap, objects.length])
+    }, [playerGroup, roughnessMap, objects.map((r) => JSON.stringify(r)).join('-')])
 
     return <></>
 }
