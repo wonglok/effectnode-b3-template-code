@@ -280,7 +280,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         roughnessMap,
         objects
             .map((r: any) => {
-                return r.version
+                return JSON.stringify(r)
             })
             .join('_'),
     ])
