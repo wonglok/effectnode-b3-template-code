@@ -1,6 +1,6 @@
-import { createPortal, extend, useFrame, useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { Mesh, MeshBasicMaterial, NoColorSpace, RepeatWrapping, SRGBColorSpace, Texture, Vector3 } from 'three'
+import { Mesh, Texture, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -21,30 +21,11 @@ import {
     uniform,
     color,
 } from 'three/tsl'
-import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, Node } from 'three/webgpu'
+import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
-// import { useNavRigStore } from '../stores/navRigStore'
-//
-// import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
-//
 import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
-import { useNavRigStore } from '../stores/navRigStore'
-
-extend({
-    MeshStandardNodeMaterial,
-})
-
-// MeshStandardNodeMaterial lives in the three/webgpu namespace, which R3F's
-// JSX element map (built from `three`) doesn't include — so declare the element
-// type. Base props reuse the plain meshStandardMaterial element; node props
-// (emissiveNode/colorNode/…) ride on the standard material's type set.
-declare module '@react-three/fiber' {
-    interface ThreeElements {
-        meshStandardNodeMaterial: ThreeElements['meshStandardMaterial']
-    }
-}
 
 const circlePulse: (
     characterPos: Node<'vec3'>,
@@ -114,30 +95,24 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     const playerGroup = useGameGlobal((r) => r.playerGroup)
 
-    const tasks: any = useMemo(() => {
-        return {}
+    const roughnessMap: Texture | null = useMemo(() => {
+        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
+    }, [texData, texData.size])
+
+    // Stable uniforms — mutated every frame / tweened by gsap. The shader nodes
+    // in `attach` below capture these same object instances, so animating them
+    // (placeOfPlayer via useFrame, uPulseProgress via gsap) drives the shader.
+    const placeOfPlayer = useMemo(() => {
+        return new Vector3()
     }, [])
 
-    useFrame((_, dt) => {
-        Object.values(tasks).map((tsk: any) => {
-            if (typeof tsk === 'function') {
-                tsk(_, dt)
-            }
-        })
-    })
-    const roughnessMap: Texture = useMemo(() => {
-        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData) as Texture
-    }, [texData, texData.size, objects])
-
-    const loops: { tasks: any[] } = useMemo(() => {
-        return { tasks: [] }
+    const uPlayerPosition = useMemo(() => {
+        return uniform(placeOfPlayer, 'vec3')
     }, [])
 
-    useFrame((_, dt) => {
-        loops.tasks.forEach((t: any) => t(_, dt))
-    })
-
-    const collider = scene.getObjectByName('collider') as Mesh<any, MeshPhysicalNodeMaterial>
+    const uPulseProgress = useMemo(() => {
+        return uniform(0.0, 'float')
+    }, [])
 
     const reflection = useMemo(() => {
         return reflector({
@@ -151,7 +126,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     useEffect(() => {
         // 0.5 is half of the rendering view
-
         reflection.target.rotateX(-Math.PI / 2)
 
         scene.add(reflection.target)
@@ -163,114 +137,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     useFrame(() => {
         if (playerGroup) {
+            placeOfPlayer.copy(playerGroup.position)
             reflection?.target?.position?.copy(playerGroup?.position)
         }
     })
-
-    const roughnessTexture = useMemo(() => {
-        let roughnessTexture = texture(roughnessMap, uv())
-        return roughnessTexture
-    }, [roughnessMap])
-
-    // const accumulate = uniform(1, 'float')
-    const placeOfPlayer = useMemo(() => {
-        return new Vector3()
-    }, [])
-
-    useFrame(() => {
-        if (playerGroup) {
-            placeOfPlayer.copy(playerGroup.position)
-        }
-    })
-
-    const uPlayerPosition = useMemo(() => {
-        return uniform(placeOfPlayer, 'vec3')
-    }, [])
-
-    const uPulseProgress = useMemo(() => {
-        return uniform(0.0, 'float')
-    }, [])
-
-    const pulseMotion = useMemo(() => {
-        return circlePulse(uPlayerPosition, float(7.7), uPulseProgress.oneMinus(), uPulseProgress)
-    }, [])
-
-    const honeyCombThinBase = useMemo(() => {
-        return getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
-    }, [])
-
-    const colorNode = useMemo(() => {
-        return Fn(() => {
-            //
-
-            const reflectionNode = textureBicubic(reflection, pulseMotion.mul(roughnessTexture.r.oneMinus())).rgb
-
-            const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
-
-            const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
-
-            const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
-
-            return vec4(
-                //
-                reflectionNode.rgb.add(
-                    //
-                    honeyCombThinBase
-                        .mul(
-                            //
-                            noiseUV.mul(1.5),
-                        )
-                        .mul(
-                            //
-                            color('#ffff00'),
-                        ),
-                ),
-                float(
-                    //
-                    honeyCombPulse.mul(1.5),
-                )
-                    .mul(float(pulseMotion))
-                    .oneMinus()
-                    .add(
-                        //
-                        honeyCombBase.mul(
-                            //
-                            noiseUV.mul(2),
-                        ),
-                    ),
-            )
-        })()
-    }, [])
-
-    const emissiveNode = useMemo(() => {
-        return Fn(() => {
-            const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
-
-            return vec4(
-                vec3(
-                    //
-                    color('#ff7b00').rgb,
-                    //
-                )
-                    .mul(honeyCombThinBase)
-                    .mul(honeyCombPulse.oneMinus())
-                    .mul(pulseMotion),
-                float(1.0),
-            )
-        })()
-    }, [])
-
-    const roughnessNode = useMemo(() => {
-        return Fn(() => {
-            return roughnessTexture.r.oneMinus()
-        })()
-    }, [roughnessTexture, roughnessTexture.needsUpdate])
-
-    const metalnessNode = useMemo(() => {
-        return Fn(() => {
-            return roughnessTexture.r
-        })()
-    }, [roughnessTexture, roughnessTexture.needsUpdate])
 
     useEffect(() => {
         const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
@@ -294,23 +164,126 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         }
     }, [])
 
-    //
+    useEffect(() => {
+        const rm = roughnessMap
+        if (!rm) return
 
-    return (
-        <>
-            {collider &&
-                roughnessMap &&
-                createPortal(
-                    <meshStandardNodeMaterial
+        let cancelled = false
+        let raf = 0
+        let cleanup: (() => void)[] = []
+
+        // The 'collider' mesh is created asynchronously by useMeshSync (inside
+        // its own useEffect, after this component first renders), so a render-time
+        // getObjectByName is always null on mount. Wait for the mesh imperatively —
+        // the same pattern LoadEdge and the original LoadCollider use — then build
+        // the floor material and assign it directly.
+        const attach = (collider: Mesh) => {
+            if (!collider.userData.oMaterial) {
+                collider.userData.oMaterial = collider.material
+            }
+
+            const roughnessTexture = texture(rm, uv())
+
+            const pulseMotion = circlePulse(uPlayerPosition, float(7.7), uPulseProgress.oneMinus(), uPulseProgress)
+            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
+
+            const mat = new MeshPhysicalNodeMaterial()
+            mat.transparent = true
+            mat.roughnessNode = roughnessTexture.r.oneMinus()
+            mat.metalnessNode = roughnessTexture.r
+
+            mat.emissiveNode = Fn(() => {
+                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
+
+                return vec4(
+                    vec3(
                         //
-                        transparent
-                        colorNode={colorNode}
-                        emissiveNode={emissiveNode}
-                        roughnessNode={roughnessNode}
-                        metalnessNode={metalnessNode}
-                    ></meshStandardNodeMaterial>,
-                    collider,
-                )}
-        </>
-    )
+                        color('#ff7b00').rgb,
+                        //
+                    )
+                        .mul(honeyCombThinBase)
+                        .mul(honeyCombPulse.oneMinus())
+                        .mul(pulseMotion),
+                    float(1.0),
+                )
+            })()
+
+            mat.colorNode = Fn(() => {
+                const reflectionNode = textureBicubic(reflection, pulseMotion.mul(roughnessTexture.r.oneMinus())).rgb
+
+                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
+
+                const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
+
+                const honeyCombBase = getHoneyComb(float(0.0), float(0.005)) as Node<'float'>
+
+                return vec4(
+                    //
+                    reflectionNode.rgb.add(
+                        //
+                        honeyCombThinBase
+                            .mul(
+                                //
+                                noiseUV.mul(1.5),
+                            )
+                            .mul(
+                                //
+                                color('#ffff00'),
+                            ),
+                    ),
+                    float(
+                        //
+                        honeyCombPulse.mul(1.5),
+                    )
+                        .mul(float(pulseMotion))
+                        .oneMinus()
+                        .add(
+                            //
+                            honeyCombBase.mul(
+                                //
+                                noiseUV.mul(2),
+                            ),
+                        ),
+                )
+            })()
+
+            collider.material = mat
+
+            cleanup.push(() => {
+                mat.dispose()
+                const original = collider.userData.oMaterial
+                if (original) {
+                    collider.material = original as any
+                }
+                delete collider.userData.oMaterial
+            })
+        }
+
+        const tick = () => {
+            if (cancelled) return
+            const collider = scene.getObjectByName('collider') as Mesh | null
+            if (collider) {
+                attach(collider)
+            } else {
+                raf = requestAnimationFrame(tick)
+            }
+        }
+        raf = requestAnimationFrame(tick)
+
+        return () => {
+            cancelled = true
+            cancelAnimationFrame(raf)
+            cleanup.forEach((fn) => fn())
+        }
+    }, [
+        scene,
+        roughnessMap,
+        objects
+            .map((r: any) => {
+                return r.version
+            })
+            .join('_'),
+    ])
+
+    return <></>
 }
