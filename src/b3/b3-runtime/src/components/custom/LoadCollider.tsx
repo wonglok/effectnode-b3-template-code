@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { Mesh, Texture, Vector3 } from 'three'
 import {
     Fn,
@@ -26,6 +26,7 @@ import gsap from 'gsap'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
+import { useNavRigStore } from '../stores/navRigStore'
 
 const circlePulse: (
     characterPos: Node<'vec3'>,
@@ -99,6 +100,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
     }, [texData, texData.size])
 
+    // Blender version of the 'collider' object. A stable primitive so the attach
+    // effect below only re-runs when Blender actually changes the collider —
+    // not on every unrelated objects-array push.
+    const colliderVersion = useMemo(() => {
+        const found = (objects as any[]).find((r: any) => r?.name === 'collider')
+        return found ? (found.version as string) : null
+    }, [objects])
+
     // Stable uniforms — mutated every frame / tweened by gsap. The shader nodes
     // in `attach` below capture these same object instances, so animating them
     // (placeOfPlayer via useFrame, uPulseProgress via gsap) drives the shader.
@@ -142,31 +151,36 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         }
     })
 
-    useEffect(() => {
-        const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
-        const playPulse = () => {
-            console.log('[LoadCollider] pulse triggered') // TEMP debug — remove once visible
-            gsap.killTweensOf(uPulseProgress)
-            uPulseProgress.value = 0
-            gsap.to(uPulseProgress, {
-                value: 1,
-                duration: PULSE_DURATION,
-                ease: 'sine.inOut', // slow out of the centre and into the edge
-                onComplete: () => {
-                    uPulseProgress.value = 0
-                },
-            })
-        }
-        playPulse()
-
-        return () => {
-            gsap.killTweensOf(uPulseProgress)
-        }
+    const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
+    const playPulse = useCallback(() => {
+        console.log('[LoadCollider] pulse triggered') // TEMP debug — remove once visible
+        gsap.killTweensOf(uPulseProgress)
+        uPulseProgress.value = 0
+        gsap.to(uPulseProgress, {
+            value: 1,
+            duration: PULSE_DURATION,
+            ease: 'sine.inOut', // slow out of the centre and into the edge
+            onComplete: () => {
+                uPulseProgress.value = 0
+            },
+        })
     }, [])
+
+    useEffect(() => {
+        playPulse()
+        return () => {}
+    }, [])
+
+    const jumpRequest = useNavRigStore((r) => r.jumpRequest)
+
+    useEffect(() => {
+        playPulse()
+    }, [jumpRequest?.nonce])
 
     useEffect(() => {
         const rm = roughnessMap
         if (!rm) return
+        if (!colliderVersion) return
 
         let cancelled = false
         let raf = 0
@@ -181,9 +195,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             if (!collider.userData.oMaterial) {
                 collider.userData.oMaterial = collider.material
             }
-            if (collider.material.userData.applied) {
-                return
-            }
+            // if (collider.material.userData.applied) {
+            //     return
+            // }
 
             const roughnessTexture = texture(rm, uv())
 
@@ -212,7 +226,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             })()
 
             mat.colorNode = Fn(() => {
-                const reflectionNode = textureBicubic(reflection, pulseMotion.mul(roughnessTexture.r.oneMinus())).rgb
+                // const reflectionNode = textureBicubic(reflection, pulseMotion.mul(roughnessTexture.r.oneMinus())).rgb
 
                 const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
@@ -222,7 +236,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
                 return vec4(
                     //
-                    reflectionNode.rgb.add(
+                    vec3(0.0).add(
                         //
                         honeyCombThinBase
                             .mul(
@@ -236,7 +250,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     ),
                     float(
                         //
-                        honeyCombPulse.mul(1.5),
+                        honeyCombPulse,
                     )
                         .mul(float(pulseMotion))
                         .oneMinus()
@@ -246,7 +260,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                                 //
                                 noiseUV.mul(2),
                             ),
-                        ),
+                        )
+                        .mul(0.85),
                 )
             })()
 
@@ -271,14 +286,23 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 raf = requestAnimationFrame(tick)
             }
         }
-        raf = requestAnimationFrame(tick)
+
+        // When this re-runs (mount, or Blender bumped the collider version) the
+        // mesh has usually already been created by useMeshSync in an earlier
+        // commit, so attach immediately. Only poll while creation is pending.
+        const existing = scene.getObjectByName('collider') as Mesh | null
+        if (existing) {
+            attach(existing)
+        } else {
+            raf = requestAnimationFrame(tick)
+        }
 
         return () => {
             cancelled = true
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [scene, roughnessMap, objects])
+    }, [scene, roughnessMap, colliderVersion])
 
     return <></>
 }

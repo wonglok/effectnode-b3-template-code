@@ -3,6 +3,18 @@
 import { useRef, useEffect } from "react";
 import * as THREE from "three";
 import type { BlenderObject } from "../../types/blenderTypes";
+import { SYNC_SKIP_MATERIAL_OBJECTS } from "./syncConfig";
+
+// ---------------------------------------------------------------------------
+// Custom-shader object names (see ./syncConfig) — the mesh sync manages their
+// geometry + transform but never assigns/overwrites their material.
+// ---------------------------------------------------------------------------
+
+const _skipMaterialNames = new Set<string>(SYNC_SKIP_MATERIAL_OBJECTS);
+
+function ownsMaterial(name: string): boolean {
+  return _skipMaterialNames.has(name);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,8 +134,15 @@ export function useMeshSync({
 
     const groups = new Map<string, Resolved[]>();
     for (const r of resolved) {
-      if (!groups.has(r.cacheKey)) groups.set(r.cacheKey, []);
-      groups.get(r.cacheKey)!.push(r);
+      // Custom-shader objects are isolated into their own single-member group so
+      // they are never batched into an InstancedMesh (which has no per-object
+      // name and a shared material). They must stay findable by name and keep a
+      // private material owned by their component (e.g. LoadCollider).
+      const groupKey = ownsMaterial(r.obj.name)
+        ? `${r.cacheKey}||custom:${r.obj.name}`
+        : r.cacheKey;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push(r);
     }
 
     // ---- Phase 2: build / update meshes per group ----
@@ -228,6 +247,13 @@ export function useMeshSync({
         let cached = meshes.get(obj.name);
 
         if (!cached || cached.version !== cacheKey) {
+          // Custom-shader objects keep whatever material was last on the mesh
+          // (e.g. LoadCollider's node material) across a rebuild, so a Blender
+          // push that bumps the geometry version never re-applies the generic
+          // synced material over the custom shader.
+          const keepMaterial =
+            ownsMaterial(obj.name) && cached ? cached.mesh.material : undefined;
+
           if (cached) {
             scene.remove(cached.mesh);
             cached = undefined;
@@ -244,7 +270,10 @@ export function useMeshSync({
             geoMatCache.current.set(cacheKey, geoMat);
           }
 
-          const mesh = new THREE.Mesh(geoMat.geometry, geoMat.material);
+          const mesh = new THREE.Mesh(
+            geoMat.geometry,
+            keepMaterial ?? geoMat.material,
+          );
           mesh.name = obj.name;
           mesh.castShadow = true;
           mesh.receiveShadow = true;
