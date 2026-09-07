@@ -195,35 +195,34 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             //     return
             // }
 
-            const roughnessMapValue = texture(rm, uv())
+            const roughnessValue = texture(rm, uv())
 
             const pulseMotion = circlePulse(uPlayerPosition, float(7.7), float(7.7 * 0.15), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(2.5), float(0.35)) as Node<'float'>
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
-            mat.roughnessNode = roughnessMapValue.r.oneMinus()
-            mat.metalnessNode = roughnessMapValue.r
+            mat.roughnessNode = roughnessValue.r.oneMinus()
+            mat.metalnessNode = roughnessValue.r
 
             mat.emissiveNode = Fn(() => {
                 const honeyCombPulse = getHoneyComb(pulseMotion, float(0.0015)) as Node<'float'>
                 return vec4(
                     vec3(
                         //
-                        color('#ff7b00').rgb,
+                        color('#00ccff').rgb,
                         //
                     )
                         .mul(honeyCombThinBase)
                         .mul(honeyCombPulse.oneMinus())
                         .mul(pulseMotion),
+
                     float(1.0),
                 )
             })()
 
             mat.colorNode = Fn(() => {
-                const noisePattern = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
-                const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
-
                 return vec4(
                     //
                     vec3(0.0).add(
@@ -231,14 +230,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         honeyCombThinBase
                             .mul(
                                 //
-                                noisePattern.pow(5.0).abs().mul(1.5),
+                                noisePattern.pow(3.0).abs().mul(2.5),
                             )
                             .mul(
                                 //
                                 color('#ffff00'),
                             ),
                     ),
-                    mix(roughnessMapValue.r, 0.5, honeyCombPulse.oneMinus()),
+                    mix(roughnessValue.r, 0.5, noisePattern),
                 )
             })()
 
