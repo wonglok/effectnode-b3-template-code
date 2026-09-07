@@ -8,7 +8,6 @@ import {
     vec4,
     texture,
     uv,
-    textureBicubic,
     reflector,
     time,
     vec3,
@@ -125,11 +124,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     const reflection = useMemo(() => {
         return reflector({
-            depth: false,
-            samples: 1,
             resolutionScale: 1,
-            bounces: false,
-            generateMipmaps: true,
         })
     }, [])
 
@@ -226,8 +221,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             })()
 
             mat.colorNode = Fn(() => {
-                // const reflectionNode = textureBicubic(reflection, pulseMotion.mul(roughnessTexture.r.oneMinus())).rgb
-
                 const honeyCombPulse = getHoneyComb(pulseMotion, float(0.025)) as Node<'float'>
 
                 const noiseUV = getNoiseValue(float(1.5), float(0.35)) as Node<'float'>
@@ -261,7 +254,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                                 noiseUV.mul(2),
                             ),
                         )
-                        .mul(0.85),
+                        .mul(1.0),
                 )
             })()
 
