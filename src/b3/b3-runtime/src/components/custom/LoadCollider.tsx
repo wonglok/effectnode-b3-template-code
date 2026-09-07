@@ -211,7 +211,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return vec4(
                     vec3(
                         //
-                        color('#ff0000').rgb.add(0.15),
+                        color('#c3ff00').rgb.add(0.15),
                         //
                     )
                         .mul(honeyCombThinBase)
