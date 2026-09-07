@@ -127,7 +127,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     })
     const roughnessMap: Texture = useMemo(() => {
         return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData) as Texture
-    }, [texData, texData.size])
+    }, [texData, texData.size, objects])
 
     const loops: { tasks: any[] } = useMemo(() => {
         return { tasks: [] }
@@ -137,7 +137,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         loops.tasks.forEach((t: any) => t(_, dt))
     })
 
-    let collider = scene.getObjectByName('collider') as Mesh<any, MeshPhysicalNodeMaterial>
+    const collider = scene.getObjectByName('collider') as Mesh<any, MeshPhysicalNodeMaterial>
 
     const reflection = useMemo(() => {
         return reflector({
@@ -170,7 +170,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     const roughnessTexture = useMemo(() => {
         let roughnessTexture = texture(roughnessMap, uv())
         return roughnessTexture
-    }, [])
+    }, [roughnessMap])
 
     // const accumulate = uniform(1, 'float')
     const placeOfPlayer = useMemo(() => {
@@ -260,6 +260,18 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         })()
     }, [])
 
+    const roughnessNode = useMemo(() => {
+        return Fn(() => {
+            return roughnessTexture.r.oneMinus()
+        })()
+    }, [roughnessTexture, roughnessTexture.needsUpdate])
+
+    const metalnessNode = useMemo(() => {
+        return Fn(() => {
+            return roughnessTexture.r
+        })()
+    }, [roughnessTexture, roughnessTexture.needsUpdate])
+
     useEffect(() => {
         const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
         const playPulse = () => {
@@ -282,6 +294,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         }
     }, [])
 
+    //
+
     return (
         <>
             {collider &&
@@ -292,8 +306,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         transparent
                         colorNode={colorNode}
                         emissiveNode={emissiveNode}
-                        roughnessNode={roughnessTexture.r.oneMinus()}
-                        metalnessNode={roughnessTexture.r}
+                        roughnessNode={roughnessNode}
+                        metalnessNode={metalnessNode}
                     ></meshStandardNodeMaterial>,
                     collider,
                 )}

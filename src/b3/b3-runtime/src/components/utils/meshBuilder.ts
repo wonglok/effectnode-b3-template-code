@@ -34,12 +34,14 @@ function nearestPOT(value: number): number {
  * resulting image data (and sRGB handling) matches the previous TextureLoader
  * path.
  */
-function decodeImageToPOT(bytes: ArrayBuffer, mime: string): Promise<HTMLImageElement | HTMLCanvasElement> {
+function decodeImageToPOT(
+    bytes: ArrayBuffer,
+    mime: string,
+): Promise<HTMLImageElement | HTMLCanvasElement> {
     return new Promise((resolve, reject) => {
         const blob = new Blob([bytes], { type: mime })
         const url = URL.createObjectURL(blob)
         const image = new Image()
-
         image.onload = () => {
             URL.revokeObjectURL(url)
 
@@ -85,9 +87,16 @@ export function getOrCreateTexture(
     if (!texEntry) return null
 
     // Reserve the texture immediately: callers build materials and cache keys
-    // from its stable uuid right away, and the POT-resized image is published
-    // onto it once the native decode finishes (same async contract as the old
+    // from its stable uuid right away, and the decoded image is published onto
+    // it once the native decode finishes (same async contract as the old
     // TextureLoader call).
+    //
+    // The image is intentionally left unset until the decode below resolves.
+    // three/webgpu only hands a source to `copyExternalImageToTexture` once it
+    // has real pixels, so an empty canvas never reaches the browser — otherwise
+    // Chromium logs "CopyExternalImageToTexture(): Browser fails extracting
+    // valid resource from external image." (a fresh 300×150 canvas that was
+    // never drawn on is not an extractable source).
     const texture = new THREE.Texture()
     _textureCache.set(cacheKey, texture)
 
@@ -97,8 +106,12 @@ export function getOrCreateTexture(
     texture.colorSpace = kind === 'color' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
 
     decodeImageToPOT(texEntry.bytes, texEntry.mime)
-        .then((image) => {
-            texture.image = image
+        .then((source) => {
+            // Publish the real pixels — the decoded <img> when the source was
+            // already POT, otherwise the POT-resized canvas. Bumping needsUpdate
+            // after the assignment makes the renderer (re)create the GPU texture
+            // at the source's true size and upload it.
+            texture.image = source
             texture.needsUpdate = true
             texture.userData.ready = true
         })
