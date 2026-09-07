@@ -100,6 +100,7 @@ export function getOrCreateTexture(
         .then((image) => {
             texture.image = image
             texture.needsUpdate = true
+            texture.userData.ready = true
         })
         .catch((error) => {
             console.error(`getOrCreateTexture: failed to load texture "${name}"`, error)
