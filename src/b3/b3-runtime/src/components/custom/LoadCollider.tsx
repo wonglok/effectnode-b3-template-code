@@ -32,30 +32,34 @@ import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
 
-const circlePulse: (characterPos: Node<'vec3'>, maxRadius: Node<'float'>, progress: Node<'float'>) => Node<'float'> =
-    Fn(([characterPos, maxRadius, progress = float(0)]: any) => {
-        // Ground-plane distance from the character (XZ — the ring lives on the floor)
-        const dist = distance(positionWorld.xz, characterPos.xz)
+const circlePulse: (
+    characterPos: Node<'vec3'>,
+    maxRadius: Node<'float'>,
+    thickness: Node<'float'>,
+    progress: Node<'float'>,
+) => Node<'float'> = Fn(([characterPos, maxRadius, thickness = float(1), progress = float(0)]: any) => {
+    // Ground-plane distance from the character (XZ — the ring lives on the floor)
+    const dist = distance(positionWorld.xz, characterPos.xz)
 
-        // Ring edge travels outwards from the character (progress 0) to maxRadius (1)
-        const radius = maxRadius.mul(progress)
+    // Ring edge travels outwards from the character (progress 0) to maxRadius (1)
+    const radius = maxRadius.mul(progress)
 
-        // How far this fragment is from the ring edge
-        const ringDist = abs(dist.sub(radius))
+    // How far this fragment is from the ring edge
+    const ringDist = abs(dist.sub(radius))
 
-        // The pulse is a 1.0-world-unit band centred on the ring edge with smooth
-        // (not hard) edges — the same thin travelling ring as before.
-        const band = smoothstep(1.0, 0.0, ringDist)
+    // The pulse is a band `thickness` world-units wide on each side of the ring
+    // edge, with smooth (not hard) edges. thickness = 1.0 reproduces the old look.
+    const band = smoothstep(thickness, 0.0, ringDist)
 
-        // Envelope, expressed on progress ([0,1]) so it's invariant to maxRadius:
-        // fade in over the first 8% of the sweep (so progress 0 does not park a
-        // bright dot under the character) and fade out over the last 10% so the
-        // one-shot sweep ends cleanly instead of clipping mid-travel.
-        const fadeIn = smoothstep(0.0, 0.08, progress)
-        const fadeOut = float(1.0).sub(smoothstep(0.9, 1.0, progress))
+    // Envelope, expressed on progress ([0,1]) so it's invariant to maxRadius:
+    // fade in over the first 8% of the sweep (so progress 0 does not park a
+    // bright dot under the character) and fade out over the last 10% so the
+    // one-shot sweep ends cleanly instead of clipping mid-travel.
+    const fadeIn = smoothstep(0.0, 0.08, progress)
+    const fadeOut = float(1.0).sub(smoothstep(0.9, 1.0, progress))
 
-        return band.mul(fadeIn).mul(fadeOut)
-    }) as any
+    return band.mul(fadeIn).mul(fadeOut)
+}) as any
 
 const getHoneyComb: (p: Node<'float'>, r: Node<'float'>) => Node<'float'> = Fn(
     ([pulse = float(1.0), thickness = float(0.125)]: any) => {
@@ -145,9 +149,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         loops.forEach((t: any) => t(_, dt))
     })
 
-    let onLoop = (v: any) => {
-        loops.push(v)
-    }
+    let onLoop = useMemo(() => {
+        return (v: any) => {
+            loops.push(v)
+        }
+    }, [])
 
     useEffect(() => {
         if (!playerGroup) {
@@ -249,7 +255,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     }
                 })
 
-                const pulseMotion = circlePulse(uPlayerPosition, float(7.0), uPulseProgress)
+                const pulseMotion = circlePulse(uPlayerPosition, float(5.0), uPulseProgress.oneMinus(), uPulseProgress)
                 const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
 
                 floorMaterial.emissiveNode = Fn(() => {
@@ -328,7 +334,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 cl()
             })
         }
-    }, [playerGroup, roughnessMap])
+    }, [playerGroup, roughnessMap, objects.length])
 
     return <></>
 }
