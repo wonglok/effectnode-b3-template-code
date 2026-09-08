@@ -402,10 +402,10 @@ export interface PartPool {
  * blond2 / latin / mexican / mexican2 heads. A second male set was added Sept
  * 2026 (all single-mesh rigged "Scene" exports, independent looks): bodies
  * army-1 / commander-1 / rocket-01 / space-army-01..03 / swat /
- * wintersnow, plus the chinese head — the current male boot default is
- * `swat × chinese`. Female looks: body-01 / body-02 + seven Tripo bodies
- * (blue-polo / office-01 / office-02 / runner / space / street / teal-polo)
- * and head-01 + five Tripo heads (blond / lady / princess / snow-white /
+ * wintersnow / lime, plus the chinese head — the current male boot default
+ * is `swat × chinese`. Female looks: body-01 / body-02 + eight Tripo bodies
+ * (blue-polo / office-01 / office-02 / runner / space / street / teal-polo /
+ * pink) and head-01 + five Tripo heads (blond / lady / princess / snow-white /
  * southern). Bodies and heads are independent, so any body × any head of a
  * gender composes. `<Avatar>` auto-seats cross-character heads (different
  * skeleton rest space) via `seating.ts` (rigid glue when >1 cm apart,
@@ -433,6 +433,8 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'spacearmy3-body', label: 'space-army-03', kind: 'body', gender: 'male', url: '/char/male/body/space-army-03.glb' },
       { id: 'swat-body', label: 'swat', kind: 'body', gender: 'male', url: '/char/male/body/swat.glb' },
       { id: 'wintersnow-body', label: 'wintersnow', kind: 'body', gender: 'male', url: '/char/male/body/wintersnow.glb' },
+      // Added Sept 2026 — lime single-mesh rigged export.
+      { id: 'lime-body', label: 'lime', kind: 'body', gender: 'male', url: '/char/male/body/lime.glb' },
     ],
     face: [
       { id: 'male-head', label: 'asian', kind: 'face', gender: 'male', url: '/char/male/face/asian.glb' },
@@ -457,6 +459,8 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'space-body', label: 'space', kind: 'body', gender: 'female', url: '/char/female/body/space.glb' },
       { id: 'street-body', label: 'street', kind: 'body', gender: 'female', url: '/char/female/body/street.glb' },
       { id: 'tealpolo-body', label: 'teal-polo', kind: 'body', gender: 'female', url: '/char/female/body/teal-polo.glb' },
+      // Added Sept 2026 — pink single-mesh rigged export.
+      { id: 'pink-body', label: 'pink', kind: 'body', gender: 'female', url: '/char/female/body/pink.glb' },
     ],
     face: [
       { id: 'female-head', label: 'head-01', kind: 'face', gender: 'female', url: '/char/female/face/head-01.glb' },

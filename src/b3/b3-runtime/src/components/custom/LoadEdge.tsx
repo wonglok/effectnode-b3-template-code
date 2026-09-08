@@ -1,7 +1,7 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { Mesh } from 'three'
-import { color, Fn, vec3 } from 'three/tsl'
+import { color, Fn } from 'three/tsl'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
