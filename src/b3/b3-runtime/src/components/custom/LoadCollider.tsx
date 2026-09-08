@@ -201,6 +201,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             const noisePattern = getNoiseValue(float(1.0), float(0.25)) as Node<'float'>
             const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015)) as Node<'float'>
 
+            // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
+            // yet wired in; uncomment once it's referenced (kept the build green).
+            // const reflectionColor = texture(reflection, uv())
+
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
             mat.roughnessNode = roughnessVec4.r.oneMinus()
@@ -236,6 +240,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                             //
                             color('#00E5FF').mul(0.35),
                         ),
+
                     roughnessVec4.r.add(0.5),
                 )
             })()
