@@ -129,7 +129,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     const reflection = useMemo(() => {
         return reflector({
-            resolutionScale: 1,
+            resolutionScale: 0.5,
         })
     }, [])
 
@@ -147,7 +147,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     useFrame(() => {
         if (playerGroup) {
             placeOfPlayer.copy(playerGroup.position)
-            reflection?.target?.position?.copy(playerGroup?.position)
+            // reflection.target.position.y = playerGroup?.position.y
         }
     })
 
@@ -209,7 +209,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
-            // const reflectionColor = texture(reflection, uv())
+            const reflectionColor = texture(reflection, uv())
+
             //
             const normalVec4 = texture(normalMap, uv())
             const roughnessVec4 = texture(rm, uv())
@@ -238,24 +239,30 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             })()
 
             mat.colorNode = Fn(() => {
-                return vec4(
-                    //
-                    add(
-                        honeyCombThinBase
-                            .mul(
-                                //
-                                noisePattern.pow(3.0).abs(),
-                            )
-                            .mul(
-                                //
-                                color('#00E5FF').mul(1.0),
-                            ),
+                //
 
-                        vec3(0.0),
-                    ),
-                    roughnessVec4.r.add(0.25),
-                )
+                return vec4(reflectionColor.rgb, 1.0)
             })()
+
+            // mat.colorNode = Fn(() => {
+            //     return vec4(
+            //         //
+            //         add(
+            //             honeyCombThinBase
+            //                 .mul(
+            //                     //
+            //                     noisePattern.pow(3.0).abs(),
+            //                 )
+            //                 .mul(
+            //                     //
+            //                     color('#00E5FF').mul(1.0),
+            //                 ),
+
+            //             vec3(0.0),
+            //         ),
+            //         roughnessVec4.r.add(0.25),
+            //     )
+            // })()
 
             mat.transparent = true
             mat.side = DoubleSide
