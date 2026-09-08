@@ -99,6 +99,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
     }, [texData, texData.size])
 
+    const normalMap: Texture | null = useMemo(() => {
+        return getOrCreateTexture('Chip003_4K-PNG_NormalGL.png', texData, 'noncolor')
+    }, [texData, texData.size])
+
     // Blender version of the 'collider' object. A stable primitive so the attach
     // effect below only re-runs when Blender actually changes the collider —
     // not on every unrelated objects-array push.
@@ -176,6 +180,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         const rm = roughnessMap
         if (!rm) return
         if (!colliderVersion) return
+        if (!normalMap) {
+            return
+        }
 
         let cancelled = false
         let raf = 0
@@ -194,8 +201,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             //     return
             // }
 
-            const roughnessVec4 = texture(rm, uv())
-
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02)) as Node<'float'>
             const noisePattern = getNoiseValue(float(1.0), float(0.25)) as Node<'float'>
@@ -203,12 +208,16 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
-            const reflectionColor = texture(reflection, uv())
+            // const reflectionColor = texture(reflection, uv())
+
+            const normalVec4 = texture(normalMap, uv())
+            const roughnessVec4 = texture(rm, uv())
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
             mat.roughnessNode = roughnessVec4.r.oneMinus()
             mat.metalnessNode = roughnessVec4.r
+            mat.normalNode = normalVec4.rgb
 
             // mat.backdropNode =
 
@@ -291,7 +300,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [scene, roughnessMap, colliderVersion])
+    }, [scene, normalMap, roughnessMap, colliderVersion])
 
     return <></>
 }
