@@ -209,7 +209,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
             // const reflectionColor = texture(reflection, uv())
-
             const normalVec4 = texture(normalMap, uv())
             const roughnessVec4 = texture(rm, uv())
 
@@ -245,11 +244,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         honeyCombThinBase
                             .mul(
                                 //
-                                noisePattern.pow(3.0).abs().mul(3.5),
+                                noisePattern.pow(3.0).abs(),
                             )
                             .mul(
                                 //
-                                color('#00E5FF').mul(0.35),
+                                color('#00E5FF').mul(1.0),
                             ),
                     ),
                     roughnessVec4.r.add(0.5),
