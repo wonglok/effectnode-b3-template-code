@@ -220,7 +220,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>
-            const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015), float(15)) as Node<'float'>
             const noisePattern = getNoiseValue(float(2.0), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
@@ -237,6 +236,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             mat.normalNode = normalVec4.rgb
             mat.transparent = true
 
+            const hexagon = honeyCombThinBase.mul(noisePattern.pow(3.0).abs().mul(5.0).clamp(0.0, 1.0))
+
             mat.emissiveNode = Fn(() => {
                 return vec4(
                     vec3(
@@ -244,39 +245,27 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         color('#00E5FF').mul(1.0).rgb,
                         //
                     )
-                        .mul(honeyCombThinBase)
-                        .mul(honeyCombPulse.oneMinus())
                         .mul(pulseMotion)
-                        .pow(2)
+                        .mul(honeyCombThinBase)
+                        .pow(3)
                         .mul(5.0),
 
-                    float(roughnessVec4.r.add(0.5)),
+                    1.0,
                 )
-            })()
-
-            mat.colorNode = Fn(() => {
-                //
-
-                return vec4(reflectionColor.rgb, 1.0)
             })()
 
             mat.colorNode = Fn(() => {
                 return vec4(
                     //
                     add(
-                        honeyCombThinBase
-                            .mul(
-                                //
-                                noisePattern.pow(3.0).abs(),
-                            )
-                            .mul(
-                                //
-                                color('#00E5FF').mul(1.0),
-                            ),
+                        hexagon.mul(
+                            //
+                            color('#00E5FF'),
+                        ),
 
                         vec3(0.0),
                     ),
-                    roughnessVec4.r.add(0.25),
+                    1.0,
                 )
             })()
 
