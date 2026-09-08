@@ -19,6 +19,7 @@ import {
     step,
     uniform,
     color,
+    add,
 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
@@ -204,21 +205,20 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>
             const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015), float(15)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(1.0), float(0.25)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(2.0), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
             // const reflectionColor = texture(reflection, uv())
+            //
             const normalVec4 = texture(normalMap, uv())
             const roughnessVec4 = texture(rm, uv())
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
-            mat.transparent = true
             mat.roughnessNode = roughnessVec4.r.oneMinus()
             mat.metalnessNode = roughnessVec4.r
             mat.normalNode = normalVec4.rgb
-
-            // mat.backdropNode =
+            mat.transparent = true
 
             mat.emissiveNode = Fn(() => {
                 return vec4(
@@ -233,14 +233,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         .pow(2)
                         .mul(5.0),
 
-                    float(1.0),
+                    float(roughnessVec4.r.add(0.5)),
                 )
             })()
 
             mat.colorNode = Fn(() => {
                 return vec4(
                     //
-                    vec3(0.0).add(
+                    add(
                         honeyCombThinBase
                             .mul(
                                 //
@@ -250,8 +250,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                                 //
                                 color('#00E5FF').mul(1.0),
                             ),
+
+                        vec3(0.0),
                     ),
-                    roughnessVec4.r.add(0.5),
+                    roughnessVec4.r.add(0.25),
                 )
             })()
 
