@@ -1,7 +1,7 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { Mesh } from 'three'
-import { Fn, vec3 } from 'three/tsl'
+import { color, Fn, vec3 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
 // import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
@@ -41,7 +41,7 @@ export function LoadEdge({ texData = new Map(), objects = [] }) {
             if (edge) {
                 const edgeMat = new MeshPhysicalNodeMaterial()
                 edgeMat.emissiveNode = Fn(() => {
-                    return vec3(1.0, 1.0, 0.0).mul(0.15)
+                    return color('#00E5FF').mul(0.35)
                 })()
 
                 onClean(() => {

@@ -198,7 +198,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(1.0), float(0.35)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(1.0), float(0.25)) as Node<'float'>
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
@@ -210,7 +210,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return vec4(
                     vec3(
                         //
-                        color('#ff9100').rgb,
+                        color('#00b3ff').rgb,
                         //
                     )
                         .mul(honeyCombThinBase)
@@ -231,7 +231,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         )
                         .mul(
                             //
-                            color('#ffff00'),
+                            color('#00E5FF'),
                         ),
                     roughnessVec4.r.add(0.5),
                 )
