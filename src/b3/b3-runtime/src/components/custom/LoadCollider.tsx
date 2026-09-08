@@ -19,10 +19,6 @@ import {
     step,
     uniform,
     color,
-    mix,
-    viewportLinearDepth,
-    linearDepth,
-    viewportSharedTexture,
 } from 'three/tsl'
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
@@ -30,7 +26,6 @@ import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import { positionWorld, distance, smoothstep } from 'three/tsl'
 import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
-import { hashBlur } from 'three/examples/jsm/tsl/display/hashBlur.js'
 
 const circlePulse: (
     characterPos: Node<'vec3'>,
@@ -199,24 +194,23 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             //     return
             // }
 
-            const roughnessValue = texture(rm, uv())
+            const roughnessVec4 = texture(rm, uv())
 
             const pulseMotion = circlePulse(uPlayerPosition, float(7.7), float(7.7 * 0.15), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
             const noisePattern = getNoiseValue(float(1.0), float(0.35)) as Node<'float'>
-            const honeyCombPulse = getHoneyComb(pulseMotion, float(0.015)) as Node<'float'>
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
-            mat.roughnessNode = roughnessValue.r.oneMinus()
-            mat.metalnessNode = roughnessValue.r
+            mat.roughnessNode = roughnessVec4.r.oneMinus()
+            mat.metalnessNode = roughnessVec4.r
 
             mat.emissiveNode = Fn(() => {
                 const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015)) as Node<'float'>
                 return vec4(
                     vec3(
                         //
-                        color('#ff0088').rgb.add(0.15),
+                        color('#ff9100').rgb,
                         //
                     )
                         .mul(honeyCombThinBase)
@@ -239,24 +233,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                             //
                             color('#ffff00'),
                         ),
-                    roughnessValue.r.add(0.5),
+                    roughnessVec4.r.add(0.5),
                 )
             })()
-
-            // compare depth from viewportLinearDepth with linearDepth() to create a distance field
-            // viewportLinearDepth return the linear depth of the scene
-            // linearDepth() returns the linear depth of the mesh
-            // const depthDistance = viewportLinearDepth.distance(linearDepth())
-
-            // const depthAlphaNode = depthDistance.oneMinus().smoothstep(0.9, 2).mul(10).saturate()
-            // const depthBlurred = hashBlur(
-            //     viewportSharedTexture(),
-            //     depthDistance.smoothstep(0, 0.6).mul(2.0).clamp().mul(0.1),
-            // )
-
-            // mat.backdropNode = depthBlurred.add(depthAlphaNode.mix(color(0x003399).mul(0.3), 0))
-
-            // mat.backdropNode = mix(viewportSharedTexture(), honeyCombPulse, roughnessValue.r)
 
             mat.transparent = true
             mat.side = DoubleSide
