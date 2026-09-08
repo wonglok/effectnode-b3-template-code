@@ -122,29 +122,29 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return uniform(0.0, 'float')
     }, [])
 
-    const reflection = useMemo(() => {
-        return reflector({
-            resolutionScale: 1,
-        })
-    }, [])
+    // const reflection = useMemo(() => {
+    //     return reflector({
+    //         resolutionScale: 1,
+    //     })
+    // }, [])
 
-    useEffect(() => {
-        // 0.5 is half of the rendering view
-        reflection.target.rotateX(-Math.PI / 2)
+    // useEffect(() => {
+    //     // 0.5 is half of the rendering view
+    //     reflection.target.rotateX(-Math.PI / 2)
 
-        scene.add(reflection.target)
-        return () => {
-            reflection.target.removeFromParent()
-            reflection.dispose()
-        }
-    }, [])
+    //     scene.add(reflection.target)
+    //     return () => {
+    //         reflection.target.removeFromParent()
+    //         reflection.dispose()
+    //     }
+    // }, [])
 
-    useFrame(() => {
-        if (playerGroup) {
-            placeOfPlayer.copy(playerGroup.position)
-            reflection?.target?.position?.copy(playerGroup?.position)
-        }
-    })
+    // useFrame(() => {
+    //     if (playerGroup) {
+    //         placeOfPlayer.copy(playerGroup.position)
+    //         reflection?.target?.position?.copy(playerGroup?.position)
+    //     }
+    // })
 
     const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
     const playPulse = useCallback(() => {
