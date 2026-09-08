@@ -56,9 +56,9 @@ const circlePulse: (
     return band.mul(fadeIn).mul(fadeOut)
 }) as any
 
-const getHoneyComb: (p: Node<'float'>, r: Node<'float'>) => Node<'float'> = Fn(
-    ([pulse = float(1.0), thickness = float(0.125)]: any) => {
-        const p = uv().mul(10.0)
+const getHoneyComb: (p: Node<'float'>, r: Node<'float'>, s: Node<'float'>) => Node<'float'> = Fn(
+    ([pulse = float(1.0), thickness = float(0.125), scale = float(10.0)]: any) => {
+        const p = uv().mul(scale)
 
         const r = vec2(1.0, 1.7320508) // vec2(1.0, sqrt(3))
         const h = r.mul(0.5)
@@ -202,9 +202,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             // }
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
-            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02)) as Node<'float'>
+            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>
+            const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015), float(15)) as Node<'float'>
             const noisePattern = getNoiseValue(float(1.0), float(0.25)) as Node<'float'>
-            const honeyCombPulse = getHoneyComb(float(0.5), float(0.0015)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
@@ -225,13 +225,12 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return vec4(
                     vec3(
                         //
-                        color('#00E5FF').mul(0.35).rgb,
+                        color('#00E5FF').mul(1.0).rgb,
                         //
                     )
                         .mul(honeyCombThinBase)
                         .mul(honeyCombPulse.oneMinus())
                         .mul(pulseMotion)
-                        .abs()
                         .pow(2)
                         .mul(5.0),
 
