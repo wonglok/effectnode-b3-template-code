@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo } from 'react'
-import { DoubleSide, Mesh, Texture, Vector3 } from 'three'
+import { DoubleSide, Mesh, Object3D, Texture, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -116,11 +116,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     // in `attach` below capture these same object instances, so animating them
     // (placeOfPlayer via useFrame, uPulseProgress via gsap) drives the shader.
     const placeOfPlayer = useMemo(() => {
-        return new Vector3()
+        return new Object3D()
     }, [])
 
     const uPlayerPosition = useMemo(() => {
-        return uniform(placeOfPlayer, 'vec3')
+        return uniform(placeOfPlayer.position, 'vec3')
     }, [])
 
     const uPulseProgress = useMemo(() => {
@@ -128,28 +128,44 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     }, [])
 
     const reflection = useMemo(() => {
+        if (!playerGroup) {
+            return
+        }
         return reflector({
+            target: playerGroup,
+            bounces: true,
             resolutionScale: 0.5,
         })
-    }, [])
+    }, [playerGroup])
 
     useEffect(() => {
+        if (!reflection) {
+            return
+        }
         // 0.5 is half of the rendering view
-        reflection.target.rotation.x = -Math.PI / 2
+        // reflection.target.rotation.x = -Math.PI / 2
 
         scene.add(reflection.target)
         return () => {
-            reflection.target.removeFromParent()
-            reflection.dispose()
+            try {
+                reflection.target.removeFromParent()
+                reflection.dispose()
+            } catch (e) {
+                console.log(e)
+            }
         }
-    }, [])
+    }, [reflection])
 
     useFrame(() => {
-        if (playerGroup) {
-            placeOfPlayer.copy(playerGroup.position)
-            // reflection.target.position.y = playerGroup?.position.y
+        if (playerGroup && reflection) {
+            placeOfPlayer.position.copy(playerGroup.position)
+            reflection.target.position.x = playerGroup?.position.x
+            reflection.target.position.y = playerGroup?.position.y
+            reflection.target.position.z = playerGroup?.position.z
         }
     })
+
+    //
 
     const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
     const playPulse = useCallback(() => {
@@ -244,25 +260,25 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 return vec4(reflectionColor.rgb, 1.0)
             })()
 
-            // mat.colorNode = Fn(() => {
-            //     return vec4(
-            //         //
-            //         add(
-            //             honeyCombThinBase
-            //                 .mul(
-            //                     //
-            //                     noisePattern.pow(3.0).abs(),
-            //                 )
-            //                 .mul(
-            //                     //
-            //                     color('#00E5FF').mul(1.0),
-            //                 ),
+            mat.colorNode = Fn(() => {
+                return vec4(
+                    //
+                    add(
+                        honeyCombThinBase
+                            .mul(
+                                //
+                                noisePattern.pow(3.0).abs(),
+                            )
+                            .mul(
+                                //
+                                color('#00E5FF').mul(1.0),
+                            ),
 
-            //             vec3(0.0),
-            //         ),
-            //         roughnessVec4.r.add(0.25),
-            //     )
-            // })()
+                        vec3(0.0),
+                    ),
+                    roughnessVec4.r.add(0.25),
+                )
+            })()
 
             mat.transparent = true
             mat.side = DoubleSide
@@ -307,7 +323,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [scene, normalMap, roughnessMap, colliderVersion])
+    }, [scene, normalMap, roughnessMap, colliderVersion, placeOfPlayer])
 
     return <></>
 }
