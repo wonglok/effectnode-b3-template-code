@@ -122,29 +122,29 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return uniform(0.0, 'float')
     }, [])
 
-    // const reflection = useMemo(() => {
-    //     return reflector({
-    //         resolutionScale: 1,
-    //     })
-    // }, [])
+    const reflection = useMemo(() => {
+        return reflector({
+            resolutionScale: 1,
+        })
+    }, [])
 
-    // useEffect(() => {
-    //     // 0.5 is half of the rendering view
-    //     reflection.target.rotateX(-Math.PI / 2)
+    useEffect(() => {
+        // 0.5 is half of the rendering view
+        reflection.target.rotation.x = -Math.PI / 2
 
-    //     scene.add(reflection.target)
-    //     return () => {
-    //         reflection.target.removeFromParent()
-    //         reflection.dispose()
-    //     }
-    // }, [])
+        scene.add(reflection.target)
+        return () => {
+            reflection.target.removeFromParent()
+            reflection.dispose()
+        }
+    }, [])
 
-    // useFrame(() => {
-    //     if (playerGroup) {
-    //         placeOfPlayer.copy(playerGroup.position)
-    //         reflection?.target?.position?.copy(playerGroup?.position)
-    //     }
-    // })
+    useFrame(() => {
+        if (playerGroup) {
+            placeOfPlayer.copy(playerGroup.position)
+            reflection?.target?.position?.copy(playerGroup?.position)
+        }
+    })
 
     const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
     const playPulse = useCallback(() => {
@@ -203,12 +203,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
-            // const reflectionColor = texture(reflection, uv())
+            const reflectionColor = texture(reflection, uv())
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.transparent = true
             mat.roughnessNode = roughnessVec4.r.oneMinus()
             mat.metalnessNode = roughnessVec4.r
+
+            // mat.backdropNode =
 
             mat.emissiveNode = Fn(() => {
                 return vec4(
@@ -231,16 +233,17 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             mat.colorNode = Fn(() => {
                 return vec4(
                     //
-                    honeyCombThinBase
-                        .mul(
-                            //
-                            noisePattern.pow(3.0).abs().mul(3.5),
-                        )
-                        .mul(
-                            //
-                            color('#00E5FF').mul(0.35),
-                        ),
-
+                    vec3(0.0).add(
+                        honeyCombThinBase
+                            .mul(
+                                //
+                                noisePattern.pow(3.0).abs().mul(3.5),
+                            )
+                            .mul(
+                                //
+                                color('#00E5FF').mul(0.35),
+                            ),
+                    ),
                     roughnessVec4.r.add(0.5),
                 )
             })()
