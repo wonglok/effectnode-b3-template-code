@@ -3310,6 +3310,44 @@
           0.9
         ]
       }
+    },
+    {
+      "bodyUrl": "/char/female/body/pink.glb",
+      "faceUrl": "/char/female/face/blond.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     }
   ],
   "motion": {
@@ -3358,8 +3396,8 @@
       "face": "/char/male/face/mexican2.glb"
     },
     "female": {
-      "body": "/char/female/body/teal-polo.glb",
-      "face": "/char/female/face/princess.glb"
+      "body": "/char/female/body/pink.glb",
+      "face": "/char/female/face/blond.glb"
     }
   }
 }

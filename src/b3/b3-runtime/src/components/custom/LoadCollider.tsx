@@ -253,6 +253,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             // mat.backdropNode = honeyCombPulse
 
+            collider.receiveShadow = true
             collider.material = mat
 
             cleanup.push(() => {
