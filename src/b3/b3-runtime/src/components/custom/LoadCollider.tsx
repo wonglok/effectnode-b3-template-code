@@ -196,7 +196,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const roughnessVec4 = texture(rm, uv())
 
-            const pulseMotion = circlePulse(uPlayerPosition, float(7.7), float(7.7 * 0.15), uPulseProgress)
+            const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.015)) as Node<'float'>
             const noisePattern = getNoiseValue(float(1.0), float(0.35)) as Node<'float'>
 
