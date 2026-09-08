@@ -3,7 +3,7 @@
 import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 import type { BlenderObject } from '../../types/blenderTypes'
-import { SYNC_SKIP_MATERIAL_OBJECTS } from './syncConfig'
+import { SYNC_SKIP_MATERIAL_OBJECTS } from '../../custom/syncConfig'
 
 // ---------------------------------------------------------------------------
 // Custom-shader object names (see ./syncConfig) — the mesh sync manages their
