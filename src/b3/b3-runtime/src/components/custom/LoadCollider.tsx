@@ -154,7 +154,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         gsap.to(uPulseProgress, {
             value: 1,
             duration: PULSE_DURATION,
-            ease: 'sine.inOut', // slow out of the centre and into the edge
+            ease: 'quat.out', // slow out of the centre and into the edge
             onComplete: () => {
                 uPulseProgress.value = 0
             },
