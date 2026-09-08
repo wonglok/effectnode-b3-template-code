@@ -4,7 +4,7 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/hoodie.glb",
+    "body": "/char/male/body/space-army-01.glb",
     "face": "/char/male/face/blond2.glb"
   },
   "headBone": null,
@@ -28,7 +28,7 @@
   "body": {
     "position": [
       0,
-      -0.045,
+      -0.04,
       0
     ],
     "rotation": [
@@ -3234,6 +3234,44 @@
           1
         ]
       }
+    },
+    {
+      "bodyUrl": "/char/male/body/hoodie.glb",
+      "faceUrl": "/char/male/face/blond2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     }
   ],
   "motion": {
@@ -3278,7 +3316,7 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/hoodie.glb",
+      "body": "/char/male/body/space-army-01.glb",
       "face": "/char/male/face/blond2.glb"
     },
     "female": {
