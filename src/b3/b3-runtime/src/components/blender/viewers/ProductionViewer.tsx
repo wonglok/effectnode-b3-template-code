@@ -262,6 +262,8 @@ async function loadProductionScene(zipBuffer: ArrayBuffer): Promise<ProductionSc
                     indices: idxs,
                     uvs,
                 })
+
+                //
             }
         } catch (err) {
             console.warn(`[ProductionViewer] Geometry "${entry.name}" skipped:`, err)

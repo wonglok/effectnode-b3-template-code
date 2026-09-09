@@ -93,10 +93,10 @@ export function BloomRender({ params }: BloomRenderProps) {
 
         // Bloom from the emissive channel (defaults mirror the example)
         const bloomNode = bloom(
-            vec4(emissivePass.rgb.mul(emissivePass.a), emissivePass.a),
+            emissivePass.rgba,
             //
             params?.strength ?? 2.5,
-            params?.radius ?? 0.5,
+            params?.radius ?? 1.0,
             params?.threshold ?? 0.0,
         )
         bloomRef.current = bloomNode

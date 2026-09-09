@@ -435,6 +435,10 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'wintersnow-body', label: 'wintersnow', kind: 'body', gender: 'male', url: '/char/male/body/wintersnow.glb' },
       // Added Sept 2026 — lime single-mesh rigged export.
       { id: 'lime-body', label: 'lime', kind: 'body', gender: 'male', url: '/char/male/body/lime.glb' },
+      // Added Sept 2026 — lime2 single-mesh rigged export.
+      { id: 'lime2-body', label: 'lime2', kind: 'body', gender: 'male', url: '/char/male/body/lime2.glb' },
+      // Added Sept 2026 — lok-body single-mesh rigged export.
+      { id: 'lok-body', label: 'lok', kind: 'body', gender: 'male', url: '/char/male/body/lok-body.glb' },
     ],
     face: [
       { id: 'male-head', label: 'asian', kind: 'face', gender: 'male', url: '/char/male/face/asian.glb' },
@@ -446,6 +450,8 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'mexican2-face', label: 'mexican2', kind: 'face', gender: 'male', url: '/char/male/face/mexican2.glb' },
       // Added Sept 2026 — second male head export (65-bone, scene "Scene").
       { id: 'chinese-head', label: 'chinese', kind: 'face', gender: 'male', url: '/char/male/face/chinese.glb' },
+      // Added Sept 2026 — lok-head single-mesh rigged export.
+      { id: 'lok-head', label: 'lok', kind: 'face', gender: 'male', url: '/char/male/face/lok-head.glb' },
     ],
   },
   female: {

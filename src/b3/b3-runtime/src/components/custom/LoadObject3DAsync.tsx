@@ -11,6 +11,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
             <LoadGuide texData={texData} objects={objects}></LoadGuide>
+            <ambientLight intensity={1}></ambientLight>
         </>
     )
 }
