@@ -293,7 +293,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         renderer: gl,
         hdrPixels: scene.hdrBytes,
         intensity: scene.hdrIntensity,
-        background: true,
+        background: false,
         fallbackColor: '#000000',
     })
 

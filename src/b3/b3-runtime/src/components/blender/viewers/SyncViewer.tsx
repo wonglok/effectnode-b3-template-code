@@ -80,7 +80,7 @@ export function SyncViewer() {
         renderer: gl,
         hdrPixels: hdrData?.pixels,
         intensity: hdrIntensity,
-        background: true,
+        background: false,
         fallbackColor: '#000000',
     })
 
