@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
     DataTexture,
     LinearFilter,
@@ -124,9 +124,23 @@ export function SceneWaterObject({
 }) {
     const scene = useThree((r) => r.scene)
 
-    const waterMesh = useMemo(() => {
-        return scene.getObjectByName(name) as Mesh | null
+    const [waterMesh, setFound] = useState<any>(null)
+
+    useEffect(() => {
+        let ttt = setInterval(() => {
+            let result = scene.getObjectByName(name) as Mesh | null
+            if (result) {
+                setFound(result)
+                clearInterval(ttt)
+            }
+        })
+
+        return () => {
+            clearInterval(ttt)
+        }
     }, [scene, name, objects])
+
+    //
 
     const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
