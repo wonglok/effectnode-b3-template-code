@@ -327,11 +327,67 @@ def _same_point(a, b, eps=1e-6):
     )
 
 
-def _sample_curve_splines(curve_data, steps_per_segment=10):
+# Every spline leaves Blender as exactly this many points (see
+# _resample_polyline) so the payload is a fixed size and Three.js always gets
+# the same density regardless of how many control points the artist used.
+CURVE_SAMPLE_COUNT = 100
+
+
+def _resample_polyline(pts, count, closed):
+    """Resample a polyline to exactly `count` points, evenly spaced by arc length.
+
+    `pts` is a list of [x, y, z]. When `closed` is set and the caller duplicated
+    the first point at the end, that duplicate is dropped — the wrap-around
+    segment is modelled explicitly instead, and `closed` (spline.use_cyclic_u)
+    is what tells Three.js the ring is a loop.
+    """
+    if count < 2:
+        count = 2
+    if not pts:
+        return []
+    if closed and len(pts) > 1 and _same_point(pts[0], pts[-1]):
+        pts = pts[:-1]
+    if len(pts) == 1:
+        return [list(pts[0]) for _ in range(count)]
+
+    # Cumulative arc length; a closed ring gets one extra segment closing it.
+    seg = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        seg.append(seg[-1] + math.dist(a, b))
+    if closed:
+        seg.append(seg[-1] + math.dist(pts[-1], pts[0]))
+
+    total = seg[-1]
+    if total <= 1e-12:
+        return [list(pts[0]) for _ in range(count)]
+
+    n = len(seg) - 1  # number of segments (wrap-around included when closed)
+    # Closed: `count` samples around the ring, last one stops short of the start.
+    # Open: both endpoints are included, so there are count - 1 gaps.
+    step = total / count if closed else total / (count - 1)
+
+    out = []
+    j = 0
+    for i in range(count):
+        d = i * step
+        while j < n - 1 and seg[j + 1] < d:
+            j += 1
+        span = seg[j + 1] - seg[j]
+        u = 0.0 if span <= 1e-12 else (d - seg[j]) / span
+        a = pts[j]
+        b = pts[(j + 1) % len(pts)]
+        out.append([round(a[k] + (b[k] - a[k]) * u, 6) for k in range(3)])
+    return out
+
+
+def _sample_curve_splines(curve_data, count=CURVE_SAMPLE_COUNT):
     """Sample a bpy.types.Curve into dense local-space points (Three.js Y-up).
 
+    Each spline is resampled to exactly `count` points, spaced evenly by arc
+    length.
+
     Returns (sampled, controls, closed_flags, bevel_depth, version):
-      sampled       - list of list of [x, y, z] — dense points along each spline
+      sampled       - list of list of [x, y, z] — `count` points along each spline
       controls      - list of list of [x, y, z] — original control points per
                       spline (bezier knots / poly / nurbs control points)
       closed_flags  - list of bool, one per spline (spline.use_cyclic_u)
@@ -361,6 +417,11 @@ def _sample_curve_splines(curve_data, steps_per_segment=10):
                 pairs = list(zip(bez, bez[1:]))
                 if spline.use_cyclic_u:
                     pairs.append((bez[-1], bez[0]))
+                # Interpolate finer than the output density so the resample
+                # below follows the true curve instead of the coarse segments.
+                steps_per_segment = max(
+                    8, math.ceil(count / len(pairs)) + 1
+                )
                 for i, (p0, p1) in enumerate(pairs):
                     seg = mathutils.geometry.interpolate_bezier(
                         p0.co, p0.handle_right, p1.handle_left, p1.co,
@@ -393,9 +454,12 @@ def _sample_curve_splines(curve_data, steps_per_segment=10):
             ):
                 pts.append(list(pts[0]))
 
+        closed = bool(spline.use_cyclic_u)
+        pts = _resample_polyline(pts, count, closed)
+
         sampled.append(pts)
         controls.append(ctrl)
-        closed_flags.append(bool(spline.use_cyclic_u))
+        closed_flags.append(closed)
 
     # Version checksum — changes when the exported payload changes. Points are
     # rounded above so the payload is stable across 5 Hz ticks.

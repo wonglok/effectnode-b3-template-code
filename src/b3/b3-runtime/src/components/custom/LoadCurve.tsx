@@ -2,7 +2,7 @@ import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three/webgpu'
 import type { BlenderObject } from '../types/blenderTypes'
-import { float, texture, time, uv, vec2 } from 'three/tsl'
+import { float, texture, time, uv, vec2, vec4 } from 'three/tsl'
 
 // ---------------------------------------------------------------------------
 // LoadCurve — reconstructs Blender CURVE objects.
@@ -59,7 +59,11 @@ const colorNode = texture(
 // Shared red material — matches the reference recipe. Module-level so all
 // curve lines share one program (never disposed per entry).
 // const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
-const MESH_MATERAIL = new THREE.MeshStandardNodeMaterial({ colorNode: colorNode })
+const MESH_MATERAIL = new THREE.MeshStandardNodeMaterial({
+    colorNode: vec4(colorNode.rgb, colorNode.r),
+    emissiveNode: vec4(0.0, 0.0, 0.0, colorNode.r),
+    transparent: true,
+})
 
 function buildCurveEntry(obj: BlenderObject): CurveEntry {
     const group = new THREE.Group()
@@ -75,7 +79,8 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
 
         const curve = new THREE.CatmullRomCurve3(vecs, closed, 'catmullrom', 0.5)
 
-        const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 1.0, 32, closed)
+        const tube = 2
+        const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), tube, 32, closed)
 
         const line = new THREE.Mesh(geometry2, MESH_MATERAIL)
         line.scale.y = 0.05
