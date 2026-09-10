@@ -713,8 +713,12 @@ def _extract_material(obj, flat_shading, v_count, i_count, uv_cksum):
     # Version tag — changes when geometry, material, OR shader graph changes.
     # Geometry contributes only the v/i counts, flat shading and the UV
     # checksum here, all of which come from the cache so this stays cheap.
+    #
+    # NOTE: the "v" field is the flat float count (3 per vertex), matching the
+    # original formula. Emitting the vertex count instead would change every
+    # version string and force a full geometry resync on every client.
     version = (
-        f"v{v_count}_f{i_count}"
+        f"v{v_count * 3}_f{i_count}"
         f"_c{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}"
         f"_r{roughness:.4f}_m{metallic:.4f}"
         f"_e{emissive_color[0]:.4f}_{emissive_color[1]:.4f}_{emissive_color[2]:.4f}"
@@ -871,21 +875,12 @@ def get_scene_data():
                 i_count = len(indices)
                 uv_cksum = int(sum(uvs) * 1000) if uvs else 0
 
-                # Re-pack only when the geometry actually changed — a refresh
-                # that finds identical vertices keeps the existing blob.
-                unchanged = (
-                    entry is not None
-                    and entry.get("v_count") == v_count
-                    and entry.get("i_count") == i_count
-                    and entry.get("uv_cksum") == uv_cksum
-                    and entry.get("flat_shading") == flat_shading
-                )
-                if unchanged:
-                    has_uvs = entry["has_uvs"]
-                    blob = entry["blob"]
-                else:
-                    has_uvs = bool(uvs)
-                    blob = _pack_geometry(vertices, indices, uvs if has_uvs else [])
+                # Always re-pack on a refresh: the pack is cheap next to the
+                # bmesh pass above, and reusing the previous blob would ship
+                # stale vertices whenever a vertex moved without the counts
+                # changing (which the version string cannot see).
+                has_uvs = bool(uvs)
+                blob = _pack_geometry(vertices, indices, uvs if has_uvs else [])
 
                 entry = {
                     "v_count":      v_count,
