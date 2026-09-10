@@ -110,6 +110,7 @@ export function SceneWaterObject({
     reflectivity = 0.06,
     /** UV tiling of the normal maps across the plane. */
     scale = 0.1,
+    name = 'water',
 }: {
     objects?: BlenderObject[]
     size?: number
@@ -119,12 +120,13 @@ export function SceneWaterObject({
     flowSpeed?: number
     reflectivity?: number
     scale?: number
+    name: string
 }) {
     const scene = useThree((r) => r.scene)
 
     const waterMesh = useMemo(() => {
-        return scene.getObjectByName('water') as Mesh | null
-    }, [scene])
+        return scene.getObjectByName(name) as Mesh | null
+    }, [scene, name, objects.map((r) => r.version).join('_')])
 
     const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
@@ -155,7 +157,7 @@ export function SceneWaterObject({
         ;(window as any).__water = water
 
         return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
-    }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale])
+    }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale, waterMesh?.uuid])
 
     useFrame(() => {
         waterMesh?.getWorldPosition(water.position)
