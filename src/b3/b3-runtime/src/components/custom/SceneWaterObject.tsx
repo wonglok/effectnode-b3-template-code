@@ -153,26 +153,8 @@ export function SceneWaterObject({
             waterMesh.visible = false
         }
 
-
         return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
-    }, [
-        size,
-        height,
-        color,
-        flowDirection[0],
-        flowDirection[1],
-        flowSpeed,
-        reflectivity,
-        scale,
-        waterMesh?.uuid,
-        JSON.stringify(objects),
-    ])
-
-    useFrame(() => {
-        waterMesh?.getWorldPosition(water.position)
-        waterMesh?.getWorldScale(water.scale)
-        waterMesh?.getWorldQuaternion(water.quaternion)
-    })
+    }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale, waterMesh])
 
     useEffect(() => {
         return () => {
@@ -181,6 +163,12 @@ export function SceneWaterObject({
             textures.forEach((t) => t.dispose())
         }
     }, [geometry, water, textures])
+
+    useFrame(() => {
+        waterMesh?.getWorldPosition(water.position)
+        waterMesh?.getWorldScale(water.scale)
+        waterMesh?.getWorldQuaternion(water.quaternion)
+    })
 
     return <>{out}</>
 }
