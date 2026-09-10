@@ -374,14 +374,14 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
             {/* Fallback lighting if no scene lights */}
             {scene.lights.length === 0 && (
                 <>
-                    <ambientLight intensity={0.4} />
+                    {/* <ambientLight intensity={0.4} />
                     <directionalLight
                         position={[5, 10, 5]}
                         intensity={1.5}
                         castShadow
                         shadow-mapSize-width={1024}
                         shadow-mapSize-height={1024}
-                    />
+                    /> */}
                 </>
             )}
         </>

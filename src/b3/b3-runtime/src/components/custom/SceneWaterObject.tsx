@@ -126,7 +126,7 @@ export function SceneWaterObject({
 
     const waterMesh = useMemo(() => {
         return scene.getObjectByName(name) as Mesh | null
-    }, [scene, name, objects.map((r) => JSON.stringify(r)).join('_')])
+    }, [scene, name, objects])
 
     const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
