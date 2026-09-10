@@ -84,6 +84,7 @@ _state = {
     "geo_sent": {},       # ws_id → set of "name@version" already sent
     "geo_cache": {},      # obj_name → cached geometry (see get_scene_data)
     "geo_discovered": {},  # obj_name → monotonic time of last geometry discovery
+    "geo_force_refresh": False,  # set by the panel's Refresh Geometry button
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -763,8 +764,12 @@ def _extract_material(obj, flat_shading, v_count, i_count, uv_cksum):
     return fields, graph
 
 
-def get_scene_data():
+def get_scene_data(force_geometry=False):
     """Returns (json_string, geometry_dict).
+
+    Pass force_geometry=True to re-extract every object on this pass, ignoring
+    both the discovery interval and the per-tick budget — this backs the panel's
+    "Refresh Geometry" button.
 
     json_string — scene data WITHOUT vertices/indices/UVs arrays.
     geometry_dict — {object_name: (version, vCount, iCount, hasUVs, blob_bytes)}
@@ -807,18 +812,23 @@ def get_scene_data():
     # single tick pays for the whole scene. A scene small enough that the
     # budget is 1 simply refreshes one object per tick.
     geometry_objects = [obj for obj in visible if obj.type in ('MESH', 'CURVE')]
-    budget = max(
-        1, math.ceil(len(geometry_objects) * TICK_INTERVAL / GEO_DISCOVERY_INTERVAL)
-    )
 
     now = time.monotonic()
-    refreshing = set()
-    for obj in geometry_objects:
-        last = discovered.get(obj.name)
-        if last is None or (now - last) >= GEO_DISCOVERY_INTERVAL:
-            refreshing.add(obj.name)
-            if len(refreshing) >= budget:
-                break
+    if force_geometry:
+        # Manual refresh — take the whole scene in one pass rather than letting
+        # the interval and budget spread it over several ticks.
+        refreshing = {obj.name for obj in geometry_objects}
+    else:
+        budget = max(
+            1, math.ceil(len(geometry_objects) * TICK_INTERVAL / GEO_DISCOVERY_INTERVAL)
+        )
+        refreshing = set()
+        for obj in geometry_objects:
+            last = discovered.get(obj.name)
+            if last is None or (now - last) >= GEO_DISCOVERY_INTERVAL:
+                refreshing.add(obj.name)
+                if len(refreshing) >= budget:
+                    break
 
     # One depsgraph for the whole pass.
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -1348,8 +1358,20 @@ def _timer():
             current = list(_state["clients"])
 
         if loop is not None and not loop.is_closed() and current:
+            # A manual "Refresh Geometry" asks for the whole scene to go out on
+            # this tick. Re-sending is normally skipped when the version is
+            # unchanged, so forget what each client has already been sent —
+            # otherwise pressing Refresh on an untouched scene would send
+            # nothing at all.
+            with _lock:
+                force_geo = _state["geo_force_refresh"]
+                _state["geo_force_refresh"] = False
+                if force_geo:
+                    for sent in _state["geo_sent"].values():
+                        sent.clear()
+
             # --- Scene data (JSON text) + geometry blobs (binary) ---
-            data_json, geometry_dict = get_scene_data()
+            data_json, geometry_dict = get_scene_data(force_geometry=force_geo)
 
             # Versions still in play this tick. Each client's sent-set is trimmed
             # to these, so a version that no longer exists — e.g. a material
@@ -1586,6 +1608,7 @@ def start_server():
         # the first client needs every blob.
         _state["geo_cache"].clear()
         _state["geo_discovered"].clear()
+        _state["geo_force_refresh"] = False
 
     # During add-on registration, bpy.context may be a restricted context
     # that lacks a 'scene' attribute. Fall back to the default port.
@@ -1626,6 +1649,7 @@ def stop_server():
         _state["port"] = 0
         _state["geo_cache"].clear()
         _state["geo_discovered"].clear()
+        _state["geo_force_refresh"] = False
 
     # Flag the old server as stopped BEFORE any blocking work — the panel
     # reads these flags on the next redraw.
@@ -1663,6 +1687,20 @@ class B3SYNC_OT_stop(bpy.types.Operator):
 
     def execute(self, context):
         stop_server()
+        return {'FINISHED'}
+
+
+class B3SYNC_OT_refresh_geometry(bpy.types.Operator):
+    bl_idname = "b3sync.refresh_geometry"
+    bl_label = "Refresh Geometry"
+    bl_description = (
+        "Re-extract and re-send all geometry on the next tick, instead of waiting "
+        "for the periodic geometry sync"
+    )
+
+    def execute(self, context):
+        with _lock:
+            _state["geo_force_refresh"] = True
         return {'FINISHED'}
 
 
@@ -1736,6 +1774,7 @@ class B3SYNC_PT_panel(bpy.types.Panel):
         # Buttons
         if running:
             layout.operator("b3sync.stop", icon='PAUSE')
+            layout.operator("b3sync.refresh_geometry", icon='FILE_REFRESH')
         else:
             layout.operator("b3sync.start", icon='PLAY')
 
@@ -1746,6 +1785,7 @@ class B3SYNC_PT_panel(bpy.types.Panel):
 CLASSES = (
     B3SYNC_OT_start,
     B3SYNC_OT_stop,
+    B3SYNC_OT_refresh_geometry,
     B3SYNC_PT_panel,
 )
 
