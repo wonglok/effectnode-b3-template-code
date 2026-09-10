@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three/webgpu'
 import { NURBSCurve } from 'three/addons/curves/NURBSCurve.js'
 import type { BlenderObject } from '../types/blenderTypes'
-import { color, float, texture, time, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { add, color, float, positionGeometry, sin, texture, time, uv, vec2, vec3, vec4 } from 'three/tsl'
 
 // ---------------------------------------------------------------------------
 // LoadCurve — reconstructs Blender CURVE objects.
@@ -137,18 +137,36 @@ const texArrow = new THREE.TextureLoader().load(`/texture/arrows@1x.png`)
 texArrow.generateMipmaps = false
 texArrow.colorSpace = THREE.SRGBColorSpace
 texArrow.wrapS = texArrow.wrapT = THREE.RepeatWrapping
-const colorNode = texture(
+const colorNodeA = texture(
     texArrow,
     uv()
-        .mul(vec2(-20.0, 1.0))
+        .mul(vec2(30, 1.0))
+        .mul(2)
         .add(vec2(time.mul(0.35), 0.0)),
+)
+
+const colorNodeB = texture(
+    texArrow,
+    uv()
+        .mul(vec2(30, 1.0))
+        .mul(2)
+        .add(vec2(time.mul(0.35).add(0.5), 0.0)),
 )
 
 // Shared red material — matches the reference recipe. Module-level so all
 // curve lines share one program (never disposed per entry).
 // const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
 const MESH_MATERAIL = new THREE.MeshPhysicalNodeMaterial({
-    colorNode: vec4(colorNode.rgb.mul(color('#05e2ff')), colorNode.r.mul(0.05)),
+    colorNode: vec4(
+        colorNodeA.rgb.mul(color('#05e2ff')),
+
+        add(
+            //
+            colorNodeA.r.mul(0.5).mul(sin(uv().x.mul(100).add(time.mul(5)))),
+            colorNodeA.r.mul(0.3),
+            colorNodeB.r.mul(0.05),
+        ),
+    ),
     emissiveNode: vec4(vec3(color('#05e2ff').rgb), 1.0),
     transparent: true,
 })
