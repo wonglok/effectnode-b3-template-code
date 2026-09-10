@@ -53,7 +53,7 @@ const colorNode = texture(
     texArrow,
     uv()
         .mul(vec2(-20.0, 1.0))
-        .add(vec2(time.mul(1), 0)),
+        .add(vec2(time.mul(0.5), 0)),
 )
 
 // Shared red material — matches the reference recipe. Module-level so all
@@ -61,7 +61,7 @@ const colorNode = texture(
 // const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
 const MESH_MATERAIL = new THREE.MeshStandardNodeMaterial({
     colorNode: vec4(colorNode.rgb, colorNode.r),
-    emissiveNode: vec4(0.0, 0.0, 0.0, colorNode.r),
+    emissiveNode: vec4(0.25, 0.25, 0.25, colorNode.r),
     transparent: true,
 })
 
@@ -77,13 +77,14 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
         const vecs = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
         const closed = obj.curveClosed?.[i] ?? false
 
-        const curve = new THREE.CatmullRomCurve3(vecs, closed, 'catmullrom', 0.5)
+        const curve = new THREE.CatmullRomCurve3(vecs, closed, 'catmullrom', 0.0)
 
         const tube = 2
         const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), tube, 32, closed)
 
         const line = new THREE.Mesh(geometry2, MESH_MATERAIL)
         line.scale.y = 0.05
+
         // line.name = `${obj.name}`
 
         group.add(line)
