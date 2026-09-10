@@ -295,7 +295,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         renderer: gl,
         hdrPixels: scene.hdrBytes,
         intensity: scene.hdrIntensity,
-        background: false,
+        background: true,
         fallbackColor: '#000000',
     })
 
