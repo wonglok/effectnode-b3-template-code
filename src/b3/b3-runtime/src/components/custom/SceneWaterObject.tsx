@@ -3,12 +3,15 @@ import {
     DataTexture,
     LinearFilter,
     LinearMipmapLinearFilter,
+    Mesh,
     NoColorSpace,
     PlaneGeometry,
     RepeatWrapping,
     Vector2,
 } from 'three'
 import { WaterMesh } from 'three/examples/jsm/objects/Water2Mesh.js'
+import type { BlenderObject } from '../types/blenderTypes'
+import { useThree } from '@react-three/fiber'
 
 // ---------------------------------------------------------------------------
 // Water surface for the synced Blender scene.
@@ -95,18 +98,20 @@ const WAVES_B: Wave[] = [
 const DEFAULT_FLOW_DIRECTION: [number, number] = [1, 0.35]
 
 export function SceneWaterObject({
+    objects = [],
     /** Extent of the water quad in world units (square). */
     size = 60,
     /** Height above the collider floor — a hair up avoids z-fighting. */
-    height = 0.02,
-    color = '#0d4f6b',
+    height = 0.01,
+    color = '#a2cddf',
     /** Base flow direction when no flow map is supplied. */
     flowDirection = DEFAULT_FLOW_DIRECTION,
     flowSpeed = 0.035,
     reflectivity = 0.06,
     /** UV tiling of the normal maps across the plane. */
-    scale = 6,
+    scale = 0.1,
 }: {
+    objects?: BlenderObject[]
     size?: number
     height?: number
     color?: string
@@ -115,11 +120,17 @@ export function SceneWaterObject({
     reflectivity?: number
     scale?: number
 }) {
-    const { geometry, water, textures } = useMemo(() => {
+    const scene = useThree((r) => r.scene)
+
+    const waterMesh = useMemo(() => {
+        return scene.getObjectByName('water') as Mesh | null
+    }, [scene])
+
+    const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
         // map — so a single quad is enough.
-        const geometry = new PlaneGeometry(size, size, 1, 1)
-        geometry.rotateX(-Math.PI / 2)
+        const geometry = waterMesh?.geometry || new PlaneGeometry(size, size, 1, 1)
+        // geometry.rotateX(-Math.PI / 2)
 
         const normalMap0 = rippleNormalTexture(256, WAVES_A)
         const normalMap1 = rippleNormalTexture(256, WAVES_B)
@@ -134,12 +145,20 @@ export function SceneWaterObject({
             scale,
         })
         water.name = 'scene-water'
-        water.position.y = height
+        // water.position.y = height
+
+        waterMesh?.getWorldPosition(water.position)
+        waterMesh?.getWorldScale(water.scale)
+        waterMesh?.getWorldQuaternion(water.quaternion)
+
+        if (waterMesh) {
+            waterMesh.visible = false
+        }
 
         // TEMP DEBUG — remove
         ;(window as any).__water = water
 
-        return { geometry, water, textures: [normalMap0, normalMap1] }
+        return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
     }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale])
 
     useEffect(() => {
@@ -150,5 +169,5 @@ export function SceneWaterObject({
         }
     }, [geometry, water, textures])
 
-    return <primitive object={water}></primitive>
+    return <>{out}</>
 }

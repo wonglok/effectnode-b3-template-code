@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo } from 'react'
-import { DoubleSide, Mesh, Object3D, RepeatWrapping, Texture, TextureLoader, Vector3 } from 'three'
+import { DoubleSide, Mesh, Object3D, RepeatWrapping, SRGBColorSpace, Texture, TextureLoader, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -92,10 +92,14 @@ const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<
 })
 
 const loader = new TextureLoader()
-const roughnessMap: Texture = loader.load(`/texture/chip005/Chip005_4K-PNG_Roughness.png`, (d) => {
+const colorMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Color.jpg`, (d) => {
+    d.colorSpace = SRGBColorSpace
     d.wrapS = d.wrapT = RepeatWrapping
 })
-const normalMap: Texture = loader.load(`/texture/chip005/Chip005_4K-PNG_NormalGL.png`, (d) => {
+const roughnessMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Roughness.jpg`, (d) => {
+    d.wrapS = d.wrapT = RepeatWrapping
+})
+const normalMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_NormalGL.jpg`, (d) => {
     d.wrapS = d.wrapT = RepeatWrapping
 })
 
@@ -243,34 +247,33 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const hexagon = honeyCombThinBase.mul(noisePattern.pow(3.0).abs().mul(5.0).clamp(0.0, 1.0))
 
-            mat.emissiveNode = Fn(() => {
-                return vec4(
-                    vec3(
-                        //
-                        color('#00E5FF').mul(1.0).rgb,
-                        //
-                    )
-                        .mul(pulseMotion)
-                        .mul(honeyCombThinBase)
-                        .pow(3)
-                        .mul(5.0),
+            const colorValue = texture(colorMap, uv())
 
-                    1.0,
-                )
-            })()
+            // mat.emissiveNode = Fn(() => {
+            //     return vec4(
+            //         vec3(
+            //             //
+            //             color('#00E5FF').mul(1.0).rgb,
+            //             //
+            //         )
+            //             .mul(pulseMotion)
+            //             .mul(honeyCombThinBase)
+            //             .pow(3)
+            //             .mul(5.0),
+
+            //         1.0,
+            //     )
+            // })()
 
             mat.colorNode = Fn(() => {
                 return vec4(
                     //
                     add(
-                        hexagon.mul(
-                            //
-                            color('#00E5FF'),
-                        ),
-
-                        vec3(0.0),
+                        //
+                        colorValue.rgb,
+                        0.0,
                     ),
-                    1.0,
+                    colorValue.a,
                 )
             })()
 

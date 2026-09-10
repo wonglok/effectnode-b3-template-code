@@ -10,14 +10,14 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
 
-            <group position={[0, -50, 0]}>
-                <SceneWaterObject size={1000}></SceneWaterObject>
+            <group position={[0, 0.1, 0]}>
+                <SceneWaterObject objects={objects}></SceneWaterObject>
             </group>
 
-            <ambientLight intensity={1}></ambientLight>
+            {/* <ambientLight intensity={1}></ambientLight>
 
             <directionalLight intensity={1} position={[5, 5, 5]}></directionalLight>
-            <directionalLight intensity={1} position={[-5, 5, -5]}></directionalLight>
+            <directionalLight intensity={1} position={[-5, 5, -5]}></directionalLight> */}
         </>
     )
 }
