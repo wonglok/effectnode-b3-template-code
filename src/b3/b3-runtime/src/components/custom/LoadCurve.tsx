@@ -141,7 +141,7 @@ const colorNodeA = texture(
     texArrow,
     uv()
         .mul(vec2(30, 1.0))
-        .mul(2)
+        .mul(vec2(1.0, 1.0))
         .add(vec2(time.mul(0.35), 0.0)),
 )
 
@@ -149,7 +149,7 @@ const colorNodeB = texture(
     texArrow,
     uv()
         .mul(vec2(30, 1.0))
-        .mul(2)
+        .mul(vec2(1.0, 1.0))
         .add(vec2(time.mul(0.35).add(0.5), 0.0)),
 )
 
@@ -162,10 +162,10 @@ const MESH_MATERAIL = new THREE.MeshPhysicalNodeMaterial({
 
         add(
             //
-            colorNodeA.r.mul(0.5).mul(sin(uv().x.mul(100).add(time.mul(5)))),
-            colorNodeA.r.mul(0.3),
-            colorNodeB.r.mul(0.05),
-        ),
+            colorNodeA.r.mul(0.35).mul(sin(uv().x.mul(100).add(time.mul(5)))),
+            colorNodeA.r.mul(0.2),
+            colorNodeB.r.mul(0.1),
+        ).mul(0.5),
     ),
     emissiveNode: vec4(vec3(color('#05e2ff').rgb), 1.0),
     transparent: true,
@@ -185,11 +185,11 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
 
         const curve = buildSplineCurve(vecs, closed)
 
-        const tube = 2
-        const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), tube, 32, closed)
+        const tubeThickness = 0.15
+        const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), tubeThickness, 32, closed)
 
         const line = new THREE.Mesh(geometry2, MESH_MATERAIL)
-        line.scale.y = 0.05
+        // line.scale.y = 0.05
 
         group.add(line)
         geometries.push(geometry2)
