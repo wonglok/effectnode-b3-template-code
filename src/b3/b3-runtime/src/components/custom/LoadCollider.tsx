@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo } from 'react'
-import { DoubleSide, Mesh, Object3D, Texture, Vector3 } from 'three'
+import { DoubleSide, Mesh, Object3D, RepeatWrapping, Texture, TextureLoader, Vector3 } from 'three'
 import {
     Fn,
     vec2,
@@ -91,18 +91,26 @@ const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<
     return noiseVal
 })
 
+const loader = new TextureLoader()
+const roughnessMap: Texture = loader.load(`/texture/chip005/Chip005_4K-PNG_Roughness.png`, (d) => {
+    d.wrapS = d.wrapT = RepeatWrapping
+})
+const normalMap: Texture = loader.load(`/texture/chip005/Chip005_4K-PNG_NormalGL.png`, (d) => {
+    d.wrapS = d.wrapT = RepeatWrapping
+})
+
 export function LoadCollider({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene)
 
     const playerGroup = useGameGlobal((r) => r.playerGroup)
 
-    const roughnessMap: Texture | null = useMemo(() => {
-        return getOrCreateTexture('Onyx015_4K-JPG_Roughness.jpg', texData, 'noncolor')
-    }, [texData, texData.size])
+    // const roughnessMap: Texture | null = useMemo(() => {
+    //     return getOrCreateTexture('Onyx015_4K-JPG_Roughness.jpg', texData, 'noncolor')
+    // }, [texData, texData.size])
 
-    const normalMap: Texture | null = useMemo(() => {
-        return getOrCreateTexture('Onyx015_4K-JPG_NormalGL.jpg', texData, 'noncolor')
-    }, [texData, texData.size])
+    // const normalMap: Texture | null = useMemo(() => {
+    //     return getOrCreateTexture('Onyx015_4K-JPG_NormalGL.jpg', texData, 'noncolor')
+    // }, [texData, texData.size])
 
     // Blender version of the 'collider' object. A stable primitive so the attach
     // effect below only re-runs when Blender actually changes the collider —
@@ -214,9 +222,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             if (!collider.userData.oMaterial) {
                 collider.userData.oMaterial = collider.material
             }
-            // if (collider.material.userData.applied) {
-            //     return
-            // }
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>

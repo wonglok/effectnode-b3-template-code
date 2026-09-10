@@ -9,6 +9,11 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
             <ambientLight intensity={1}></ambientLight>
+
+            <directionalLight intensity={1} position={[5, 5, 5]}></directionalLight>
+            <directionalLight intensity={1} position={[-5, 5, -5]}></directionalLight>
         </>
     )
 }
+
+//
