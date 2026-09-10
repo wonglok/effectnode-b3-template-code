@@ -1,7 +1,8 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 import type { BlenderObject } from '../types/blenderTypes'
+import { float, texture, time, uv, vec2 } from 'three/tsl'
 
 // ---------------------------------------------------------------------------
 // LoadCurve — reconstructs Blender CURVE objects.
@@ -21,11 +22,6 @@ import type { BlenderObject } from '../types/blenderTypes'
 // Curves are grouped under an object-named THREE.Group carrying the object's
 // position / quaternion / scale (same convention as useMeshSync).
 // ---------------------------------------------------------------------------
-
-// Shared red material — matches the reference recipe. Module-level so all
-// curve lines share one program (never disposed per entry).
-// const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
-const MESH_MATERAIL = new THREE.MeshStandardMaterial({ color: 0xffffff })
 
 // Subdivision count for getPoints() — the recipe uses 50; scale up for longer
 // splines so they stay smooth.
@@ -49,6 +45,22 @@ function computeCurveSignature(obj: BlenderObject): string {
     ])
 }
 
+const texArrow = new THREE.TextureLoader().load(`/texture/arrows@1x.png`)
+texArrow.generateMipmaps = false
+texArrow.colorSpace = THREE.SRGBColorSpace
+texArrow.wrapS = texArrow.wrapT = THREE.RepeatWrapping
+const colorNode = texture(
+    texArrow,
+    uv()
+        .mul(vec2(-20.0, 1.0))
+        .add(vec2(time.mul(1), 0)),
+)
+
+// Shared red material — matches the reference recipe. Module-level so all
+// curve lines share one program (never disposed per entry).
+// const LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xff0000 });
+const MESH_MATERAIL = new THREE.MeshStandardNodeMaterial({ colorNode: colorNode })
+
 function buildCurveEntry(obj: BlenderObject): CurveEntry {
     const group = new THREE.Group()
     group.name = obj.name
@@ -61,12 +73,14 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
         const vecs = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
         const closed = obj.curveClosed?.[i] ?? false
 
-        const curve = new THREE.CatmullRomCurve3(vecs, closed, 'centripetal', 0.5)
+        const curve = new THREE.CatmullRomCurve3(vecs, closed, 'catmullrom', 0.5)
 
         const geometry2 = new THREE.TubeGeometry(curve, subdivisionsFor(vecs.length), 1.0, 32, closed)
 
         const line = new THREE.Mesh(geometry2, MESH_MATERAIL)
+        line.scale.y = 0.05
         // line.name = `${obj.name}`
+
         group.add(line)
         geometries.push(geometry2)
     })

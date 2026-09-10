@@ -97,11 +97,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     const playerGroup = useGameGlobal((r) => r.playerGroup)
 
     const roughnessMap: Texture | null = useMemo(() => {
-        return getOrCreateTexture('Chip003_4K-PNG_Roughness.png', texData, 'noncolor')
+        return getOrCreateTexture('Onyx015_4K-JPG_Roughness.jpg', texData, 'noncolor')
     }, [texData, texData.size])
 
     const normalMap: Texture | null = useMemo(() => {
-        return getOrCreateTexture('Chip003_4K-PNG_NormalGL.png', texData, 'noncolor')
+        return getOrCreateTexture('Onyx015_4K-JPG_NormalGL.jpg', texData, 'noncolor')
     }, [texData, texData.size])
 
     // Blender version of the 'collider' object. A stable primitive so the attach
@@ -220,7 +220,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(2.0), float(0.25)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(1.5), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
