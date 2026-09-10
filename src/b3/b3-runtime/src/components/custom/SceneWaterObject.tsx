@@ -11,7 +11,7 @@ import {
 } from 'three'
 import { WaterMesh } from 'three/examples/jsm/objects/Water2Mesh.js'
 import type { BlenderObject } from '../types/blenderTypes'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 
 // ---------------------------------------------------------------------------
 // Water surface for the synced Blender scene.
@@ -129,7 +129,7 @@ export function SceneWaterObject({
     const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
         // map — so a single quad is enough.
-        const geometry = waterMesh?.geometry || new PlaneGeometry(size, size, 1, 1)
+        const geometry = waterMesh?.geometry || new PlaneGeometry(0.000001, 0.000001, 1, 1)
         // geometry.rotateX(-Math.PI / 2)
 
         const normalMap0 = rippleNormalTexture(256, WAVES_A)
@@ -147,10 +147,6 @@ export function SceneWaterObject({
         water.name = 'scene-water'
         // water.position.y = height
 
-        waterMesh?.getWorldPosition(water.position)
-        waterMesh?.getWorldScale(water.scale)
-        waterMesh?.getWorldQuaternion(water.quaternion)
-
         if (waterMesh) {
             waterMesh.visible = false
         }
@@ -160,6 +156,12 @@ export function SceneWaterObject({
 
         return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
     }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale])
+
+    useFrame(() => {
+        waterMesh?.getWorldPosition(water.position)
+        waterMesh?.getWorldScale(water.scale)
+        waterMesh?.getWorldQuaternion(water.quaternion)
+    })
 
     useEffect(() => {
         return () => {
