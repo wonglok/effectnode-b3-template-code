@@ -17,12 +17,6 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 <SceneWaterObject name={'water2'} objects={objects}></SceneWaterObject>
             </group>
 
-            {/*  */}
-
-            {/* <group position={[0, -0.05, 0]}>
-                <SceneWaterObject name={'water3'} objects={objects}></SceneWaterObject>
-            </group> */}
-
             {/* <ambientLight intensity={1}></ambientLight>
 
             <directionalLight intensity={1} position={[5, 5, 5]}></directionalLight>
@@ -30,5 +24,13 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
         </>
     )
 }
+
+//
+
+//
+
+//
+
+//
 
 //
