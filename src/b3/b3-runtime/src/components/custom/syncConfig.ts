@@ -17,5 +17,5 @@
 export const SYNC_SKIP_MATERIAL_OBJECTS: readonly string[] = [
     // The collider floor uses a hand-written TSL shader in LoadCollider.tsx —
     // don't let the synced Blender material overwrite it.
-    'collider',
+    // 'collider',
 ]
