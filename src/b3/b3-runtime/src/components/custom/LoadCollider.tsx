@@ -93,13 +93,19 @@ const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<
 
 const loader = new TextureLoader()
 const colorMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Color.jpg`, (d) => {
+    d.repeat.set(20, 20)
+    d.needsUpdate = true
     d.colorSpace = SRGBColorSpace
     d.wrapS = d.wrapT = RepeatWrapping
 })
 const roughnessMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Roughness.jpg`, (d) => {
+    d.repeat.set(20, 20)
+    d.needsUpdate = true
     d.wrapS = d.wrapT = RepeatWrapping
 })
 const normalMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_NormalGL.jpg`, (d) => {
+    d.repeat.set(20, 20)
+    d.needsUpdate = true
     d.wrapS = d.wrapT = RepeatWrapping
 })
 
@@ -235,17 +241,17 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             // yet wired in; uncomment once it's referenced (kept the build green).
             // const reflectionColor = texture(reflection, uv())
 
+            const texScale = 35.0
             //
-            const normalVec4 = texture(normalMap, uv())
-            const roughnessVec4 = texture(rm, uv())
+            const normalVec4 = texture(normalMap, uv().mul(texScale))
+            const roughnessVec4 = texture(rm, uv().mul(texScale))
+            const colorValue = texture(colorMap, uv().mul(texScale))
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.roughnessNode = roughnessVec4.r.oneMinus()
             mat.metalnessNode = roughnessVec4.r
             mat.normalNode = normalVec4.rgb
             mat.transparent = true
-
-            const colorValue = texture(colorMap, uv())
 
             mat.emissiveNode = Fn(() => {
                 return vec4(

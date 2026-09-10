@@ -153,8 +153,6 @@ export function SceneWaterObject({
             waterMesh.visible = false
         }
 
-        // TEMP DEBUG — remove
-        ;(window as any).__water = water
 
         return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
     }, [

@@ -36,6 +36,7 @@ import signal
 import struct
 import asyncio
 import threading
+import time
 import sys
 import subprocess
 
@@ -57,6 +58,13 @@ from websockets.exceptions import ConnectionClosed
 SERVER_HOST = "localhost"
 SERVER_PORT_DEFAULT = 8765
 
+# Timer cadence. Transforms, materials and shader graphs are re-read every tick;
+# geometry extraction (bmesh triangulation, curve sampling) is throttled to
+# GEO_DISCOVERY_INTERVAL and staggered across ticks so no single tick absorbs
+# the whole cost. See get_scene_data().
+TICK_INTERVAL = 1.0 / 5.0
+GEO_DISCOVERY_INTERVAL = 10.0
+
 
 # ---------------------------------------------------------------------------
 # Shared state — all protected by _lock
@@ -74,6 +82,8 @@ _state = {
     "tex_cache": {},      # image_name → (mime, bytes, key)
     "tex_sent": {},       # ws_id → set of image_names already sent
     "geo_sent": {},       # ws_id → set of "name@version" already sent
+    "geo_cache": {},      # obj_name → cached geometry (see get_scene_data)
+    "geo_discovered": {},  # obj_name → monotonic time of last geometry discovery
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -478,81 +488,362 @@ def _sample_curve_splines(curve_data, count=CURVE_SAMPLE_COUNT):
 # ---------------------------------------------------------------------------
 # Scene data extraction (Blender Z-up → Three.js Y-up)
 # ---------------------------------------------------------------------------
+
+def _extract_transform(obj):
+    """CHEAP — Blender Z-up → Three.js Y-up transform, for any object type."""
+    orig_mode = obj.rotation_mode
+    obj.rotation_mode = 'QUATERNION'
+    pos = obj.location
+    q = obj.rotation_quaternion
+    s = obj.scale
+    obj.rotation_mode = orig_mode
+
+    return {
+        "name":       obj.name,
+        "objectType": obj.type,
+        "position":   [pos.x, pos.z, -pos.y],
+        "quaternion": [q.x,   q.z,   -q.y,   q.w],
+        "scale":      [s.x,   s.z,    s.y],
+    }
+
+
+def _extract_mesh_geometry(obj, depsgraph):
+    """HEAVY — triangulate, convert to Y-up, gather UVs and flat shading.
+
+    Returns (vertices, indices, uvs, flat_shading), or None when the mesh fails
+    to evaluate (e.g. a modifier errored)."""
+    import bmesh
+
+    eval_obj = obj.evaluated_get(depsgraph)
+    try:
+        mesh = eval_obj.to_mesh()
+    except RuntimeError:
+        return None
+
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    bm.verts.index_update()
+
+    vertices = []
+    for v in bm.verts:
+        # Blender Z-up → Three.js Y-up
+        vertices.extend([v.co.x, v.co.z, -v.co.y])
+
+    # --- UV coordinates (per-vertex, from active UV layer) ---
+    uv_layer = bm.loops.layers.uv.active
+    uvs = []
+    if uv_layer:
+        # One UV pair per unique vertex — last loop touching the vertex wins.
+        # This is correct for meshes without UV seams; at seam edges the
+        # vertex will use whichever face is iterated last.
+        uvs = [0.0, 0.0] * len(bm.verts)
+        for face in bm.faces:
+            for loop in face.loops:
+                vi = loop.vert.index
+                uv = loop[uv_layer].uv
+                uvs[vi * 2] = uv.x
+                uvs[vi * 2 + 1] = uv.y
+
+    indices = []
+    for face in bm.faces:
+        for v in face.verts:
+            indices.append(v.index)
+
+    # --- Flat shading detection ---
+    # If every face has smooth=False the mesh was explicitly flat-shaded
+    # (Blender's "Shade Flat"). Mixed or all-smooth stays smooth.
+    flat_shading = all(not f.smooth for f in bm.faces) if bm.faces else False
+
+    bm.free()
+    eval_obj.to_mesh_clear()
+
+    return vertices, indices, uvs, flat_shading
+
+
+def _extract_curve_payload(obj, depsgraph):
+    """HEAVY — sample splines into dense local-space points, plus the original
+    control points per spline.
+
+    Returns the curve fields dict, or None when the curve can't be sampled
+    (failed evaluation, or no usable spline points)."""
+    eval_obj = obj.evaluated_get(depsgraph)
+    try:
+        # to_curve() requires an explicit depsgraph on Blender ≥ 5.2
+        # (unlike to_mesh(), which still defaults it).
+        curve_data = eval_obj.to_curve(depsgraph)
+    except RuntimeError:
+        # Curve failed to evaluate (e.g. a modifier outputs a mesh)
+        return None
+    try:
+        sampled, controls, closed_flags, bevel_depth, version = _sample_curve_splines(
+            curve_data
+        )
+    finally:
+        eval_obj.to_curve_clear()
+
+    if not any(sampled):
+        # No usable spline points
+        return None
+
+    return {
+        "sampledPoints": sampled,
+        "controlPoints": controls,
+        "curveClosed":   closed_flags,
+        "bevelDepth":    bevel_depth,
+        "curveVersion":  version,
+    }
+
+
+def _extract_material(obj, flat_shading, v_count, i_count, uv_cksum):
+    """CHEAP — Principled BSDF properties, texture refs and shader-graph hash.
+
+    Takes the cached geometry metrics (`v_count`, `i_count`, `uv_cksum`) and
+    `flat_shading` so the full version string can be rebuilt without touching
+    bmesh — that is what lets material edits stay live while geometry
+    extraction is throttled.
+
+    Returns (fields, graph): `fields` merges straight into obj_data, `graph` is
+    the shader node tree (or None)."""
+    # --- Material properties (Principled BSDF) ---
+    color = [0.5, 0.5, 0.5]
+    roughness = 0.5
+    metallic = 0.0
+    emissive_color = [0.0, 0.0, 0.0]
+    emissive_strength = 0.0
+    texture = None          # base color map
+    roughness_map = None
+    metalness_map = None
+    normal_map = None
+    emissive_map = None     # emission color map
+    opacity = 1.0
+    transparent = False
+    alpha_test = 0.0
+    # Double-sided by default — Blender renders both sides of a face unless
+    # "Backface Culling" is enabled on the material.
+    double_sided = True
+
+    mat = obj.active_material
+    if mat and mat.use_nodes:
+        for node in mat.node_tree.nodes:
+            if node.type == 'BSDF_PRINCIPLED':
+                bc = node.inputs.get('Base Color')
+                if bc:
+                    tex_img = _find_image_texture(bc)
+                    if tex_img:
+                        texture = tex_img.name
+                        color = [1.0, 1.0, 1.0]  # white — texture determines color
+                    else:
+                        color = list(bc.default_value)[:3]
+
+                rim = _find_image_texture(node.inputs.get('Roughness'))
+                roughness_map = rim.name if rim else None
+                mim = _find_image_texture(node.inputs.get('Metallic'))
+                metalness_map = mim.name if mim else None
+                nim = _find_image_texture(node.inputs.get('Normal'))
+                normal_map = nim.name if nim else None
+
+                r = node.inputs.get('Roughness')
+                if r and not r.is_linked:
+                    roughness = r.default_value
+                m = node.inputs.get('Metallic')
+                if m and not m.is_linked:
+                    metallic = m.default_value
+                ec = (node.inputs.get('Emission Color')
+                      or node.inputs.get('Emission'))
+                if ec:
+                    em_tex = _find_image_texture(ec)
+                    if em_tex:
+                        emissive_map = em_tex.name
+                        emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
+                    else:
+                        emissive_color = list(ec.default_value)[:3]
+                es = node.inputs.get('Emission Strength')
+                if es:
+                    emissive_strength = es.default_value
+
+                # Transparency
+                alpha = node.inputs.get('Alpha')
+                if alpha and not alpha.is_linked:
+                    opacity = alpha.default_value
+                break
+
+        # Blend mode (on the material, not the shader node)
+        blend_method = getattr(mat, 'blend_method', 'OPAQUE')
+        if blend_method == 'BLEND':
+            transparent = True
+        elif blend_method == 'HASHED':
+            transparent = True
+        elif blend_method == 'CLIP':
+            alpha_test = getattr(mat, 'alpha_threshold', 0.5)
+
+    elif mat:
+        color = list(mat.diffuse_color)[:3]
+        if hasattr(mat, 'roughness'):
+            roughness = mat.roughness
+        if hasattr(mat, 'metallic'):
+            metallic = mat.metallic
+        blend_method = getattr(mat, 'blend_method', 'OPAQUE')
+        if blend_method == 'BLEND':
+            transparent = True
+        elif blend_method == 'HASHED':
+            transparent = True
+        elif blend_method == 'CLIP':
+            alpha_test = getattr(mat, 'alpha_threshold', 0.5)
+
+    # Double-sided — Blender renders both sides by default (backface culling
+    # off). Enabling "Backface Culling" on the material exports a single-sided
+    # surface (THREE.FrontSide). `use_backface_culling` is the render-time
+    # property behind that checkbox across Blender 4.x / 5.x.
+    if mat is not None:
+        double_sided = not bool(getattr(mat, 'use_backface_culling', False))
+
+    # --- Shader node graph checksum (for realtime graph sync) ---
+    graph_hash = "0"
+    graph = None
+    try:
+        graph = _extract_node_graph(obj.active_material)
+        if graph:
+            import hashlib
+            graph_json = json.dumps(graph, sort_keys=True)
+            graph_hash = hashlib.md5(graph_json.encode()).hexdigest()[:8]
+    except Exception:
+        pass
+
+    # Version tag — changes when geometry, material, OR shader graph changes.
+    # Geometry contributes only the v/i counts, flat shading and the UV
+    # checksum here, all of which come from the cache so this stays cheap.
+    version = (
+        f"v{v_count}_f{i_count}"
+        f"_c{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}"
+        f"_r{roughness:.4f}_m{metallic:.4f}"
+        f"_e{emissive_color[0]:.4f}_{emissive_color[1]:.4f}_{emissive_color[2]:.4f}"
+        f"_es{emissive_strength:.4f}"
+        f"_tx{texture or 'none'}"
+        f"_rm{roughness_map or 'none'}"
+        f"_mm{metalness_map or 'none'}"
+        f"_nm{normal_map or 'none'}"
+        f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
+        f"_fl{'1' if flat_shading else '0'}"
+        f"_ds{'1' if double_sided else '0'}"
+        # "_uvd" marks float64 UVs — distinct from the old "_uv" (float32) so
+        # cached float32 geometry is invalidated and re-sent after an upgrade.
+        f"_uvd{uv_cksum}"
+        f"_gh{graph_hash}"
+    )
+
+    fields = {
+        "color":             color,
+        "roughness":         roughness,
+        "metalness":         metallic,
+        "emissiveColor":     emissive_color,
+        "emissiveIntensity": emissive_strength,
+        "transparent":       transparent,
+        "opacity":           opacity,
+        "alphaTest":         alpha_test,
+        "flatShading":       flat_shading,
+        "doubleSided":       double_sided,
+        "version":           version,
+    }
+    if texture:
+        fields["texture"] = texture
+    if roughness_map:
+        fields["roughnessMap"] = roughness_map
+    if metalness_map:
+        fields["metalnessMap"] = metalness_map
+    if normal_map:
+        fields["normalMap"] = normal_map
+    if emissive_map:
+        fields["emissiveMap"] = emissive_map
+
+    return fields, graph
+
+
 def get_scene_data():
     """Returns (json_string, geometry_dict).
 
-    json_string — per-frame scene data WITHOUT vertices/indices/UVs arrays.
+    json_string — scene data WITHOUT vertices/indices/UVs arrays.
     geometry_dict — {object_name: (version, vCount, iCount, hasUVs, blob_bytes)}
-      for binary geo messages (sent once per client per version)."""
-    import bmesh
+      for binary geo messages (sent once per client per version).
 
-    depsgraph = bpy.context.evaluated_depsgraph_get()
+    Transforms and material properties are re-read on every call (5 Hz). The
+    expensive geometry extraction — bmesh triangulation for meshes, spline
+    sampling for curves — is cached per object and refreshed on a staggered
+    schedule: an object is re-extracted once GEO_DISCOVERY_INTERVAL has passed,
+    and at most a proportional slice of the scene is refreshed per call, so the
+    cost never lands on one tick.
+
+    The cache keeps the geometry metrics that feed the version string, so the
+    version can be rebuilt every tick without bmesh. When only the material
+    changes the version changes but the blob bytes are identical, so the cached
+    blob is re-sent under the new label — that is what keeps material edits
+    live at 5 Hz without re-extracting.
+
+    NOTE: the version in the JSON must always match a blob sent in the same
+    tick. useMeshSync deletes an existing mesh when it sees a version with no
+    matching geo buffer and then skips the object entirely — including its
+    transform — so a version emitted without its blob makes objects vanish."""
     view_layer = bpy.context.view_layer
+    scene_objects = list(bpy.context.scene.objects)
+    scene_names = {obj.name for obj in scene_objects}
+
+    cache = _state["geo_cache"]
+    discovered = _state["geo_discovered"]
+
+    # Drop entries for objects that left the scene.
+    for stale in [n for n in cache if n not in scene_names]:
+        cache.pop(stale, None)
+        discovered.pop(stale, None)
+
+    visible = [obj for obj in scene_objects if obj.visible_get(view_layer=view_layer)]
+
+    # --- Staggered geometry refresh ----------------------------------------
+    # Spread the refresh across ticks in proportion to the scene size, so each
+    # object is re-extracted roughly once per GEO_DISCOVERY_INTERVAL while no
+    # single tick pays for the whole scene. A scene small enough that the
+    # budget is 1 simply refreshes one object per tick.
+    geometry_objects = [obj for obj in visible if obj.type in ('MESH', 'CURVE')]
+    budget = max(
+        1, math.ceil(len(geometry_objects) * TICK_INTERVAL / GEO_DISCOVERY_INTERVAL)
+    )
+
+    now = time.monotonic()
+    refreshing = set()
+    for obj in geometry_objects:
+        last = discovered.get(obj.name)
+        if last is None or (now - last) >= GEO_DISCOVERY_INTERVAL:
+            refreshing.add(obj.name)
+            if len(refreshing) >= budget:
+                break
+
+    # One depsgraph for the whole pass.
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
     data = {"objects": []}
     geometry_dict = {}
 
-    for obj in bpy.context.scene.objects:
-        # Skip objects hidden in the viewport (eye icon, hidden collections, etc.)
-        if not obj.visible_get(view_layer=view_layer):
-            continue
-
-        # ------------------------------------------------------------------
-        # Transform (all object types)
-        # ------------------------------------------------------------------
-        orig_mode = obj.rotation_mode
-        obj.rotation_mode = 'QUATERNION'
-        pos = obj.location
-        q = obj.rotation_quaternion
-        s = obj.scale
-        obj.rotation_mode = orig_mode
-
-        # ------------------------------------------------------------------
-        # Base object data (all types)
-        # ------------------------------------------------------------------
-        obj_data = {
-            "name":       obj.name,
-            "objectType": obj.type,
-            "position":   [pos.x, pos.z, -pos.y],
-            "quaternion": [q.x,   q.z,   -q.y,   q.w],
-            "scale":      [s.x,   s.z,    s.y],
-        }
+    for obj in visible:
+        obj_data = _extract_transform(obj)
 
         # --- Empty-specific metadata ---
         if obj.type == 'EMPTY':
             obj_data["emptyDisplayType"] = obj.empty_display_type  # 'PLAIN_AXES', 'CUBE', 'SPHERE', etc.
 
-        # --- Curve objects: sample splines into dense local-space points,
-        # plus the original control points per spline ---
+        # ------------------------------------------------------------------
+        # Curve objects — sampled on the throttle, reused in between
+        # ------------------------------------------------------------------
         if obj.type == 'CURVE':
-            eval_obj = obj.evaluated_get(depsgraph)
-            try:
-                # to_curve() requires an explicit depsgraph on Blender ≥ 5.2
-                # (unlike to_mesh(), which still defaults it).
-                curve_data = eval_obj.to_curve(depsgraph)
-            except RuntimeError:
-                # Curve failed to evaluate (e.g. a modifier outputs a mesh) —
-                # still include transform-only data
-                data["objects"].append(obj_data)
-                continue
-            try:
-                sampled, controls, closed_flags, bevel_depth, version = _sample_curve_splines(
-                    curve_data
-                )
-            finally:
-                eval_obj.to_curve_clear()
-
-            if not any(sampled):
-                # No usable spline points — transform-only entry
-                data["objects"].append(obj_data)
-                continue
-
-            obj_data.update({
-                "sampledPoints": sampled,
-                "controlPoints": controls,
-                "curveClosed":   closed_flags,
-                "bevelDepth":    bevel_depth,
-                "curveVersion":  version,
-            })
+            entry = cache.get(obj.name)
+            if obj.name in refreshing or entry is None:
+                payload = _extract_curve_payload(obj, depsgraph)
+                if payload is not None:
+                    entry = {"curve": payload}
+                    cache[obj.name] = entry
+                # Mark seen either way, so a curve that can't be sampled isn't
+                # re-attempted on every tick.
+                discovered[obj.name] = now
+            if entry and entry.get("curve"):
+                obj_data.update(entry["curve"])
             data["objects"].append(obj_data)
             continue
 
@@ -564,217 +855,71 @@ def get_scene_data():
             continue
 
         # ==================================================================
-        # Geometry (triangulated, Y-up converted) — MESH only below here
+        # MESH — geometry cached and refreshed on the throttle; material and
+        # shader graph re-read every tick
         # ==================================================================
-        eval_obj = obj.evaluated_get(depsgraph)
-        try:
-            mesh = eval_obj.to_mesh()
-        except RuntimeError:
-            # Mesh failed to evaluate — still include transform-only data
+        entry = cache.get(obj.name)
+        if obj.name in refreshing or entry is None:
+            extracted = _extract_mesh_geometry(obj, depsgraph)
+            # Mark seen whether or not it worked, so a mesh that fails to
+            # evaluate isn't re-attempted on every tick.
+            discovered[obj.name] = now
+
+            if extracted is not None:
+                vertices, indices, uvs, flat_shading = extracted
+                v_count = len(vertices) // 3
+                i_count = len(indices)
+                uv_cksum = int(sum(uvs) * 1000) if uvs else 0
+
+                # Re-pack only when the geometry actually changed — a refresh
+                # that finds identical vertices keeps the existing blob.
+                unchanged = (
+                    entry is not None
+                    and entry.get("v_count") == v_count
+                    and entry.get("i_count") == i_count
+                    and entry.get("uv_cksum") == uv_cksum
+                    and entry.get("flat_shading") == flat_shading
+                )
+                if unchanged:
+                    has_uvs = entry["has_uvs"]
+                    blob = entry["blob"]
+                else:
+                    has_uvs = bool(uvs)
+                    blob = _pack_geometry(vertices, indices, uvs if has_uvs else [])
+
+                entry = {
+                    "v_count":      v_count,
+                    "i_count":      i_count,
+                    "uv_cksum":     uv_cksum,
+                    "flat_shading": flat_shading,
+                    "has_uvs":      has_uvs,
+                    "blob":         blob,
+                }
+                cache[obj.name] = entry
+
+        if entry is None:
+            # Mesh failed to evaluate and there is nothing cached — still emit
+            # the transform-only entry.
             data["objects"].append(obj_data)
             continue
 
-        bm = bmesh.new()
-        bm.from_mesh(mesh)
-        bmesh.ops.triangulate(bm, faces=bm.faces[:])
-        bm.verts.index_update()
-
-        vertices = []
-        for v in bm.verts:
-            # Blender Z-up → Three.js Y-up
-            vertices.extend([v.co.x, v.co.z, -v.co.y])
-
-        # --- UV coordinates (per-vertex, from active UV layer) ---
-        uv_layer = bm.loops.layers.uv.active
-        uvs = []
-        if uv_layer:
-            # One UV pair per unique vertex — last loop touching the vertex wins.
-            # This is correct for meshes without UV seams; at seam edges the
-            # vertex will use whichever face is iterated last.
-            uvs = [0.0, 0.0] * len(bm.verts)
-            for face in bm.faces:
-                for loop in face.loops:
-                    vi = loop.vert.index
-                    uv = loop[uv_layer].uv
-                    uvs[vi * 2] = uv.x
-                    uvs[vi * 2 + 1] = uv.y
-
-        indices = []
-        for face in bm.faces:
-            for v in face.verts:
-                indices.append(v.index)
-
-        # --- Flat shading detection ---
-        # If every face has smooth=False the mesh was explicitly flat-shaded
-        # (Blender's "Shade Flat"). Mixed or all-smooth stays smooth.
-        flat_shading = all(not f.smooth for f in bm.faces) if bm.faces else False
-
-        # --- Material properties (Principled BSDF) ---
-        color = [0.5, 0.5, 0.5]
-        roughness = 0.5
-        metallic = 0.0
-        emissive_color = [0.0, 0.0, 0.0]
-        emissive_strength = 0.0
-        texture = None          # base color map
-        roughness_map = None
-        metalness_map = None
-        normal_map = None
-        emissive_map = None     # emission color map
-        opacity = 1.0
-        transparent = False
-        alpha_test = 0.0
-        # Double-sided by default — Blender renders both sides of a face unless
-        # "Backface Culling" is enabled on the material.
-        double_sided = True
-
-        mat = obj.active_material
-        if mat and mat.use_nodes:
-            for node in mat.node_tree.nodes:
-                if node.type == 'BSDF_PRINCIPLED':
-                    bc = node.inputs.get('Base Color')
-                    if bc:
-                        tex_img = _find_image_texture(bc)
-                        if tex_img:
-                            texture = tex_img.name
-                            color = [1.0, 1.0, 1.0]  # white — texture determines color
-                        else:
-                            color = list(bc.default_value)[:3]
-
-                    rim = _find_image_texture(node.inputs.get('Roughness'))
-                    roughness_map = rim.name if rim else None
-                    mim = _find_image_texture(node.inputs.get('Metallic'))
-                    metalness_map = mim.name if mim else None
-                    nim = _find_image_texture(node.inputs.get('Normal'))
-                    normal_map = nim.name if nim else None
-
-                    r = node.inputs.get('Roughness')
-                    if r and not r.is_linked:
-                        roughness = r.default_value
-                    m = node.inputs.get('Metallic')
-                    if m and not m.is_linked:
-                        metallic = m.default_value
-                    ec = (node.inputs.get('Emission Color')
-                          or node.inputs.get('Emission'))
-                    if ec:
-                        em_tex = _find_image_texture(ec)
-                        if em_tex:
-                            emissive_map = em_tex.name
-                            emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
-                        else:
-                            emissive_color = list(ec.default_value)[:3]
-                    es = node.inputs.get('Emission Strength')
-                    if es:
-                        emissive_strength = es.default_value
-
-                    # Transparency
-                    alpha = node.inputs.get('Alpha')
-                    if alpha and not alpha.is_linked:
-                        opacity = alpha.default_value
-                    break
-
-            # Blend mode (on the material, not the shader node)
-            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
-            if blend_method == 'BLEND':
-                transparent = True
-            elif blend_method == 'HASHED':
-                transparent = True
-            elif blend_method == 'CLIP':
-                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
-
-        elif mat:
-            color = list(mat.diffuse_color)[:3]
-            if hasattr(mat, 'roughness'):
-                roughness = mat.roughness
-            if hasattr(mat, 'metallic'):
-                metallic = mat.metallic
-            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
-            if blend_method == 'BLEND':
-                transparent = True
-            elif blend_method == 'HASHED':
-                transparent = True
-            elif blend_method == 'CLIP':
-                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
-
-        # Double-sided — Blender renders both sides by default (backface culling
-        # off). Enabling "Backface Culling" on the material exports a single-sided
-        # surface (THREE.FrontSide). `use_backface_culling` is the render-time
-        # property behind that checkbox across Blender 4.x / 5.x.
-        if mat is not None:
-            double_sided = not bool(getattr(mat, 'use_backface_culling', False))
-
-        # --- Shader node graph checksum (for realtime graph sync) ---
-        graph_hash = "0"
-        try:
-            graph = _extract_node_graph(obj.active_material)
-            if graph:
-                import hashlib
-                graph_json = json.dumps(graph, sort_keys=True)
-                graph_hash = hashlib.md5(graph_json.encode()).hexdigest()[:8]
-        except Exception:
-            graph = None
-            pass
-
-        # Version tag — changes when geometry, material, OR shader graph changes
-        uv_cksum = 0
-        if uvs:
-            uv_cksum = int(sum(uvs) * 1000)
-        version = (
-            f"v{len(vertices)}_f{len(indices)}"
-            f"_c{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}"
-            f"_r{roughness:.4f}_m{metallic:.4f}"
-            f"_e{emissive_color[0]:.4f}_{emissive_color[1]:.4f}_{emissive_color[2]:.4f}"
-            f"_es{emissive_strength:.4f}"
-            f"_tx{texture or 'none'}"
-            f"_rm{roughness_map or 'none'}"
-            f"_mm{metalness_map or 'none'}"
-            f"_nm{normal_map or 'none'}"
-            f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
-            f"_fl{'1' if flat_shading else '0'}"
-            f"_ds{'1' if double_sided else '0'}"
-            # "_uvd" marks float64 UVs — distinct from the old "_uv" (float32) so
-            # cached float32 geometry is invalidated and re-sent after an upgrade.
-            f"_uvd{uv_cksum}"
-            f"_gh{graph_hash}"
+        # Material, shader graph and version are re-read every tick. The blob
+        # holds geometry bytes only, so a material edit bumps the version and
+        # the cached blob is re-sent under the new label — no bmesh involved.
+        fields, graph = _extract_material(
+            obj, entry["flat_shading"], entry["v_count"], entry["i_count"], entry["uv_cksum"]
         )
+        obj_data.update(fields)
 
-        # Pack geometry as binary blob (sent once per client per version)
-        has_uvs = bool(uvs)
-        blob = _pack_geometry(vertices, indices, uvs if has_uvs else [])
+        # Blob is sent once per client per version; reusing the cached bytes
+        # under a bumped version is what keeps material edits live at 5 Hz.
         geometry_dict[obj.name] = (
-            version,
-            len(vertices) // 3,  # vCount
-            len(indices),        # iCount
-            has_uvs,
-            blob,
+            fields["version"],
+            entry["v_count"],   # vCount
+            entry["i_count"],   # iCount
+            entry["has_uvs"],
+            entry["blob"],
         )
-
-        bm.free()
-        eval_obj.to_mesh_clear()
-
-        # Merge material + geometry fields into obj_data
-        obj_data.update({
-            "color":             color,
-            "roughness":         roughness,
-            "metalness":         metallic,
-            "emissiveColor":     emissive_color,
-            "emissiveIntensity": emissive_strength,
-            "transparent":       transparent,
-            "opacity":           opacity,
-            "alphaTest":         alpha_test,
-            "flatShading":       flat_shading,
-            "doubleSided":       double_sided,
-            "version":           version,
-        })
-        if texture:
-            obj_data["texture"] = texture
-        if roughness_map:
-            obj_data["roughnessMap"] = roughness_map
-        if metalness_map:
-            obj_data["metalnessMap"] = metalness_map
-        if normal_map:
-            obj_data["normalMap"] = normal_map
-        if emissive_map:
-            obj_data["emissiveMap"] = emissive_map
 
         data["objects"].append(obj_data)
 
@@ -1211,6 +1356,13 @@ def _timer():
             # --- Scene data (JSON text) + geometry blobs (binary) ---
             data_json, geometry_dict = get_scene_data()
 
+            # Versions still in play this tick. Each client's sent-set is trimmed
+            # to these, so a version that no longer exists — e.g. a material
+            # slider dragged at 5 Hz, minting a new version every tick — doesn't
+            # accumulate in the set for the rest of the session. An object that
+            # leaves and comes back simply has its blob re-sent.
+            live_keys = {f"{name}@{v[0]}" for name, v in geometry_dict.items()}
+
             for ws in current:
                 ws_id = id(ws)
 
@@ -1220,6 +1372,7 @@ def _timer():
                     if ws_id not in _state["geo_sent"]:
                         _state["geo_sent"][ws_id] = set()
                     geo_sent = _state["geo_sent"][ws_id]
+                    geo_sent.intersection_update(live_keys)
 
                 for obj_name, (geo_version, v_count, i_count, has_uvs, blob) in geometry_dict.items():
                     key = f"{obj_name}@{geo_version}"
@@ -1370,7 +1523,7 @@ def _timer():
     # Always tag a redraw so the panel reflects the latest _state,
     # even when it was changed from the background thread.
     _redraw_all()
-    return 1.0 / 5.0
+    return TICK_INTERVAL
 
 
 
@@ -1434,6 +1587,10 @@ def start_server():
 
     with _lock:
         _state["error"] = ""
+        # Fresh geometry cache — the scene may have changed while stopped, and
+        # the first client needs every blob.
+        _state["geo_cache"].clear()
+        _state["geo_discovered"].clear()
 
     # During add-on registration, bpy.context may be a restricted context
     # that lacks a 'scene' attribute. Fall back to the default port.
@@ -1472,6 +1629,8 @@ def stop_server():
         _state["loop"] = None
         _state["thread"] = None
         _state["port"] = 0
+        _state["geo_cache"].clear()
+        _state["geo_discovered"].clear()
 
     # Flag the old server as stopped BEFORE any blocking work — the panel
     # reads these flags on the next redraw.
