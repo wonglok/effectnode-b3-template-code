@@ -109,7 +109,7 @@ export function SceneWaterObject({
     flowSpeed = 0.035,
     reflectivity = 0.06,
     /** UV tiling of the normal maps across the plane. */
-    scale = 0.1,
+    scale = 2.0,
     name = 'water',
 }: {
     objects?: BlenderObject[]
@@ -123,24 +123,21 @@ export function SceneWaterObject({
     name: string
 }) {
     const scene = useThree((r) => r.scene)
-
     const [waterMesh, setFound] = useState<any>(null)
 
     useEffect(() => {
-        let ttt = setInterval(() => {
+        //
+        const timer = setInterval(() => {
             let result = scene.getObjectByName(name) as Mesh | null
             if (result) {
                 setFound(result)
-                clearInterval(ttt)
+                clearInterval(timer)
             }
         })
-
         return () => {
-            clearInterval(ttt)
+            clearInterval(timer)
         }
     }, [scene, name, objects])
-
-    //
 
     const { geometry, water, textures, out } = useMemo(() => {
         // Nothing displaces the surface — the ripple is entirely in the normal
