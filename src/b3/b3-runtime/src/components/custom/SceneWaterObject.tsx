@@ -161,6 +161,7 @@ export function SceneWaterObject({
             scale,
         })
         water.name = 'scene-water'
+        water.frustumCulled = false
         // water.position.y = height
 
         if (waterMesh) {
