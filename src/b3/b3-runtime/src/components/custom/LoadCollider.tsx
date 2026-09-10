@@ -228,8 +228,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             }
 
             const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
-            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(15)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(1.5), float(0.25)) as Node<'float'>
+            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(1)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
@@ -249,21 +249,21 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const colorValue = texture(colorMap, uv())
 
-            // mat.emissiveNode = Fn(() => {
-            //     return vec4(
-            //         vec3(
-            //             //
-            //             color('#00E5FF').mul(1.0).rgb,
-            //             //
-            //         )
-            //             .mul(pulseMotion)
-            //             .mul(honeyCombThinBase)
-            //             .pow(3)
-            //             .mul(5.0),
+            mat.emissiveNode = Fn(() => {
+                return vec4(
+                    vec3(
+                        //
+                        color('#00E5FF').mul(1.0).rgb,
+                        //
+                    )
+                        .mul(pulseMotion)
+                        .mul(honeyCombThinBase)
+                        .pow(3)
+                        .mul(5.0),
 
-            //         1.0,
-            //     )
-            // })()
+                    1.0,
+                )
+            })()
 
             mat.colorNode = Fn(() => {
                 return vec4(

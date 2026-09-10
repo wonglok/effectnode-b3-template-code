@@ -157,7 +157,18 @@ export function SceneWaterObject({
         ;(window as any).__water = water
 
         return { geometry, water, textures: [normalMap0, normalMap1], out: <primitive object={water}></primitive> }
-    }, [size, height, color, flowDirection[0], flowDirection[1], flowSpeed, reflectivity, scale, waterMesh?.uuid])
+    }, [
+        size,
+        height,
+        color,
+        flowDirection[0],
+        flowDirection[1],
+        flowSpeed,
+        reflectivity,
+        scale,
+        waterMesh?.uuid,
+        JSON.stringify(objects),
+    ])
 
     useFrame(() => {
         waterMesh?.getWorldPosition(water.position)
