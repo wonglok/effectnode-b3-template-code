@@ -85,8 +85,6 @@ function buildCurveEntry(obj: BlenderObject): CurveEntry {
         const line = new THREE.Mesh(geometry2, MESH_MATERAIL)
         line.scale.y = 0.05
 
-        // line.name = `${obj.name}`
-
         group.add(line)
         geometries.push(geometry2)
     })

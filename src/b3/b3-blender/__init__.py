@@ -330,7 +330,7 @@ def _same_point(a, b, eps=1e-6):
 # Every spline leaves Blender as exactly this many points (see
 # _resample_polyline) so the payload is a fixed size and Three.js always gets
 # the same density regardless of how many control points the artist used.
-CURVE_SAMPLE_COUNT = 25
+CURVE_SAMPLE_COUNT = 250
 
 
 def _resample_polyline(pts, count, closed):
