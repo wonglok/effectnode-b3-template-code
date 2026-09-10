@@ -93,18 +93,18 @@ const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<
 
 const loader = new TextureLoader()
 const colorMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Color.jpg`, (d) => {
-    d.repeat.set(20, 20)
+    d.repeat.set(1, 1)
     d.needsUpdate = true
     d.colorSpace = SRGBColorSpace
     d.wrapS = d.wrapT = RepeatWrapping
 })
 const roughnessMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Roughness.jpg`, (d) => {
-    d.repeat.set(20, 20)
+    d.repeat.set(1, 1)
     d.needsUpdate = true
     d.wrapS = d.wrapT = RepeatWrapping
 })
 const normalMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_NormalGL.jpg`, (d) => {
-    d.repeat.set(20, 20)
+    d.repeat.set(1, 1)
     d.needsUpdate = true
     d.wrapS = d.wrapT = RepeatWrapping
 })
@@ -314,7 +314,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         // commit, so attach immediately. Only poll while creation is pending.
         const existing = scene.getObjectByName('collider') as Mesh | null
         if (existing) {
-            attach(existing)
+            // attach(existing)
         } else {
             raf = requestAnimationFrame(tick)
         }
