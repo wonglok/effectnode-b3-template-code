@@ -25,7 +25,7 @@ import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import { positionWorld, distance, smoothstep } from 'three/tsl'
-import { getOrCreateTexture } from '../utils/meshBuilder'
+// import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
 
 const circlePulse: (
@@ -227,13 +227,13 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 collider.userData.oMaterial = collider.material
             }
 
-            const pulseMotion = circlePulse(uPlayerPosition, float(2.5), float(0.5), uPulseProgress)
+            const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(1.0), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(1)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
+            // const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
-            const reflectionColor = texture(reflection, uv())
+            // const reflectionColor = texture(reflection, uv())
 
             //
             const normalVec4 = texture(normalMap, uv())
@@ -244,8 +244,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             mat.metalnessNode = roughnessVec4.r
             mat.normalNode = normalVec4.rgb
             mat.transparent = true
-
-            const hexagon = honeyCombThinBase.mul(noisePattern.pow(3.0).abs().mul(5.0).clamp(0.0, 1.0))
 
             const colorValue = texture(colorMap, uv())
 
