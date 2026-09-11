@@ -113,13 +113,6 @@ const MOVING_SPEED = 0.05
  */
 const AIM_HEIGHT = 1.1
 
-/**
- * How long to wait for an NPC to stand still before aiming its gun anyway.
- * Standing gives the right pose; this only bounds the wait for an NPC that
- * never stops, and the aim is merely less flattering if it fires.
- */
-const GUN_CALIBRATE_FALLBACK_SECONDS = 4
-
 // ---------------------------------------------------------------------------
 // Armed clip set
 // ---------------------------------------------------------------------------
@@ -266,12 +259,6 @@ interface Npc {
     wanderAge: number
     /** Seconds since the last chase re-aim — the re-aim throttle. */
     chaseAge: number
-    /** Seconds this NPC has existed — the backstop for gun calibration. */
-    age: number
-    /** True once its gun has been aimed in a real standing pose. */
-    gunCalibrated: boolean
-    /** Distance moved last frame, in world units — the "is it parked" test. */
-    stepLength: number
     /** Has the gun drawn? Armed while aggroed, peace while wandering. */
     armed: boolean
     /** Whether this avatar's rig actually built the armed clip set. A body that
@@ -435,9 +422,6 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             mode: 'wander',
             wanderAge: Infinity,
             chaseAge: 0,
-            age: 0,
-            gunCalibrated: false,
-            stepLength: 0,
             armed: false,
             armedClips: false,
             shotTimer: 0,
@@ -765,44 +749,34 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 if (!npc.agentId) continue
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
-                const prevX = npc.group.position.x
-                const prevZ = npc.group.position.z
                 npc.group.position.fromArray(agent.position)
-                npc.stepLength = Math.hypot(npc.group.position.x - prevX, npc.group.position.z - prevZ)
                 faceVelocity(npc, agent, delta)
                 animate(npc, agent, delta)
 
-                // Keep the gun aimed along the character's forward while it is
-                // standing (see `calibrateGun` for why the aim has to be taken
-                // from a real pose). Re-aiming every standing frame rather than
-                // once matters: a one-shot taken on the first standing frame
-                // samples the pose mid-blend out of the walk, which left two of
-                // four NPCs standing with the gun across their body. Walking
-                // leaves the last standing aim frozen, so the gun swings with
-                // the arm as a held object should.
-                // Standing is measured from how far the NPC actually moved, not
-                // from `agent.velocity`: that reports a residual while the agent
-                // sits still, which left stationary NPCs holding a stale aim
-                // (measured barrel-to-facing 0.35-0.88 off while visibly parked).
-                npc.age += delta
-                if (npc.gun) {
-                    const standing = delta > 0 && npc.stepLength / delta <= MOVING_SPEED
-                    if (standing) {
-                        calibrateGun(npc.gun)
-                        npc.gunCalibrated = true
-                    } else if (!npc.gunCalibrated && npc.age >= GUN_CALIBRATE_FALLBACK_SECONDS) {
-                        // Never stops — aim in whatever pose we have rather than
-                        // leaving the home-pose default on it forever.
-                        calibrateGun(npc.gun)
-                        npc.gunCalibrated = true
-                    }
-                }
+                // Keep the gun aimed along the character's forward, on every
+                // frame — `calibrateGun` re-derives the mount's *local* rotation
+                // so the gun's world rotation is `forwardRoot`'s, which means
+                // re-running it cancels whatever the hand did in this frame's
+                // pose. Runs after `animate` so it reads the pose of the frame
+                // being drawn, not the last one.
+                //
+                // Unconditional because the pose the aim is taken from is only
+                // ever wrong *before* the first standing frame: an NPC spawns
+                // walking, so gating on "is it parked" left the spawn walk and
+                // the blend into the idle holding the home-pose default (up to
+                // the old 4 s fallback) — visibly the wrong pose at the start,
+                // which is exactly the frame the player first sees.
+                //
+                // The trade: the gun holds its aim while the hand rotates under
+                // it, so it no longer swings with the arm. A walking NPC reads
+                // as keeping the muzzle on target rather than carrying the gun
+                // at its side.
+                if (npc.gun) calibrateGun(npc.gun)
 
                 // Fire on the cadence, but only from the standoff ring: a
                 // chasing NPC is still closing the distance and a shot mid-
                 // stride reads as a stumble. `hold` is the stance that is
-                // already standing still, which is also where the gun has been
-                // aimed (`calibrateGun` above runs on standing frames).
+                // already standing still, so the muzzle is settled.
                 if (npc.armed && npc.gun && playerPos) {
                     const dx = playerPos.x - npc.group.position.x
                     const dz = playerPos.z - npc.group.position.z

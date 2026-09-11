@@ -165,13 +165,18 @@ export interface NpcGun {
 /**
  * Re-aim the gun along the character's forward **for the pose it is in now**.
  *
- * This has to run in a real animation pose, not at attach time. `attachGun`
- * runs the instant `loadAvatar` resolves, when the skeleton is still in its
- * home pose — and the idle clip drops the arms a long way from there, which is
- * clearly visible: aligned at load, the guns sit across the NPCs' bodies. The
- * caller re-runs this while an NPC is standing, so the offset is taken from
- * the pose the player actually looks at. It stays a fixed local offset after
- * that, so the gun still swings with the arm while walking.
+ * `attachGun` runs the instant `loadAvatar` resolves, when the skeleton is
+ * still in its home pose — and every clip drops the arms a long way from
+ * there, which is clearly visible: aligned once at load, the guns sit across
+ * the NPCs' bodies until something re-aims them. So the caller runs this
+ * **every frame**, after the mixers have posed the skeleton, which is what
+ * keeps the barrel on the character's forward from the first drawn frame
+ * rather than from the first frame the NPC happens to stand still.
+ *
+ * Re-running it cancels the hand's own rotation, so the gun holds its aim
+ * while the arm rotates under it — it does not swing as a carried object
+ * would. That is the intended read here: an armed NPC keeps the muzzle on
+ * target.
  */
 export function calibrateGun(gun: NpcGun): void {
     const handQuat = pureWorldQuaternion(gun.hand, _calibHand)
@@ -184,7 +189,7 @@ export function calibrateGun(gun: NpcGun): void {
     gun.mount.quaternion.copy(handQuat).invert().multiply(refQuat)
 }
 
-/** Scratch — `calibrateGun` runs every frame while an NPC stands. */
+/** Scratch — `calibrateGun` runs on every armed NPC every frame. */
 const _calibHand = new THREE.Quaternion()
 const _calibRef = new THREE.Quaternion()
 
@@ -265,8 +270,9 @@ export function attachGun(
         forwardRoot,
         muzzle,
     }
-    // Provisional only — the caller re-aims it once the NPC is standing, by
-    // which point the idle clip has posed the arm. See `calibrateGun`.
+    // Provisional, taken in the home pose — the caller re-aims it every frame
+    // once the mixers are running. Kept so a gun that is attached and never
+    // ticked is still aimed rather than left at an arbitrary rotation.
     calibrateGun(npcGun)
     applyGunTuning(npcGun, weapon)
     return npcGun
