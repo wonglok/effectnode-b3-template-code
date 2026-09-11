@@ -97,7 +97,7 @@ export function ProductionPage() {
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
                         <BloomRender />
-                        {process.env.NODE_ENV === 'development' && <IntelligenceScan></IntelligenceScan>}
+                        {import.meta.env.DEV && <IntelligenceScan></IntelligenceScan>}
                     </ProductionViewer>
                 )}
 
