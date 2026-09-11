@@ -139,7 +139,17 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       try {
         const data = JSON.parse(text);
 
-        if (data.type === "hdr") {
+        if (data.type === "blob-list-request") {
+          // Blender asking what geometry we already hold, so it can skip
+          // re-sending it. Keys are `name@version`, exactly the form the server
+          // checks against, and a version Blender has since replaced simply
+          // won't match anything it offers — so a stale entry costs nothing.
+          const blobs: string[] = [];
+          for (const [name, buf] of useBlenderStore.getState().geoBuffers) {
+            if (buf?.version) blobs.push(`${name}@${buf.version}`);
+          }
+          socket.send(JSON.stringify({ type: "blob-list", blobs }));
+        } else if (data.type === "hdr") {
           if (data.width > 0 && data.height > 0) {
             set({
               pendingBinary: {

@@ -66,6 +66,21 @@ SERVER_PORT_DEFAULT = 8765
 TICK_INTERVAL = 1.0 / 5.0
 GEO_DISCOVERY_INTERVAL = 30.0
 
+# How long to hold a new client's geometry blobs while waiting for it to report
+# what it already holds (see _handle_client_message). Without the hold the
+# first tick after connect would push the whole scene before the reply landed,
+# which is the transfer this handshake exists to avoid. The timeout is the
+# fallback for a client that doesn't answer — an older build, or anything else
+# that doesn't speak the message — which then gets the full send as before.
+BLOB_LIST_TIMEOUT = 2.0
+
+# Caps on what a client may claim to hold. These are only ever compared against
+# names Blender already knows, so the risk is bounded memory, not trust — but a
+# malformed or hostile payload shouldn't be able to grow the per-client set
+# without limit.
+BLOB_LIST_MAX_ITEMS = 100_000
+BLOB_LIST_MAX_LEN = 512
+
 
 # ---------------------------------------------------------------------------
 # Shared state — all protected by _lock
@@ -90,6 +105,10 @@ _state = {
     # show the interval field's real cost without re-walking the scene itself.
     "geo_object_count": 0,   # mesh + curve objects considered
     "geo_budget": 0,         # how many of them were due this tick
+    # ws_id → monotonic deadline while waiting for that client's blob list.
+    # Present means "hold this client's blobs until it answers or the deadline
+    # passes". See _handler and the send loop in _timer.
+    "geo_await": {},
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -1588,18 +1607,85 @@ def _extract_lights():
     return lights
 
 
+def _handle_client_message(websocket, raw):
+    """Handle one message from a client.
+
+    Runs on the asyncio thread, so it may only touch _state and only under
+    _lock — and like the reader worker it must never touch bpy.
+
+    Today the only message clients send is the reply to the blob-list request:
+    the set of geometry blobs they already hold. Those get seeded into this
+    client's sent-set, so the next tick skips them and only the genuinely
+    missing blobs go over the wire. Seeding rather than tracking separately
+    means the existing trim — geo_sent.intersection_update(live_keys) — does the
+    hard part for free: anything the client holds at a version Blender no longer
+    has is dropped from the set and re-sent automatically.
+    """
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        return  # clients send no binary today
+    try:
+        msg = json.loads(raw)
+    except (ValueError, TypeError):
+        return
+    if not isinstance(msg, dict) or msg.get("type") != "blob-list":
+        return
+
+    reported = msg.get("blobs")
+    if not isinstance(reported, list):
+        return
+
+    ws_id = id(websocket)
+    # Filter to plausible keys before they reach the shared set: strings only,
+    # a sane length each, and a bounded count.
+    held = {
+        entry
+        for entry in reported[:BLOB_LIST_MAX_ITEMS]
+        if isinstance(entry, str) and 0 < len(entry) <= BLOB_LIST_MAX_LEN
+    }
+
+    with _lock:
+        # The client may have gone away between sending this and our reading it,
+        # in which case its state was already dropped — don't recreate it.
+        if websocket not in _state["clients"]:
+            return
+        _state["geo_await"].pop(ws_id, None)
+        # Union, not assignment. A reply that arrives after the hold lapsed has
+        # already been preceded by a full send, so overwriting would discard the
+        # record of what went out and cause every one of those blobs to be sent
+        # a second time. Union means the set is exactly "the client holds this,
+        # or has already been sent it", which is the condition the send loop
+        # wants to skip on.
+        _state["geo_sent"].setdefault(ws_id, set()).update(held)
+    print(
+        f"[B3Sync] Client reports {len(held)} of {len(reported)} blob(s) already held"
+    )
+
+
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
+        # Set the hold in the same lock as the client becoming visible. Done
+        # separately, a tick could run in between, see a client with no hold,
+        # and push the entire scene before the request below even went out.
+        _state["geo_await"][id(websocket)] = time.monotonic() + BLOB_LIST_TIMEOUT
     print(f"[B3Sync] Client connected ({len(_state['clients'])} total)")
     try:
-        await websocket.wait_closed()
+        # Ask what it already holds. A client that has been here before — a
+        # Blender restart, or a page that kept its blob store — can skip the
+        # whole re-transfer, which for a built scene is every vertex it has.
+        try:
+            await websocket.send(json.dumps({"type": "blob-list-request"}))
+        except ConnectionClosed:
+            pass
+        async for raw in websocket:
+            _handle_client_message(websocket, raw)
     except ConnectionClosed:
         pass
     finally:
         with _lock:
             _state["clients"].discard(websocket)
             ws_id = id(websocket)
+            _state["geo_await"].pop(ws_id, None)
             _state["geo_sent"].pop(ws_id, None)
             _state["tex_sent"].pop(ws_id, None)
             _state["hdr_sent"].discard(ws_id)
@@ -1709,26 +1795,40 @@ def _timer():
                         _state["geo_sent"][ws_id] = set()
                     geo_sent = _state["geo_sent"][ws_id]
                     geo_sent.intersection_update(live_keys)
+                    # Hold this client's blobs while its blob list is still
+                    # outstanding. Sending now would push the whole scene and
+                    # make the handshake pointless; the reply that makes most of
+                    # it unnecessary is at most a round trip away. Past the
+                    # deadline the hold lapses and it gets the full send, which
+                    # is what a client that never answers needs.
+                    waiting = _state["geo_await"].get(ws_id)
+                    if waiting is not None and time.monotonic() >= waiting:
+                        _state["geo_await"].pop(ws_id, None)
+                        waiting = None
 
-                for obj_name, (geo_version, v_count, i_count, has_uvs, blob) in geometry_dict.items():
-                    key = f"{obj_name}@{geo_version}"
-                    if key in geo_sent:
-                        continue
-                    header = json.dumps({
-                        "type": "geo",
-                        "name": obj_name,
-                        "version": geo_version,
-                        "vCount": v_count,
-                        "iCount": i_count,
-                        "hasUVs": has_uvs,
-                    })
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                        asyncio.run_coroutine_threadsafe(ws.send(blob), loop)
-                    except RuntimeError:
-                        continue
-                    geo_sent.add(key)
+                if waiting is None:
+                    for obj_name, (geo_version, v_count, i_count, has_uvs, blob) in geometry_dict.items():
+                        key = f"{obj_name}@{geo_version}"
+                        if key in geo_sent:
+                            continue
+                        header = json.dumps({
+                            "type": "geo",
+                            "name": obj_name,
+                            "version": geo_version,
+                            "vCount": v_count,
+                            "iCount": i_count,
+                            "hasUVs": has_uvs,
+                        })
+                        try:
+                            asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                            asyncio.run_coroutine_threadsafe(ws.send(blob), loop)
+                        except RuntimeError:
+                            continue
+                        geo_sent.add(key)
 
+                # The scene JSON goes out either way, so a client that already
+                # holds the blobs renders immediately instead of waiting for the
+                # handshake to finish.
                 # Then send the lightweight scene JSON (transforms + materials only)
                 try:
                     asyncio.run_coroutine_threadsafe(ws.send(data_json), loop)
