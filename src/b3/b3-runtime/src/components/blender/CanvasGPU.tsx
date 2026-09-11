@@ -73,7 +73,7 @@ export const CanvasGPU: any = ({ children, ...props }: { children?: any; props: 
 
                         renderer.setPixelRatio(window.devicePixelRatio)
 
-                        renderer.shadowMap.type = THREE.PCFSoftShadowMap
+                        renderer.shadowMap.type = THREE.PCFShadowMap
                         renderer.shadowMap.enabled = true
 
                         await renderer.compileAsync(

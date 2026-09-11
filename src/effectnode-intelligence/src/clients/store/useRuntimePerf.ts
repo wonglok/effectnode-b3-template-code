@@ -24,9 +24,76 @@ export type BudgetReport = {
     overBudget: boolean
 }
 
-/** Last-frame renderer load (from renderer.info), as per-frame deltas. */
+/**
+ * Live GPU-side resource levels from `renderer.info.memory`. Unlike the render
+ * counters these are instantaneous levels, not per-frame deltas.
+ *
+ * `geometries` / `textures` are counts; the `*Size` fields are bytes. This is
+ * what makes a leak visible at all — a resource whose buffers were never
+ * disposed keeps showing up here after it has left the scene graph.
+ */
+export type GpuMemory = {
+    textures: number
+    geometries: number
+    programs: number
+    /** bytes held by vertex attribute buffers */
+    attributesSize: number
+    /** bytes held by index buffers */
+    indexAttributesSize: number
+    /** bytes held by textures */
+    texturesSize: number
+    /** bytes held by compiled programs */
+    programsSize: number
+    /** bytes held by uniform buffers */
+    uniformBuffersSize: number
+    /** total bytes across every category */
+    totalBytes: number
+}
+
+/**
+ * The slice of `renderer.info` this store reads. R3F types `gl` as a
+ * `WebGLRenderer`, so callers hand-cast — see `IntelligenceScan`.
+ */
+/** `renderer.info.memory` as the renderer reports it — note `total`, not `totalBytes`. */
+export type RendererMemoryLike = {
+    textures?: number
+    geometries?: number
+    programs?: number
+    attributesSize?: number
+    indexAttributesSize?: number
+    texturesSize?: number
+    programsSize?: number
+    uniformBuffersSize?: number
+    /** the renderer's grand total, in bytes */
+    total?: number
+}
+
+export type RendererInfoLike = {
+    render?: {
+        /** draw calls issued this frame, across every pass */
+        drawCalls?: number
+        /** how many `render()` invocations this frame — i.e. pass count */
+        frameCalls?: number
+        /** draw calls since the app started (page-lifetime total) */
+        calls?: number
+        triangles?: number
+        points?: number
+        lines?: number
+    }
+    memory?: RendererMemoryLike
+}
+
+/** Last-frame renderer load (from renderer.info). */
 export type FrameLoad = {
+    /**
+     * Draw calls issued in the last frame — shadow and post-processing passes
+     * included. This is a whole-frame total, not a delta; see `recordLoad`.
+     */
     drawCalls: number
+    /** how many `render()` invocations made up that frame (shadow, bloom, …) */
+    frameCalls: number
+    /** draw calls since the app started — the page-lifetime counter */
+    calls: number
     triangles: number
     points: number
     lines: number
@@ -34,6 +101,8 @@ export type FrameLoad = {
     textures: number
     geometries: number
     totalBytes: number
+    /** the same levels plus the byte breakdown, for the memory query */
+    memory: GpuMemory
 }
 
 export type RuntimePerfSnapshot = {
@@ -64,11 +133,8 @@ export interface RuntimePerfStore {
     reset: () => void
     /** Feed one frame boundary. `nowMs` is performance.now() at the frame. */
     recordFrame: (nowMs: number) => void
-    /** Feed renderer.info once per frame; per-frame counters are diffed here. */
-    recordLoad: (info?: {
-        render?: { drawCalls?: number; triangles?: number; points?: number; lines?: number }
-        memory?: { textures?: number; geometries?: number; total?: number }
-    }) => void
+    /** Feed `renderer.info` once per frame, read at the end of the frame. */
+    recordLoad: (info?: RendererInfoLike) => void
     /** A pipeline.render() finished — feed its wall-time in ms. */
     recordPipeline: (name: string, ms: number) => void
     snapshot: () => RuntimePerfSnapshot
@@ -95,18 +161,32 @@ const dts: number[] = [] // frame wall deltas (ms)
 let startTime = -1
 let lastTime = -1
 let acceptedFrames = 0
-let currentLoad: FrameLoad = {
+const emptyMemory = (): GpuMemory => ({
+    textures: 0,
+    geometries: 0,
+    programs: 0,
+    attributesSize: 0,
+    indexAttributesSize: 0,
+    texturesSize: 0,
+    programsSize: 0,
+    uniformBuffersSize: 0,
+    totalBytes: 0,
+})
+
+const emptyLoad = (): FrameLoad => ({
     drawCalls: 0,
+    frameCalls: 0,
+    calls: 0,
     triangles: 0,
     points: 0,
     lines: 0,
     textures: 0,
     geometries: 0,
     totalBytes: 0,
-}
-// renderer.info may auto-reset per frame or accumulate; lastCounters lets us
-// recover the per-frame value either way.
-const lastCounters = { drawCalls: -1, triangles: -1, points: -1, lines: -1 }
+    memory: emptyMemory(),
+})
+
+let currentLoad: FrameLoad = emptyLoad()
 const pipes = new Map<string, PipelineTrack>()
 
 function round(n: number, dp = 2): number {
@@ -124,11 +204,6 @@ function pct(sorted: number[], p: number): number {
     return sorted[Math.max(0, idx)]
 }
 
-/** Counters are cumulative-with-possible-per-frame-reset — always yield the delta. */
-function frameDelta(counter: number, prev: number): number {
-    if (prev < 0 || counter < prev) return counter
-    return counter - prev
-}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -142,11 +217,7 @@ export const useRuntimePerf = create<RuntimePerfStore>(() => ({
         lastTime = -1
         acceptedFrames = 0
         pipes.clear()
-        lastCounters.drawCalls = -1
-        lastCounters.triangles = -1
-        lastCounters.points = -1
-        lastCounters.lines = -1
-        currentLoad = { drawCalls: 0, triangles: 0, points: 0, lines: 0, textures: 0, geometries: 0, totalBytes: 0 }
+        currentLoad = emptyLoad()
     },
 
     recordFrame: (nowMs) => {
@@ -170,32 +241,45 @@ export const useRuntimePerf = create<RuntimePerfStore>(() => ({
     recordLoad: (info) => {
         const r = info?.render
         if (r) {
-            const dc = r.drawCalls
-            const tri = r.triangles
-            const pt = r.points
-            const ln = r.lines
-            if (dc != null) {
-                currentLoad.drawCalls = frameDelta(dc, lastCounters.drawCalls)
-                lastCounters.drawCalls = dc
-            }
-            if (tri != null) {
-                currentLoad.triangles = frameDelta(tri, lastCounters.triangles)
-                lastCounters.triangles = tri
-            }
-            if (pt != null) {
-                currentLoad.points = frameDelta(pt, lastCounters.points)
-                lastCounters.points = pt
-            }
-            if (ln != null) {
-                currentLoad.lines = frameDelta(ln, lastCounters.lines)
-                lastCounters.lines = ln
-            }
+            // These are already whole-frame totals, so read them straight
+            // through — never diff them against the previous frame.
+            //
+            // `info.autoReset` defaults to true, and WebGPURenderer's own
+            // animation loop (started from inside `renderer.init()`, which
+            // CanvasGPU awaits) calls `info.reset()` at the top of every frame.
+            // A sample taken here — at the end of the R3F frame, after the
+            // post-processing pipelines — is therefore this frame's total
+            // across every pass. Diffing consecutive samples, which this store
+            // used to do, yields ~0 for a static scene because consecutive
+            // whole-frame totals are equal.
+            if (r.drawCalls != null) currentLoad.drawCalls = r.drawCalls
+            if (r.frameCalls != null) currentLoad.frameCalls = r.frameCalls
+            if (r.calls != null) currentLoad.calls = r.calls
+            if (r.triangles != null) currentLoad.triangles = r.triangles
+            if (r.points != null) currentLoad.points = r.points
+            if (r.lines != null) currentLoad.lines = r.lines
         }
         const m = info?.memory
         if (m) {
-            if (m.textures != null) currentLoad.textures = m.textures
-            if (m.geometries != null) currentLoad.geometries = m.geometries
-            if (m.total != null) currentLoad.totalBytes = m.total
+            const mem = currentLoad.memory
+            if (m.textures != null) {
+                mem.textures = m.textures
+                currentLoad.textures = m.textures
+            }
+            if (m.geometries != null) {
+                mem.geometries = m.geometries
+                currentLoad.geometries = m.geometries
+            }
+            if (m.programs != null) mem.programs = m.programs
+            if (m.attributesSize != null) mem.attributesSize = m.attributesSize
+            if (m.indexAttributesSize != null) mem.indexAttributesSize = m.indexAttributesSize
+            if (m.texturesSize != null) mem.texturesSize = m.texturesSize
+            if (m.programsSize != null) mem.programsSize = m.programsSize
+            if (m.uniformBuffersSize != null) mem.uniformBuffersSize = m.uniformBuffersSize
+            if (m.total != null) {
+                mem.totalBytes = m.total
+                currentLoad.totalBytes = m.total
+            }
         }
     },
 
@@ -247,7 +331,9 @@ export const useRuntimePerf = create<RuntimePerfStore>(() => ({
                 slowFrames,
             },
             budgetTargets,
-            load: { ...currentLoad },
+            // Deep-copy `memory` too, so a caller cannot mutate the live
+            // accumulator through the returned snapshot.
+            load: { ...currentLoad, memory: { ...currentLoad.memory } },
             slowEffects,
         }
     },
