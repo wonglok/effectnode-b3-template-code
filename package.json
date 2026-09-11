@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -n vite,intelligence \"npm run dev:vite\"  \"npm run dev:runtime-intelligence\"",
     "dev:vite": "vite --host",
-    "dev:runtime-intelligence": "nodemon",
+    "dev:runtime-intelligence": "nodemon --config src/runtime-intelligence/nodemon.json",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
