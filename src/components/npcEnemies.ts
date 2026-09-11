@@ -48,8 +48,30 @@ import {
     type NavMesh,
 } from 'navcat'
 import { crowd } from 'navcat/blocks'
-import { loadAvatar, type AvatarRig } from './avatarLoader'
-import { makeDefaultManifest, partsFor, type Gender } from '../b3/b3-runtime/src/components/AvatarSDK'
+import {
+    BASE_SET_KEY,
+    loadAvatar,
+    type AvatarRig,
+    type ClipSetConfig,
+    type LocomotionKey,
+} from './avatarLoader'
+import {
+    applyGunTuning,
+    attachGun,
+    calibrateGun,
+    readyNpcProps,
+    DEFAULT_GUN_TUNING,
+    type GunTuning,
+    type NpcGun,
+} from './npcProps'
+import { createNpcProjectiles, type NpcProjectiles } from './npcProjectiles'
+import {
+    makeDefaultManifest,
+    MOTION_SECTIONS,
+    partsFor,
+    type Gender,
+    type MotionClipDef,
+} from '../b3/b3-runtime/src/components/AvatarSDK'
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -96,6 +118,86 @@ const ARRIVED_THRESHOLD = 0.6
 /** Below this speed an NPC is treated as standing still and blends to idle. */
 const MOVING_SPEED = 0.05
 
+/**
+ * Height above the player's origin that the NPCs shoot at — roughly the chest of
+ * a ~1.7 m avatar. Same point is used for the aim and for the pool's hit test,
+ * so a droplet that visibly reaches the player is also the one that is
+ * recycled; aiming at the chest but testing against the feet would sail every
+ * shot past the check.
+ */
+const AIM_HEIGHT = 1.1
+
+/**
+ * How long to wait for an NPC to stand still before aiming its gun anyway.
+ * Standing gives the right pose; this only bounds the wait for an NPC that
+ * never stops, and the aim is merely less flattering if it fires.
+ */
+const GUN_CALIBRATE_FALLBACK_SECONDS = 4
+
+/**
+ * Reused gun tuning, refreshed at the top of `update` from the live settings —
+ * so the GUI sliders re-pose every gun without allocating per NPC per frame.
+ */
+const gunTuning: GunTuning = { ...DEFAULT_GUN_TUNING }
+
+// ---------------------------------------------------------------------------
+// Armed clip set
+// ---------------------------------------------------------------------------
+
+/**
+ * One clip from a named SDK motion section, so the paths live in the SDK's
+ * registry (`MOTION_SECTIONS`) rather than being spelled out here. The def name
+ * is prefixed because it also becomes the `AnimationClip`'s name and the
+ * `loadMotionClips` result key — a set's names must be unique within that set.
+ */
+function sectionClip(sectionId: string, name: string): MotionClipDef | null {
+    const section = MOTION_SECTIONS.find((s) => s.id === sectionId)
+    if (!section) return null
+    return { name: `armed-${name}`, url: `${section.baseUrl}/${name}.fbx` }
+}
+
+/**
+ * The rifle-holding locomotion set an NPC switches to when it draws. Taken from
+ * the user's chosen clips: `gun/idle`, `shooter/walking`, `gun/run-forward`.
+ * `jump` is deliberately omitted, so the set falls back to the base jump clip —
+ * there is no armed jump in the pack, and the caller's launch frame stays valid.
+ */
+function armedClipSet(): { clips: Partial<Record<LocomotionKey, MotionClipDef>> } | null {
+    const idle = sectionClip('rifle', 'idle')
+    const walk = sectionClip('shooter', 'walking')
+    const run = sectionClip('rifle', 'run-forward')
+    if (!idle || !walk || !run) {
+        console.warn('[NpcEnemies] armed clip set incomplete — NPCs will stay in peace')
+        return null
+    }
+    return { clips: { idle, walk, run } }
+}
+
+/** The firing one-shot, played through the rig's emotion path. */
+const FIRING_CLIP: MotionClipDef | null = sectionClip('shooter', 'firing-rifle')
+
+/** Key of the rifle-holding set, as handed to `loadAvatar` and `setClipSet`. */
+const ARMED_SET_KEY = 'armed'
+
+/**
+ * The rig's `ClipSetConfig` for the armed set, or undefined when the SDK's
+ * section table is missing a clip (then every NPC stays in peace).
+ *
+ * The cadences are read once here as the set's *initial* values; the live GUI
+ * values are re-applied through `setClipSetTimeScale` every time they change.
+ */
+function armedSetConfig(tunables: NpcTunables): ClipSetConfig | undefined {
+    const defs = armedClipSet()
+    if (!defs) return undefined
+    return {
+        clips: defs.clips,
+        timeScale: {
+            walk: tunables.npcArmedWalkTimescale,
+            run: tunables.npcArmedRunTimescale,
+        },
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -105,6 +207,29 @@ const MOVING_SPEED = 0.05
 export interface NpcTunables {
     npcAggroRadius: number
     npcScatterSeconds: number
+    /** Water gun on/off and its hand placement, all live. */
+    npcGunEnabled: boolean
+    npcGunScale: number
+    /** Hand-placement offset in world units, in the avatar's own axes. */
+    npcGunOffX: number
+    npcGunOffY: number
+    npcGunOffZ: number
+    npcGunRotX: number
+    npcGunRotY: number
+    npcGunRotZ: number
+    /** Master switch for the armed/peace states. Off leaves every NPC in peace. */
+    npcArmedEnabled: boolean
+    /** Seconds between shots while an armed NPC holds at the standoff ring. */
+    npcFireInterval: number
+    /** An armed NPC only shoots a player this close, in world units. */
+    npcFireRange: number
+    /** Droplet muzzle velocity, world units / second. */
+    npcProjectileSpeed: number
+    /** Cadence for the armed walk / run clips. The rifle pack is authored for a
+     *  slower pace than the crowd's navmesh speed, so these run above 1 to keep
+     *  the feet from sliding. */
+    npcArmedWalkTimescale: number
+    npcArmedRunTimescale: number
 }
 
 export interface NpcEnemiesOptions {
@@ -146,6 +271,8 @@ interface Npc {
     group: THREE.Group
     /** Null until the avatar finishes loading. */
     rig: AvatarRig | null
+    /** Water gun in the right hand — null when unarmed. */
+    gun: NpcGun | null
     /** Crowd agent id, reassigned on every `setNavMesh`. */
     agentId: string | null
     mode: NpcMode
@@ -153,6 +280,20 @@ interface Npc {
     wanderAge: number
     /** Seconds since the last chase re-aim — the re-aim throttle. */
     chaseAge: number
+    /** Seconds this NPC has existed — the backstop for gun calibration. */
+    age: number
+    /** True once its gun has been aimed in a real standing pose. */
+    gunCalibrated: boolean
+    /** Distance moved last frame, in world units — the "is it parked" test. */
+    stepLength: number
+    /** Has the gun drawn? Armed while aggroed, peace while wandering. */
+    armed: boolean
+    /** Whether this avatar's rig actually built the armed clip set. A body that
+     *  failed to load the rifle FBXs still draws and fires; it just keeps the
+     *  peace clips, which beats toggling to nothing. */
+    armedClips: boolean
+    /** Countdown to the next shot, in seconds. Only ticks while armed and holding. */
+    shotTimer: number
 }
 
 /** Dispose every mesh under `root` (geometry + material). */
@@ -300,12 +441,40 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         root.add(group)
 
         const agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
-        npcs.push({ group, rig: null, agentId, mode: 'wander', wanderAge: Infinity, chaseAge: 0 })
+        npcs.push({
+            group,
+            rig: null,
+            gun: null,
+            agentId,
+            mode: 'wander',
+            wanderAge: Infinity,
+            chaseAge: 0,
+            age: 0,
+            gunCalibrated: false,
+            stepLength: 0,
+            armed: false,
+            armedClips: false,
+            shotTimer: 0,
+        })
     }
 
     // ------------------------------------------------------------------
     // 2. Avatars, strictly sequentially.
     // ------------------------------------------------------------------
+
+    // Arm the guns before the first avatar lands, so `attachGun` is a plain
+    // synchronous call inside the loop below. The template is cached across
+    // crowds, so this resolves immediately for every crowd but the first, and a
+    // failure just leaves the NPCs unarmed.
+    // (A teardown during that await is caught by the loop's own `disposed`
+    // guard — `dispose()` has already removed the agents and the root.)
+    const armed = await readyNpcProps()
+
+    // Built once and shared by every NPC's `loadAvatar` — the clip *bytes* are
+    // cached per URL in the SDK's motion library, so the crowd pays for the
+    // rifle pack once, not once per body.
+    const armedSet = armedSetConfig(tunables)
+
     for (let i = 0; i < npcs.length; i++) {
         if (disposed) break
         const manifest = manifestFor(i)
@@ -314,7 +483,10 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             continue
         }
         try {
-            const rig = await loadAvatar(manifest)
+            const rig = await loadAvatar({
+                manifest,
+                clipSets: armedSet ? { [ARMED_SET_KEY]: armedSet } : undefined,
+            })
             // The whole thing may have been torn down while this loaded. Stop
             // rather than `return handle` — the handle isn't constructed yet
             // (and everything already built has been cleaned up by dispose()).
@@ -325,6 +497,16 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             }
             npcs[i].rig = rig
             npcs[i].group.add(rig.scene)
+            npcs[i].armedClips = armedSet !== undefined && rig.listClipSets().includes(ARMED_SET_KEY)
+            // An NPC can aggro while its avatar is still loading (the crowd is
+            // simulated from the first tick), so the state it arrived at may
+            // already be "drawn" — the transition check below only sees *changes*
+            // and would leave it on the peace clips forever.
+            if (npcs[i].armed && npcs[i].armedClips) rig.setClipSet(ARMED_SET_KEY, 0)
+            // Attached after the rig is parented, because the hand's frame is
+            // read relative to the group — the node whose +Z is forward — and
+            // that needs the rig in the graph with live world matrices.
+            if (armed) npcs[i].gun = attachGun(rig, npcs[i].group, gunTuning)
         } catch (err) {
             console.warn(`[NpcEnemies] failed to load avatar for npc-${i}:`, err)
         }
@@ -335,6 +517,62 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    /**
+     * Where a shot is aimed: the player, lifted to chest height.
+     *
+     * Returned as a shared scratch vector — the pool reads it once per frame
+     * inside `update`, and the aim maths copies out of it immediately, so there
+     * is nothing to hold on to. It is also the point the hit test uses; aiming
+     * at one height and testing against another would make every droplet sail
+     * past the check (see `AIM_HEIGHT`).
+     */
+    const aimPoint = (): THREE.Vector3 | null => {
+        const player = getPlayerPosition()
+        return player ? _aimPoint.set(player.x, player.y + AIM_HEIGHT, player.z) : null
+    }
+
+    // Droplets outlive no NPC in particular, so they are owned here rather than
+    // per avatar (see npcProjectiles for the pooling rationale).
+    const projectiles = createNpcProjectiles({ scene, getTarget: aimPoint })
+
+    /**
+     * Draw or holster, on the player's aggro and the armed master switch.
+     *
+     * Guarded on a change because it is the crossfade trigger. Safe to call
+     * before the rig resolves: the flag is what the pose loop reads, and the
+     * clip set is applied by the load loop for an NPC that aggroed mid-load.
+     */
+    const setArmed = (npc: Npc, next: boolean) => {
+        if (npc.armed === next) return
+        npc.armed = next
+        // Re-arm the shot clock, so a fresh draw does not fire on its first
+        // frame — and so a re-draw after losing the player starts the interval
+        // again rather than resuming a part-spent one.
+        npc.shotTimer = 0
+        if (npc.rig && npc.armedClips) npc.rig.setClipSet(next ? ARMED_SET_KEY : BASE_SET_KEY)
+    }
+
+    /**
+     * Take one shot: play the firing clip and squirt a droplet from the muzzle
+     * at the player.
+     *
+     * The droplet is the point of the exercise — the clip alone reads as the
+     * NPC miming — so it spawns even if the firing FBX is unavailable.
+     */
+    const fire = (npc: Npc) => {
+        const gun = npc.gun
+        if (!gun) return
+        const aim = aimPoint()
+        if (!aim) return
+        if (FIRING_CLIP) npc.rig?.playEmotionOnce(FIRING_CLIP)
+
+        // Read the muzzle *after* the mixers have run this frame (the caller
+        // fires at the end of the pose pass), so the droplet leaves the barrel
+        // where it is actually pointing rather than one frame behind.
+        gun.muzzle.getWorldPosition(_muzzleWorld)
+        projectiles.spawn(_muzzleWorld, aim, tunables.npcProjectileSpeed)
+    }
 
     /** Point an NPC at its direction of travel. */
     const faceVelocity = (npc: Npc, agent: crowd.Agent, delta: number) => {
@@ -429,6 +667,34 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             const playerPos = getPlayerPosition()
             const aggro = tunables.npcAggroRadius || DEFAULT_AGGRO
             const scatterSeconds = tunables.npcScatterSeconds || DEFAULT_SCATTER_SECONDS
+            // Live gun tuning: one refresh for the whole crowd, applied below.
+            gunTuning.enabled = tunables.npcGunEnabled
+            gunTuning.scale = tunables.npcGunScale
+            gunTuning.offX = tunables.npcGunOffX
+            gunTuning.offY = tunables.npcGunOffY
+            gunTuning.offZ = tunables.npcGunOffZ
+            gunTuning.rotX = tunables.npcGunRotX
+            gunTuning.rotY = tunables.npcGunRotY
+            gunTuning.rotZ = tunables.npcGunRotZ
+
+            // Live armed cadence. The rifle walk/run are authored slower than
+            // the navmesh moves the NPCs, so their timescales are dialled from
+            // the GUI; only push them into the rigs when a slider actually
+            // moves, since this writes every live action's timescale.
+            const armedWalk = tunables.npcArmedWalkTimescale
+            const armedRun = tunables.npcArmedRunTimescale
+            const armedCadenceChanged =
+                armedTimeScale.walk !== armedWalk || armedTimeScale.run !== armedRun
+            if (armedCadenceChanged) {
+                armedTimeScale.walk = armedWalk
+                armedTimeScale.run = armedRun
+            }
+
+            const armedEnabled = tunables.npcArmedEnabled
+            const fireInterval = Math.max(0.1, tunables.npcFireInterval)
+            const fireRange = tunables.npcFireRange || Infinity
+            const fireRangeSq = fireRange * fireRange
+
             const aggroSq = aggro * aggro
             // The mode is decided every frame, but the aim only refreshes every
             // CHASE_REAIM_SECONDS — so a chasing NPC can close a further
@@ -458,6 +724,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
                 const was = npc.mode
                 npc.mode = next
+
+                // Armed while it has the player's scent, holstered while
+                // wandering — and the master switch forces peace everywhere.
+                // Driven from the mode rather than from the transition, so
+                // flipping the switch disarms a mid-chase crowd immediately.
+                setArmed(npc, armedEnabled && next !== 'wander')
 
                 // Pace by intent — and note that zeroing the cap is the only
                 // way to stand an agent still. The crowd has no stop: its
@@ -496,18 +768,94 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
             // --- 3. Pose from the updated agent state ---------------------
             for (const npc of npcs) {
+                // Guns ride the hand bone, so they need no posing — only the
+                // live tuning, which is what makes the GUI sliders immediate.
+                if (npc.gun) {
+                    applyGunTuning(npc.gun, gunTuning)
+                    // Holstered in peace. Written *after* the tuning pass, which
+                    // owns `visible` (through `enabled`) and runs every frame;
+                    // this only ever narrows what that pass allowed.
+                    npc.gun.mount.visible = gunTuning.enabled && npc.armed
+                }
+                if (armedCadenceChanged && npc.armedClips) {
+                    npc.rig?.setClipSetTimeScale(ARMED_SET_KEY, armedTimeScale)
+                }
+
                 if (!npc.agentId) continue
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
+                const prevX = npc.group.position.x
+                const prevZ = npc.group.position.z
                 npc.group.position.fromArray(agent.position)
+                npc.stepLength = Math.hypot(
+                    npc.group.position.x - prevX,
+                    npc.group.position.z - prevZ,
+                )
                 faceVelocity(npc, agent, delta)
                 animate(npc, agent, delta)
+
+                // Keep the gun aimed along the character's forward while it is
+                // standing (see `calibrateGun` for why the aim has to be taken
+                // from a real pose). Re-aiming every standing frame rather than
+                // once matters: a one-shot taken on the first standing frame
+                // samples the pose mid-blend out of the walk, which left two of
+                // four NPCs standing with the gun across their body. Walking
+                // leaves the last standing aim frozen, so the gun swings with
+                // the arm as a held object should.
+                // Standing is measured from how far the NPC actually moved, not
+                // from `agent.velocity`: that reports a residual while the agent
+                // sits still, which left stationary NPCs holding a stale aim
+                // (measured barrel-to-facing 0.35-0.88 off while visibly parked).
+                npc.age += delta
+                if (npc.gun) {
+                    const standing = delta > 0 && npc.stepLength / delta <= MOVING_SPEED
+                    if (standing) {
+                        calibrateGun(npc.gun)
+                        npc.gunCalibrated = true
+                    } else if (!npc.gunCalibrated && npc.age >= GUN_CALIBRATE_FALLBACK_SECONDS) {
+                        // Never stops — aim in whatever pose we have rather than
+                        // leaving the home-pose default on it forever.
+                        calibrateGun(npc.gun)
+                        npc.gunCalibrated = true
+                    }
+                }
+
+                // Fire on the cadence, but only from the standoff ring: a
+                // chasing NPC is still closing the distance and a shot mid-
+                // stride reads as a stumble. `hold` is the stance that is
+                // already standing still, which is also where the gun has been
+                // aimed (`calibrateGun` above runs on standing frames).
+                if (npc.armed && npc.gun && playerPos) {
+                    const dx = playerPos.x - npc.group.position.x
+                    const dz = playerPos.z - npc.group.position.z
+                    const inRange = dx * dx + dz * dz <= fireRangeSq
+                    if (npc.mode === 'hold' && inRange) {
+                        // Fires last, after the mixers have posed this frame, so
+                        // the droplet leaves the muzzle where it is now
+                        // pointing (see `fire`).
+                        npc.shotTimer += delta
+                        if (npc.shotTimer >= fireInterval) {
+                            npc.shotTimer = 0
+                            fire(npc)
+                        }
+                    } else {
+                        // Cleared out of the stance: hold the shot clock at zero
+                        // so settling back in takes a full interval rather than
+                        // firing instantly.
+                        npc.shotTimer = 0
+                    }
+                }
             }
+
+            projectiles.update(delta)
         },
 
         dispose() {
             if (disposed) return
             disposed = true
+            // Frees the droplet pool's shared geometry/material — it is owned
+            // here, not by any avatar, so the per-NPC teardown below misses it.
+            projectiles.dispose()
             for (const npc of npcs) {
                 if (npc.agentId) crowd.removeAgent(state, npc.agentId)
                 npc.agentId = null
@@ -534,6 +882,18 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
 const _quat = new THREE.Quaternion()
 const _euler = new THREE.Euler()
+
+/** Aim point for the projectile pool's `getTarget` (see `aimPoint`). */
+const _aimPoint = new THREE.Vector3()
+
+/** Muzzle world position, read once per shot. */
+const _muzzleWorld = new THREE.Vector3()
+
+/**
+ * The armed set's live cadence, compared against the settings each frame so the
+ * rigs are only re-timed when a slider moves — no allocation per frame.
+ */
+const armedTimeScale: Partial<Record<LocomotionKey, number>> = { walk: 1, run: 1 }
 
 /**
  * Frame-rate-independent lerp factor, matching the rig's own

@@ -681,6 +681,34 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         npcFolder.add(settings, 'npcAggroRadius', 2, 40, 1).name('Aggro Radius')
         npcFolder.add(settings, 'npcScatterSeconds', 1, 30, 1).name('Wander Re-scatter (s)')
         npcFolder.add(settings, 'npcCount', 0, 12, 1).name('Count (respawning)')
+        // Gun placement, all live: every NPC's gun is re-posed from these the
+        // frame after a slider moves, so a nudge can be dialled in while
+        // watching the crowd rather than by editing `GRIP` and reloading.
+        // The offset is in world units in the avatar's own axes — the frame the
+        // barrel alignment targets — so it reads the same on every NPC.
+        const gunFolder = npcFolder.addFolder('Gun Settings')
+        gunFolder.add(settings, 'npcGunEnabled').name('Water Gun')
+        gunFolder.add(settings, 'npcGunScale', 0.1, 1.5, 0.01).name('Scale (m)')
+        gunFolder.add(settings, 'npcGunOffX', -0.3, 0.3, 0.005).name('Offset X (m)')
+        gunFolder.add(settings, 'npcGunOffY', -0.3, 0.3, 0.005).name('Offset Y (m)')
+        gunFolder.add(settings, 'npcGunOffZ', -0.3, 0.3, 0.005).name('Offset Z (m)')
+        gunFolder.add(settings, 'npcGunRotX', -180, 180, 1).name('Rot X°')
+        gunFolder.add(settings, 'npcGunRotY', -180, 180, 1).name('Rot Y°')
+        gunFolder.add(settings, 'npcGunRotZ', -180, 180, 1).name('Rot Z°')
+
+        // Armed / peace. Every control here is read straight off `settings` by
+        // the crowd's own frame loop (through the `tunables` object it holds a
+        // reference to), so — like the sliders above — they are bound in place
+        // rather than routed through the store's `set()`, which would swap the
+        // settings object out from under that reference.
+        const armedFolder = npcFolder.addFolder('Armed States')
+        armedFolder.add(settings, 'npcArmedEnabled').name('Armed on Aggro')
+        armedFolder.add(settings, 'npcFireInterval', 0.2, 6, 0.1).name('Fire Interval (s)')
+        armedFolder.add(settings, 'npcFireRange', 2, 40, 1).name('Fire Range')
+        armedFolder.add(settings, 'npcProjectileSpeed', 2, 40, 1).name('Droplet Speed')
+        armedFolder.add(settings, 'npcArmedWalkTimescale', 0.2, 6, 0.1).name('Armed Walk Rate')
+        armedFolder.add(settings, 'npcArmedRunTimescale', 0.2, 6, 0.1).name('Armed Run Rate')
+        armedFolder.close()
         npcFolder
             .add(
                 {

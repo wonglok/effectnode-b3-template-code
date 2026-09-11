@@ -34,6 +34,40 @@ interface NavRigSettings {
   /** How long an NPC walks a wander target before being re-scattered to a new
    *  random point on the navmesh. */
   npcScatterSeconds: number;
+
+  /** Whether NPCs carry the water gun. Applied live. */
+  npcGunEnabled: boolean;
+  /** Gun size in the hand. The model is ~1 m long against a ~1.7 m avatar, so
+   *  this is well under 1. */
+  npcGunScale: number;
+  /** Nudge off the grip, in world units. `npcGunOffY: 0.05` lifts the gun 5 cm
+   *  out of the palm. */
+  npcGunOffX: number;
+  npcGunOffY: number;
+  npcGunOffZ: number;
+  /** Extra hand-placement nudge in degrees, on top of the computed alignment
+   *  (which cancels the hand bone's frame so the barrel follows the avatar's
+   *  forward). Tune these if the gun sits at an odd angle. */
+  npcGunRotX: number;
+  npcGunRotY: number;
+  npcGunRotZ: number;
+
+  /** Master switch for the armed / peace states. Off leaves the whole crowd
+   *  holstered and wandering, whatever its aggro state. Applied live. */
+  npcArmedEnabled: boolean;
+  /** Seconds between shots while an armed NPC holds at the standoff ring. */
+  npcFireInterval: number;
+  /** An armed NPC only shoots a player closer than this, in world units. */
+  npcFireRange: number;
+  /** Water droplet muzzle velocity, world units / second. */
+  npcProjectileSpeed: number;
+  /** Cadence of the rifle-holding walk / run clips. The armed pack is authored
+   *  slower than the navmesh moves the NPCs, so matching the feet to the ground
+   *  needs a multiplier well above 1 — otherwise they visibly skate. Derived
+   *  from the clips' own root travel (walk ≈ 0.61 m/s authored against the
+   *  crowd's 2.2 m/s; run ≈ 2.96 m/s against 4.5). Applied live. */
+  npcArmedWalkTimescale: number;
+  npcArmedRunTimescale: number;
 }
 
 interface NavRigState {
@@ -127,6 +161,20 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     npcCount: 4,
     npcAggroRadius: 12,
     npcScatterSeconds: 6,
+    npcGunEnabled: true,
+    npcGunScale: 0.5,
+    npcGunOffX: 0,
+    npcGunOffY: 0,
+    npcGunOffZ: 0,
+    npcGunRotX: 0,
+    npcGunRotY: 0,
+    npcGunRotZ: 0,
+    npcArmedEnabled: true,
+    npcFireInterval: 1.6,
+    npcFireRange: 14,
+    npcProjectileSpeed: 14,
+    npcArmedWalkTimescale: 3.6,
+    npcArmedRunTimescale: 1.5,
   },
 
   zoomRadius: 0,
