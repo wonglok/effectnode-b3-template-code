@@ -63,7 +63,12 @@ SERVER_PORT_DEFAULT = 8765
 # GEO_DISCOVERY_INTERVAL and staggered across ticks so no single tick absorbs
 # the whole cost. See get_scene_data().
 TICK_INTERVAL = 1.0 / 5.0
-GEO_DISCOVERY_INTERVAL = 10.0
+GEO_DISCOVERY_INTERVAL = 30.0
+
+# How many rows the panel's queue list shows before collapsing the rest into a
+# "… and N more" line. The sidebar scrolls, but a 200-row list is unreadable and
+# costs a label allocation per row on every redraw (5 Hz).
+QUEUE_LIST_MAX = 10
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +90,15 @@ _state = {
     "geo_cache": {},      # obj_name → cached geometry (see get_scene_data)
     "geo_discovered": {},  # obj_name → monotonic time of last geometry discovery
     "geo_force_refresh": False,  # set by the panel's Refresh Geometry button
+    # Last pass's geometry workload, published by get_scene_data so the panel can
+    # show the interval field's real cost without re-walking the scene itself.
+    "geo_object_count": 0,   # mesh + curve objects considered
+    "geo_budget": 0,         # how many of them were due this tick
+    # Ordered geometry refresh queue — [(name, due_in_seconds, has_geometry)],
+    # soonest-due first, which is the order the scheduler processes them in.
+    "geo_queue": [],
+    # Per-client transfer backlog, republished at the end of every tick.
+    "queue_transfers": None,
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -114,10 +128,24 @@ def _sync_geometry_enabled() -> bool:
         return True
 
 
+def _geo_interval() -> float:
+    """Read the panel's geometry-interval field, in seconds.
+
+    Falls back to the GEO_DISCOVERY_INTERVAL constant when the property can't be
+    read (restricted context, or a .blend saved before the field existed). Any
+    clamping lives in get_scene_data, so there is exactly one place that decides
+    what a usable interval is.
+    """
+    try:
+        return float(bpy.context.scene.b3sync_geo_interval)
+    except (AttributeError, TypeError, ValueError):
+        return GEO_DISCOVERY_INTERVAL
+
+
 def _on_sync_geometry_changed(self, context):
     """Re-enabling geometry asks for a full pass on the next tick.
 
-    Without this the client would wait out GEO_DISCOVERY_INTERVAL for each
+    Without this the client would wait out the geometry interval for each
     object's turn, so a scene that was frozen would fill in gradually rather
     than on the tick after the click. Switching *off* needs no such nudge —
     the pass it interrupts simply stops sending blobs.
@@ -126,6 +154,18 @@ def _on_sync_geometry_changed(self, context):
         with _lock:
             _state["geo_force_refresh"] = True
     _redraw_all()
+
+
+def _shorten(name: str, limit: int = 22) -> str:
+    """Trim an object name for the panel's queue rows.
+
+    Blender clips a label that overflows the sidebar rather than wrapping it, so
+    a long name would push the due-time — the reason the row is there — out of
+    view. Trimming the name instead keeps the right-hand column readable.
+    """
+    if len(name) <= limit:
+        return name
+    return name[: limit - 1] + "…"
 
 
 def _redraw_all():
@@ -791,7 +831,7 @@ def _extract_material(obj, flat_shading, v_count, i_count, uv_cksum):
     return fields, graph
 
 
-def get_scene_data(force_geometry=False, sync_geometry=True):
+def get_scene_data(force_geometry=False, sync_geometry=True, geo_interval=GEO_DISCOVERY_INTERVAL):
     """Returns (json_string, geometry_dict).
 
     Pass force_geometry=True to re-extract every object on this pass, ignoring
@@ -811,6 +851,10 @@ def get_scene_data(force_geometry=False, sync_geometry=True):
     scene — it disappears and does not come back on its own. Keeping the version
     identical is what makes "geometry off" a freeze rather than a blackout.
 
+    geo_interval is the panel's "Geometry Interval" field, in seconds: how long
+    an object may go before its geometry is re-extracted. Lower means geometry
+    tracks Blender more closely and costs proportionally more per tick.
+
     json_string — scene data WITHOUT vertices/indices/UVs arrays.
     geometry_dict — {object_name: (version, vCount, iCount, hasUVs, blob_bytes)}
       for binary geo messages (sent once per client per version).
@@ -818,9 +862,9 @@ def get_scene_data(force_geometry=False, sync_geometry=True):
     Transforms and material properties are re-read on every call (5 Hz). The
     expensive geometry extraction — bmesh triangulation for meshes, spline
     sampling for curves — is cached per object and refreshed on a staggered
-    schedule: an object is re-extracted once GEO_DISCOVERY_INTERVAL has passed,
-    and at most a proportional slice of the scene is refreshed per call, so the
-    cost never lands on one tick.
+    schedule: an object is re-extracted once geo_interval has passed, and at
+    most a proportional slice of the scene is refreshed per call, so the cost
+    never lands on one tick.
 
     The cache keeps the geometry metrics that feed the version string, so the
     version can be rebuilt every tick without bmesh. When only the material
@@ -848,10 +892,15 @@ def get_scene_data(force_geometry=False, sync_geometry=True):
 
     # --- Staggered geometry refresh ----------------------------------------
     # Spread the refresh across ticks in proportion to the scene size, so each
-    # object is re-extracted roughly once per GEO_DISCOVERY_INTERVAL while no
-    # single tick pays for the whole scene. A scene small enough that the
-    # budget is 1 simply refreshes one object per tick.
+    # object is re-extracted roughly once per geo_interval while no single tick
+    # pays for the whole scene. A scene small enough that the budget is 1 simply
+    # refreshes one object per tick.
     geometry_objects = [obj for obj in visible if obj.type in ('MESH', 'CURVE')]
+
+    # A zero or negative interval would divide by zero below. The panel's own
+    # min/max only guard edits made through the UI — a value can still arrive
+    # from a script or a hand-edited .blend, so clamp the arithmetic's input.
+    geo_interval = max(0.01, float(geo_interval))
 
     now = time.monotonic()
     if not sync_geometry:
@@ -859,21 +908,45 @@ def get_scene_data(force_geometry=False, sync_geometry=True):
         # the version they already had, which is what holds the client's meshes
         # in place (see the docstring).
         refreshing = set()
+        budget = 0
     elif force_geometry:
         # Manual refresh — take the whole scene in one pass rather than letting
         # the interval and budget spread it over several ticks.
         refreshing = {obj.name for obj in geometry_objects}
+        budget = len(geometry_objects)
     else:
+        # How many objects must be done per tick for every one of them to come
+        # round once per geo_interval. The max(1, …) floor matters: a long
+        # interval on a small scene rounds to zero, which would stall the sync
+        # rather than just slow it down.
         budget = max(
-            1, math.ceil(len(geometry_objects) * TICK_INTERVAL / GEO_DISCOVERY_INTERVAL)
+            1, math.ceil(len(geometry_objects) * TICK_INTERVAL / geo_interval)
         )
         refreshing = set()
         for obj in geometry_objects:
             last = discovered.get(obj.name)
-            if last is None or (now - last) >= GEO_DISCOVERY_INTERVAL:
+            if last is None or (now - last) >= geo_interval:
                 refreshing.add(obj.name)
                 if len(refreshing) >= budget:
                     break
+
+    # Ordered queue for the panel. Sorting by due time reproduces the order the
+    # loop above will actually process them in: objects that have never been
+    # extracted sort first (due_in 0), and ties keep scene order because sort()
+    # is stable — which is exactly how the budget loop walks them.
+    queue = []
+    for obj in geometry_objects:
+        last = discovered.get(obj.name)
+        due_in = 0.0 if last is None else max(0.0, geo_interval - (now - last))
+        queue.append((obj.name, due_in, obj.name in cache))
+    queue.sort(key=lambda row: row[1])
+
+    # Publish the workload so the panel can show what the interval currently
+    # costs, rather than re-walking the scene on every redraw to work it out.
+    with _lock:
+        _state["geo_object_count"] = len(geometry_objects)
+        _state["geo_budget"] = budget
+        _state["geo_queue"] = queue
 
     # One depsgraph for the whole pass.
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -1436,12 +1509,13 @@ def _timer():
                         sent.clear()
 
             # --- Scene data (JSON text) + geometry blobs (binary) ---
-            # The "Sync Geometry" checkbox is read every tick rather than cached
-            # so flipping it takes effect on the next tick, mid-session, without
-            # a stop/start.
+            # The panel's geometry controls are read every tick rather than
+            # cached so changing them takes effect on the next tick, mid-session,
+            # without a stop/start.
             data_json, geometry_dict = get_scene_data(
                 force_geometry=force_geo,
                 sync_geometry=_sync_geometry_enabled(),
+                geo_interval=_geo_interval(),
             )
 
             # Versions still in play this tick. Each client's sent-set is trimmed
@@ -1602,6 +1676,54 @@ def _timer():
                         asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
                     except RuntimeError:
                         pass
+
+            # --- Queue snapshot for the panel -----------------------------
+            # Taken after every send above, so these counts describe what is
+            # still owed to clients once this tick's work has gone out — not
+            # what was owed before it. Everything is derived from the same
+            # bookkeeping the sends themselves use, so the panel cannot drift
+            # from reality: a count is zero exactly when there is nothing left
+            # to send.
+            n_clients = len(current)
+            geo_pending = tex_pending = 0
+            hdr_done = cams_done = lights_done = 0
+            with _lock:
+                for ws in current:
+                    ws_id = id(ws)
+                    geo_pending += max(
+                        0, len(geometry_dict) - len(_state["geo_sent"].get(ws_id, ()))
+                    )
+                    tex_pending += max(
+                        0, len(textures) - len(_state["tex_sent"].get(ws_id, ()))
+                    )
+                    hdr_done += 1 if ws_id in _state["hdr_sent"] else 0
+                    cams_done += 1 if ws_id in _state["scene_cams_sent"] else 0
+                    lights_done += 1 if ws_id in _state["lights_sent"] else 0
+
+                _state["queue_transfers"] = {
+                    "clients": n_clients,
+                    # Blob bytes still owed. Summed across clients, so a single
+                    # texture missing for two clients counts twice — that is the
+                    # number of transfers, not of distinct textures.
+                    "geo_pending": geo_pending,
+                    "tex_pending": tex_pending,
+                    "hdr_done": hdr_done,
+                    "cams_done": cams_done,
+                    "lights_done": lights_done,
+                }
+        else:
+            # No clients, or no live server: nothing is queued. Clear the
+            # snapshot rather than leaving the last one in place, which would
+            # show a frozen queue that never drains on a panel that keeps
+            # redrawing at 5 Hz. The panel keys off this being None.
+            with _lock:
+                _state["queue_transfers"] = None
+                _state["geo_queue"] = []
+                # Zeroed together: the panel derives its sweep from these two as
+                # a ratio, so clearing the count while leaving the budget would
+                # leave it dividing by zero on every redraw.
+                _state["geo_budget"] = 0
+                _state["geo_object_count"] = 0
 
     except Exception as e:
         import traceback
@@ -1853,6 +1975,81 @@ class B3SYNC_PT_panel(bpy.types.Panel):
                 text="Geometry frozen on clients" if running else "Geometry will not be sent",
                 icon='INFO',
             )
+        else:
+            # How long an object may go before its geometry is re-extracted.
+            # Lower tracks Blender more closely and costs proportionally more
+            # per tick; the budget below is that trade-off made visible.
+            col.prop(scene, "b3sync_geo_interval", text="Geometry Interval (s)")
+
+            # Counted by get_scene_data on the last pass, so this is what the
+            # sync actually did rather than a second guess at the scene.
+            with _lock:
+                object_count = _state["geo_object_count"]
+                budget = _state["geo_budget"]
+            # budget is 0 only when nothing is connected (see _timer), and the
+            # sweep below divides by it — so require both to be non-zero.
+            if running and object_count and budget:
+                # "N of N" self-evidently means the stagger has nothing left to
+                # spread — every object is due on every tick.
+                col.label(
+                    text=f"{budget} of {object_count} refreshed per tick",
+                    icon='INFO',
+                )
+                # The effective sweep, which is not always the interval asked
+                # for: the budget's max(1, …) floor refreshes a small scene
+                # faster than requested. Comparing this against the field above
+                # is what makes that visible.
+                sweep = math.ceil(object_count / budget) * TICK_INTERVAL
+                col.label(text=f"full sweep ≈ {sweep:.1f}s")
+
+        layout.separator()
+
+        # ------------------------------------------------------------------
+        # Sync queue — what the sync still owes, republished every tick
+        # ------------------------------------------------------------------
+        # Both sources are written on the main thread during _timer and redrawn
+        # at the same 5 Hz cadence, so this list tracks the sync live rather
+        # than sampling it on demand.
+        with _lock:
+            queue = list(_state["geo_queue"])
+            transfers = _state["queue_transfers"]
+
+        # transfers stays None until the first tick with a client connected, so
+        # this doubles as the "is anything actually connected" check.
+        if running and transfers is not None:
+            box = layout.box()
+            box.label(text="Sync Queue")
+
+            if not queue:
+                box.label(text="No meshes or curves to sync")
+            else:
+                col = box.column(align=True)
+                for name, due_in, has_geometry in queue[:QUEUE_LIST_MAX]:
+                    # An object that was never extracted has no meaningful
+                    # countdown, and one that is past due reads as "due" rather
+                    # than as a negative number.
+                    when = "due" if due_in <= 0 else f"{due_in:.1f}s"
+                    # "no geo" rather than "new": it covers both an object that
+                    # has never been extracted and one whose extraction failed,
+                    # which are indistinguishable from here and both mean the
+                    # client has nothing for this name yet.
+                    suffix = "" if has_geometry else "  (no geo)"
+                    col.label(text=f"{_shorten(name)} — {when}{suffix}")
+                hidden = len(queue) - QUEUE_LIST_MAX
+                if hidden > 0:
+                    col.label(text=f"… and {hidden} more")
+
+            box.separator()
+            box.label(text="Pending transfers")
+            col = box.column(align=True)
+            col.label(text=f"geometry blobs — {transfers['geo_pending']}")
+            col.label(text=f"textures — {transfers['tex_pending']}")
+            clients = transfers["clients"]
+            # The once-per-client payloads: "N/N sent" is exactly the set the
+            # send loop skips on, so a full count means nothing is retried.
+            col.label(text=f"hdr — {transfers['hdr_done']}/{clients} sent")
+            col.label(text=f"cameras — {transfers['cams_done']}/{clients} sent")
+            col.label(text=f"lights — {transfers['lights_done']}/{clients} sent")
 
         layout.separator()
 
@@ -1891,7 +2088,7 @@ def register():
             pass  # wasn't registered — fine
 
     # Remove old scene properties if they exist (e.g. from a prior version)
-    for prop in ("b3sync_port", "b3sync_sync_geometry"):
+    for prop in ("b3sync_port", "b3sync_sync_geometry", "b3sync_geo_interval"):
         try:
             delattr(bpy.types.Scene, prop)
         except (AttributeError, KeyError):
@@ -1922,6 +2119,20 @@ def register():
         update=_on_sync_geometry_changed,
     )
 
+    # How long an object may go before its geometry is re-extracted. The floor is
+    # one tick: the timer only fires at TICK_INTERVAL, so a shorter interval is
+    # indistinguishable from "every object, every tick" and would only mislead.
+    bpy.types.Scene.b3sync_geo_interval = bpy.props.FloatProperty(
+        name="Geometry Interval",
+        description=(
+            "Seconds between geometry re-extractions for a given object. Lower "
+            "tracks Blender more closely and costs proportionally more per tick"
+        ),
+        default=GEO_DISCOVERY_INTERVAL,
+        min=TICK_INTERVAL,
+        max=120.0,
+    )
+
     print("[B3Sync] Panel registered — open the 3D View sidebar (N) → B3Sync")
 
     # Auto-start the server on add-on registration
@@ -1935,7 +2146,7 @@ def unregister():
 
     # Tolerate a property that was never registered (an unregister running
     # after a failed register, or a Blender that refused the assignment).
-    for prop in ("b3sync_port", "b3sync_sync_geometry"):
+    for prop in ("b3sync_port", "b3sync_sync_geometry", "b3sync_geo_interval"):
         try:
             delattr(bpy.types.Scene, prop)
         except (AttributeError, KeyError):
