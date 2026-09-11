@@ -82,12 +82,16 @@ const DEFAULT_AGGRO = 12
 const DEFAULT_SCATTER_SECONDS = 6
 
 /**
- * Chasing NPCs stop here rather than walking into the player. The player is not
- * a crowd agent — it is moved by the rig's own code — so the crowd cannot
- * resolve a collision against it, and without a standoff the whole crowd would
- * converge onto the player's exact position.
+ * Fallback for the distance a chasing NPC stops at rather than walking into the
+ * player — the ring it actually attacks from. The live value is
+ * `tunables.npcStandoffDistance`; this mirrors the store's default and is only
+ * a backstop for a settings object that predates the field.
+ *
+ * The player is not a crowd agent — it is moved by the rig's own code — so the
+ * crowd cannot resolve a collision against it, and without a standoff the whole
+ * crowd would converge onto the player's exact position.
  */
-const STANDOFF_DISTANCE = 1.8
+const STANDOFF_DISTANCE = 5
 
 /** Seconds between chase re-aims. Pathfinding is expensive; the example throttles too. */
 const CHASE_REAIM_SECONDS = 0.25
@@ -186,6 +190,9 @@ function armedSetConfig(tunables: NpcTunables): ClipSetConfig | undefined {
 export interface NpcTunables {
     npcAggroRadius: number
     npcScatterSeconds: number
+    /** How close a chasing NPC closes before it holds — the ring it attacks
+     *  from, in world units. See `STANDOFF_DISTANCE` for the fallback. */
+    npcStandoffDistance: number
     /** Master switch for the armed/peace states. Off leaves every NPC in peace. */
     npcArmedEnabled: boolean
     /** Seconds between shots while an armed NPC holds at the standoff ring. */
@@ -660,13 +667,14 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             const fireRangeSq = fireRange * fireRange
 
             const aggroSq = aggro * aggro
+            const standoff = tunables.npcStandoffDistance || STANDOFF_DISTANCE
             // The mode is decided every frame, but the aim only refreshes every
             // CHASE_REAIM_SECONDS — so a chasing NPC can close a further
             // (run speed x re-aim interval) before the check catches it, and
             // would otherwise end up standing almost on top of the player
             // (measured: a 1.8 m standoff settling at ~0.55 m). Budget for that
             // overshoot so the ring lands at roughly the intended distance.
-            const holdRadius = STANDOFF_DISTANCE + NPC_RUN_SPEED * CHASE_REAIM_SECONDS
+            const holdRadius = standoff + NPC_RUN_SPEED * CHASE_REAIM_SECONDS
             const holdSq = holdRadius * holdRadius
 
             // --- 1. Decide targets, before the simulation steps -----------

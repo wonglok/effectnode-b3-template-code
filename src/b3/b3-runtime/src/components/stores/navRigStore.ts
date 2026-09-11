@@ -34,6 +34,11 @@ interface NavRigSettings {
     /** How long an NPC walks a wander target before being re-scattered to a new
      *  random point on the navmesh. */
     npcScatterSeconds: number
+    /** How close a chasing NPC closes before it stops and holds, in world units
+     *  — the distance it actually attacks from. Must stay inside
+     *  `npcFireRange` for an armed NPC to shoot from the ring; the crowd aims
+     *  a little wide of this so the overshoot lands on it (see `npcEnemies`). */
+    npcStandoffDistance: number
 
     /** Master switch for the armed / peace states. Off leaves the whole crowd
      *  holstered and wandering, whatever its aggro state. Applied live. */
@@ -141,6 +146,7 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         npcCount: 10,
         npcAggroRadius: 12,
         npcScatterSeconds: 6,
+        npcStandoffDistance: 5,
         npcArmedEnabled: true,
         npcFireInterval: 1.6,
         npcFireRange: 14,

@@ -775,6 +775,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         const npcFolder = gui.addFolder('NPC Enemies')
         npcFolder.add(settings, 'npcAggroRadius', 2, 40, 1).name('Aggro Radius')
+        npcFolder.add(settings, 'npcStandoffDistance', 0.5, 20, 0.5).name('Attack Distance')
         npcFolder.add(settings, 'npcScatterSeconds', 1, 30, 1).name('Wander Re-scatter (s)')
         npcFolder.add(settings, 'npcCount', 0, 12, 1).name('Count (respawning)')
         // Gun placement lives in the sidebar's Weapon Settings tab, on the
