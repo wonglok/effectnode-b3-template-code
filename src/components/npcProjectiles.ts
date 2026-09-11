@@ -24,7 +24,7 @@
 import * as THREE from 'three'
 
 /** Radius of a droplet, in world units. */
-const DROP_RADIUS = 0.07
+const DROP_RADIUS = 0.057
 
 /** Simultaneous droplets. Four NPCs firing slowly will never approach this. */
 const POOL_SIZE = 24
@@ -161,11 +161,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                 return
             }
             const flight = horizontal / muzzleSpeed
-            slot.velocity.set(
-                dx / flight,
-                (dy + 0.5 * GRAVITY * flight * flight) / flight,
-                dz / flight,
-            )
+            slot.velocity.set(dx / flight, (dy + 0.5 * GRAVITY * flight * flight) / flight, dz / flight)
         },
 
         update(delta) {

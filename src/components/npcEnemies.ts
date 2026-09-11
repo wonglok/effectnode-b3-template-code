@@ -48,21 +48,8 @@ import {
     type NavMesh,
 } from 'navcat'
 import { crowd } from 'navcat/blocks'
-import {
-    BASE_SET_KEY,
-    loadAvatar,
-    type AvatarRig,
-    type ClipSetConfig,
-    type LocomotionKey,
-} from './avatarLoader'
-import {
-    applyGunTuning,
-    attachGun,
-    calibrateGun,
-    loadWeaponTemplate,
-    type NpcGun,
-    type NpcWeapon,
-} from './npcProps'
+import { BASE_SET_KEY, loadAvatar, type AvatarRig, type ClipSetConfig, type LocomotionKey } from './avatarLoader'
+import { applyGunTuning, attachGun, calibrateGun, loadWeaponTemplate, type NpcGun, type NpcWeapon } from './npcProps'
 import { createNpcProjectiles } from './npcProjectiles'
 import {
     makeDefaultManifest,
@@ -151,12 +138,18 @@ function sectionClip(sectionId: string, name: string): MotionClipDef | null {
 
 /**
  * The rifle-holding locomotion set an NPC switches to when it draws. Taken from
- * the user's chosen clips: `gun/idle`, `shooter/walking`, `gun/run-forward`.
+ * the user's chosen clips: `gun/idle-aiming`, `shooter/walking`,
+ * `gun/run-forward`.
+ *
+ * The idle is the *aiming* variant rather than plain `gun/idle`: this pose is
+ * what an armed NPC holds at the standoff ring, where it is pointing the gun at
+ * the player, so the raised sights read as aiming.
+ *
  * `jump` is deliberately omitted, so the set falls back to the base jump clip —
  * there is no armed jump in the pack, and the caller's launch frame stays valid.
  */
 function armedClipSet(): { clips: Partial<Record<LocomotionKey, MotionClipDef>> } | null {
-    const idle = sectionClip('rifle', 'idle')
+    const idle = sectionClip('rifle', 'idle-aiming')
     const walk = sectionClip('shooter', 'walking')
     const run = sectionClip('rifle', 'run-forward')
     if (!idle || !walk || !run) {
@@ -671,8 +664,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             // moves, since this writes every live action's timescale.
             const armedWalk = tunables.npcArmedWalkTimescale
             const armedRun = tunables.npcArmedRunTimescale
-            const armedCadenceChanged =
-                armedTimeScale.walk !== armedWalk || armedTimeScale.run !== armedRun
+            const armedCadenceChanged = armedTimeScale.walk !== armedWalk || armedTimeScale.run !== armedRun
             if (armedCadenceChanged) {
                 armedTimeScale.walk = armedWalk
                 armedTimeScale.run = armedRun
@@ -729,8 +721,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // Clamping the speed cap stops it in place and, because the
                 // corridor is untouched, raising the cap resumes the walk on
                 // the very next frame.
-                agent.maxSpeed =
-                    next === 'chase' ? NPC_RUN_SPEED : next === 'hold' ? 0 : NPC_WALK_SPEED
+                agent.maxSpeed = next === 'chase' ? NPC_RUN_SPEED : next === 'hold' ? 0 : NPC_WALK_SPEED
 
                 if (next === 'chase') {
                     npc.chaseAge += delta
@@ -777,10 +768,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 const prevX = npc.group.position.x
                 const prevZ = npc.group.position.z
                 npc.group.position.fromArray(agent.position)
-                npc.stepLength = Math.hypot(
-                    npc.group.position.x - prevX,
-                    npc.group.position.z - prevZ,
-                )
+                npc.stepLength = Math.hypot(npc.group.position.x - prevX, npc.group.position.z - prevZ)
                 faceVelocity(npc, agent, delta)
                 animate(npc, agent, delta)
 

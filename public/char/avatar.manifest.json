@@ -3471,11 +3471,11 @@
       "url": "/props/water-gun.glb",
       "bone": "mixamorigRightHand",
       "enabled": true,
-      "scale": 0.5,
+      "scale": 0.45,
       "offset": [
-        4.7,
+        1.8,
         -4.3,
-        5.9
+        4.6
       ],
       "rotation": [
         0,

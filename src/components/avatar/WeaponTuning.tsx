@@ -31,8 +31,7 @@ const OFFSET_LIMIT = 25
 const OFFSET_STEP = 0.1
 
 /** The entry the tab edits — the same one the crowd draws (see `pickWeapon`). */
-const useActiveWeapon = () =>
-    useAvatarStore((s) => s.weapons.find((w) => w.enabled) ?? s.weapons[0] ?? null)
+const useActiveWeapon = () => useAvatarStore((s) => s.weapons.find((w) => w.enabled) ?? s.weapons[0] ?? null)
 
 export function WeaponTuning() {
     const weapon = useActiveWeapon()
@@ -66,10 +65,9 @@ export function WeaponTuning() {
         <div className='flex flex-1 flex-col gap-3 overflow-y-auto p-3'>
             <Section title='Gun Offset' hint='NPC crowd'>
                 <p className={`${SUB} leading-relaxed`}>
-                    Where the water gun sits in the hand, in centimetres off the grip.{' '}
-                    <span className={MONO}>X</span> is the character&apos;s left/right,{' '}
-                    <span className={MONO}>Y</span> up, <span className={MONO}>Z</span> forward. Applies
-                    live to every armed NPC.
+                    Where the water gun sits in the hand, in centimetres off the grip. <span className={MONO}>X</span>{' '}
+                    is the character&apos;s left/right, <span className={MONO}>Y</span> up,{' '}
+                    <span className={MONO}>Z</span> forward. Applies live to every armed NPC.
                 </p>
 
                 <ToggleRow
@@ -96,8 +94,8 @@ export function WeaponTuning() {
 
             <Section title='Gun Rotation' hint='degrees'>
                 <p className={`${SUB} leading-relaxed`}>
-                    Nudge on top of the computed alignment, which already cancels the hand bone&apos;s
-                    frame so the barrel follows the character&apos;s forward.
+                    Nudge on top of the computed alignment, which already cancels the hand bone&apos;s frame so the
+                    barrel follows the character&apos;s forward.
                 </p>
                 <div className='flex flex-col gap-1.5'>
                     {(['X', 'Y', 'Z'] as const).map((axis, i) => (
@@ -126,8 +124,8 @@ export function WeaponTuning() {
                     onChange={(v) => setWeaponField(weapon.id, { scale: v })}
                 />
                 <p className={`${SUB} leading-relaxed`}>
-                    The model is about 1 m long, drawn against a ~1.7 m avatar. The value is a real-world
-                    length — the skeleton&apos;s own centimetre scale is divided out for you.
+                    The model is about 1 m long, drawn against a ~1.7 m avatar. The value is a real-world length — the
+                    skeleton&apos;s own centimetre scale is divided out for you.
                 </p>
             </Section>
 
@@ -150,9 +148,8 @@ export function WeaponTuning() {
                     ))}
                 </div>
                 <p className={`${SUB} leading-relaxed`}>
-                    Saved with the avatar manifest. The model and bone are set there rather than here
-                    because every NPC bakes them in when its avatar loads — load a manifest with a
-                    different one and the crowd rebuilds.
+                    Saved with the avatar manifest. The model and bone are set there rather than here because every NPC
+                    bakes them in when its avatar loads — load a manifest with a different one and the crowd rebuilds.
                 </p>
             </Section>
         </div>

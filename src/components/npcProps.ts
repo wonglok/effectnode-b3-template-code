@@ -84,7 +84,6 @@ export interface NpcWeapon {
     rotation: [number, number, number]
 }
 
-
 /**
  * Parsed templates, cached across crowds **by URL**.
  *
@@ -116,9 +115,7 @@ function cloneGun(template: THREE.Object3D): THREE.Object3D {
         const mesh = obj as THREE.Mesh
         if (!mesh.isMesh) return
         mesh.geometry = mesh.geometry.clone()
-        mesh.material = Array.isArray(mesh.material)
-            ? mesh.material.map((m) => m.clone())
-            : mesh.material.clone()
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone()
     })
     return clone
 }
