@@ -35,86 +35,78 @@ import * as THREE from 'three'
 import { findBone, loadGLB } from '../b3/b3-runtime/src/components/AvatarSDK'
 import type { AvatarRig } from './avatarLoader'
 
-/** Served from `public/props/`. */
-const GUN_URL = '/props/water-gun.glb'
-
-/** Which hand holds it. `findBone` handles the `mixamorig:` name sanitizing. */
-const HAND_BONE = 'mixamorigRightHand'
-
 /**
  * The point of the model a hand should close around, in gun-local units —
  * the middle of the grip, measured from the vertex cloud rather than guessed.
+ *
+ * A property of the *water-gun mesh*, not of the character, which is why it is
+ * not part of a manifest weapon entry (see `WeaponEntry` in the SDK). A
+ * differently-shaped model would want its own grip.
  */
 const GRIP = new THREE.Vector3(0, -0.17, -0.06)
 
-/** Per-NPC gun settings, read live from the rig's lil-gui-bound object. */
-export interface GunTuning {
+/**
+ * The weapon to carry and where to hang it.
+ *
+ * A structural subset of the SDK's `WeaponEntry` — the crowd gets plain data and
+ * never imports the avatar store, so it declares only what it reads. `url` and
+ * `bone` are consumed once per avatar at attach; the rest is live.
+ */
+export interface NpcWeapon {
+    /** GLB served from `/props/…`. */
+    url: string
+    /** Hand bone name — `findBone` handles the `mixamorig:` name sanitizing. */
+    bone: string
     enabled: boolean
     /**
-     * Desired **world** size, as a fraction of the model's natural 1 m. 0.5 puts
-     * a half-metre gun in a ~1.7 m avatar's hands.
+     * Desired **world** size, in metres — 0.5 is a half-metre gun in a ~1.7 m
+     * avatar's hands.
      *
-     * Worth being explicit that this is world size: the gun hangs off a bone, so
-     * it inherits the skeleton's own scale — and the mixamo bodies are authored
-     * in centimetres, so a hand bone's world scale is around 0.004. Left
-     * un-normalised the gun renders about 5 mm long. `applyGunTuning` divides
-     * that back out.
+     * Worth spelling out that this is world size: the gun hangs off a bone, so
+     * it inherits the skeleton's own scale, and the mixamo bodies are authored
+     * in centimetres, so a hand bone's world scale is ~0.01. Left un-normalised
+     * the gun renders about 5 mm long. `applyGunTuning` divides that back out.
      */
     scale: number
     /**
-     * Nudge off the grip, in **centimetres** — so `offY = 5` lifts the gun 5 cm
-     * out of the palm.
+     * Nudge off the grip, in **centimetres** — `offset[1] = 5` lifts the gun
+     * 5 cm out of the palm.
      *
-     * Centimetres, not metres, because that is the rig's own unit: the mixamo
-     * bodies are authored in cm, so a node under the hand bone is scaled by
-     * 0.01 (measured across the crowd). `applyGunTuning` normalises for that,
-     * so the number means the same distance on a body of any scale — and unlike
-     * `scale`, it is *not* expected to be read as a world length.
-     *
-     * Applied in the avatar's own axes — the frame the barrel alignment targets
-     * — not the hand's, so a nudge here means the same thing for every NPC
-     * regardless of how the arm is posed.
+     * Centimetres because that is the rig's own unit (a node under the hand bone
+     * is scaled by 0.01); `applyGunTuning` normalises for it, so the number
+     * means the same distance on a body of any scale — and unlike `scale` it is
+     * *not* a world length. Read in the avatar's own axes (X left/right, Y up,
+     * Z forward), the frame the barrel alignment targets, so it reads the same
+     * way whatever pose the arm is in.
      */
-    offX: number
-    offY: number
-    offZ: number
-    /** Extra nudge in degrees on top of the computed alignment. */
-    rotX: number
-    rotY: number
-    rotZ: number
+    offset: [number, number, number]
+    /** Nudge in degrees, on top of the computed alignment. */
+    rotation: [number, number, number]
 }
 
-export const DEFAULT_GUN_TUNING: GunTuning = {
-    enabled: true,
-    scale: 0.5,
-    offX: 0,
-    offY: 0,
-    offZ: 0,
-    rotX: 0,
-    rotY: 0,
-    rotZ: 0,
-}
 
 /**
- * The parsed template, cached across crowds.
+ * Parsed templates, cached across crowds **by URL**.
  *
- * The promise (not the scene) is cached so two crowds starting in the same
- * tick share one download and one parse. A rejected load is dropped from the
- * cache so a later crowd can retry instead of being poisoned by a transient
- * failure.
+ * The promise (not the scene) is cached so two crowds starting in the same tick
+ * share one download and one parse — and keyed by URL because a manifest can
+ * name more than one weapon, where a single slot would hand the second weapon
+ * the first one's mesh. A rejected load is dropped from the cache so a later
+ * crowd can retry instead of being poisoned by a transient failure.
  */
-let templatePromise: Promise<THREE.Object3D> | null = null
+const templatePromises = new Map<string, Promise<THREE.Object3D>>()
 
-function loadGunTemplate(): Promise<THREE.Object3D> {
-    if (!templatePromise) {
-        templatePromise = loadGLB(GUN_URL)
-            .then((gltf) => gltf.scene)
-            .catch((err) => {
-                templatePromise = null
-                throw err
-            })
-    }
-    return templatePromise
+function loadGunTemplate(url: string): Promise<THREE.Object3D> {
+    const cached = templatePromises.get(url)
+    if (cached) return cached
+    const pending = loadGLB(url)
+        .then((gltf) => gltf.scene)
+        .catch((err) => {
+            templatePromises.delete(url)
+            throw err
+        })
+    templatePromises.set(url, pending)
+    return pending
 }
 
 /** Per-mesh geometry+material clone, so one NPC's teardown can't free another's. */
@@ -214,20 +206,26 @@ const _calibRef = new THREE.Quaternion()
  * to the toe tip measures [0, 0, +0.06] horizontally, i.e. along the group's
  * forward.
  *
+ * `template` is the already-resolved GLB (see `loadWeaponTemplate`) — passed in
+ * rather than fetched here so this stays synchronous, which is what lets the
+ * crowd attach guns inside its sequential avatar-load loop. The weapon's
+ * placement is applied from the same object, so there is no separate tuning
+ * argument to keep in sync with it.
+ *
  * Returns null when the model has no such bone — some bodies ship a reduced
  * skeleton, and a missing hand should disarm that NPC rather than throw.
  */
 export function attachGun(
     rig: AvatarRig,
     forwardRoot: THREE.Object3D,
-    tuning: GunTuning,
+    weapon: NpcWeapon,
+    template: THREE.Object3D | null,
 ): NpcGun | null {
-    const template = templateRef
     if (!template) return null
 
-    const hand = findBone(rig.scene, HAND_BONE)
+    const hand = findBone(rig.scene, weapon.bone)
     if (!hand) {
-        console.warn(`[npcProps] no ${HAND_BONE} bone on this avatar — no gun`)
+        console.warn(`[npcProps] no ${weapon.bone} bone on this avatar — no gun`)
         return null
     }
 
@@ -273,16 +271,18 @@ export function attachGun(
     // Provisional only — the caller re-aims it once the NPC is standing, by
     // which point the idle clip has posed the arm. See `calibrateGun`.
     calibrateGun(npcGun)
-    applyGunTuning(npcGun, tuning)
+    applyGunTuning(npcGun, weapon)
     return npcGun
 }
 
-/** Apply live tuning. Called on attach and again whenever the GUI changes. */
 /** Metres in one rig unit — the mixamo bodies are authored in centimetres. */
 const RIG_UNIT = 0.01
 
-export function applyGunTuning(gun: NpcGun, tuning: GunTuning): void {
-    gun.mount.visible = tuning.enabled
+/** Apply live placement. Called on attach and again every frame while it holds. */
+export function applyGunTuning(gun: NpcGun, weapon: NpcWeapon): void {
+    gun.mount.visible = weapon.enabled
+    const [offX, offY, offZ] = weapon.offset
+    const [rotX, rotY, rotZ] = weapon.rotation
     // The holder sits under the calibration mount, which is a child of the hand
     // bone and so carries the skeleton's centimetre scale (measured 0.01). A
     // position here is therefore *rig units*, not metres: moving it by 1 moves
@@ -293,31 +293,31 @@ export function applyGunTuning(gun: NpcGun, tuning: GunTuning): void {
     // A node's own rotation does not move its origin, so the offset is read in
     // the avatar's axes however the gun is later rotated.
     const perCm = RIG_UNIT / gun.handWorldScale
-    gun.holder.position.set(tuning.offX * perCm, tuning.offY * perCm, tuning.offZ * perCm)
-    gun.holder.scale.setScalar(tuning.scale / gun.handWorldScale)
+    gun.holder.position.set(offX * perCm, offY * perCm, offZ * perCm)
+    gun.holder.scale.setScalar(weapon.scale / gun.handWorldScale)
     gun.holder.rotation.set(
-        THREE.MathUtils.degToRad(tuning.rotX),
-        THREE.MathUtils.degToRad(tuning.rotY),
-        THREE.MathUtils.degToRad(tuning.rotZ),
+        THREE.MathUtils.degToRad(rotX),
+        THREE.MathUtils.degToRad(rotY),
+        THREE.MathUtils.degToRad(rotZ),
     )
 }
 
-/** Set once the template resolves; `attachGun` is synchronous, its callers await. */
-let templateRef: THREE.Object3D | null = null
-
 /**
- * Resolve and cache the template, then arm `attachGun`.
+ * Resolve a weapon's template, then hand it back for `attachGun`.
  *
  * Safe to call before any crowd exists, and idempotent — later crowds await the
- * same promise. Failures are swallowed into a `false` because every caller has
- * a working "no gun" path.
+ * same promise. Failures resolve to `null` rather than throwing, because every
+ * caller already has a working "no gun" path.
+ *
+ * Kept a separate step from `attachGun` so the (async, once-per-url) load is not
+ * mixed into the per-avatar attach — `attachGun` stays synchronous, which is
+ * what lets it run inside the crowd's sequential avatar loop.
  */
-export async function readyNpcProps(): Promise<boolean> {
+export async function loadWeaponTemplate(url: string): Promise<THREE.Object3D | null> {
     try {
-        templateRef = await loadGunTemplate()
-        return true
+        return await loadGunTemplate(url)
     } catch (err) {
-        console.warn('[npcProps] water gun failed to load — NPCs will be unarmed:', err)
-        return false
+        console.warn(`[npcProps] weapon "${url}" failed to load — that NPC is unarmed:`, err)
+        return null
     }
 }

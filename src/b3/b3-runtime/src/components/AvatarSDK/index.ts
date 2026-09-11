@@ -38,15 +38,18 @@ export type {
   MotionConfig,
   Offset3,
   Vec3,
+  WeaponEntry,
 } from './types'
 
 // ---- core manifest (asset-agnostic) ----
 export {
   basenameOf,
+  DEFAULT_WEAPON_BONE,
   defaultBodyFor,
   downloadManifest,
   identityOffset,
   normalizeOffsets,
+  normalizeWeapons,
   parseManifest,
   serializeManifest,
 } from './manifest'
@@ -57,6 +60,7 @@ export {
   bodyPlacementFor,
   BREAKDANCE_NAMES,
   createMotionCatalog,
+  createWeaponCatalog,
   DEFAULT_GENDER,
   defaultVariant,
   GENDER_ASSETS,

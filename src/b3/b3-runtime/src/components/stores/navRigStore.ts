@@ -35,23 +35,6 @@ interface NavRigSettings {
    *  random point on the navmesh. */
   npcScatterSeconds: number;
 
-  /** Whether NPCs carry the water gun. Applied live. */
-  npcGunEnabled: boolean;
-  /** Gun size in the hand. The model is ~1 m long against a ~1.7 m avatar, so
-   *  this is well under 1. */
-  npcGunScale: number;
-  /** Nudge off the grip, in centimetres. `npcGunOffY: 5` lifts the gun 5 cm out
-   *  of the palm — the rig is authored in cm, so these are not metres. */
-  npcGunOffX: number;
-  npcGunOffY: number;
-  npcGunOffZ: number;
-  /** Extra hand-placement nudge in degrees, on top of the computed alignment
-   *  (which cancels the hand bone's frame so the barrel follows the avatar's
-   *  forward). Tune these if the gun sits at an odd angle. */
-  npcGunRotX: number;
-  npcGunRotY: number;
-  npcGunRotZ: number;
-
   /** Master switch for the armed / peace states. Off leaves the whole crowd
    *  holstered and wandering, whatever its aggro state. Applied live. */
   npcArmedEnabled: boolean;
@@ -77,23 +60,6 @@ interface NavRigState {
    *  player, <0 pushes it out. 0 = default follow distance. The resulting
    *  camera distance is clamped to [MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE]. */
   zoomRadius: number;
-
-  /** Replace one or more settings fields (used by the lil-gui controls). */
-  set: (patch: Partial<NavRigSettings>) => void;
-
-  /**
-   * Update settings **in place** and bump `revision`.
-   *
-   * The rig captures the `settings` object once (`NavMeshRig`) and lil-gui
-   * writes into it directly, so replacing it — which `set` does — would leave
-   * the running crowd reading a detached copy. This keeps the reference stable
-   * and still notifies React: the revision tick is what re-runs selectors, and
-   * because the fields really did change, they re-render with the new values.
-   */
-  patchSettings: (patch: Partial<NavRigSettings>) => void;
-
-  /** Increments on every `patchSettings` call — subscribe to this to re-render. */
-  revision: number;
 
   /** Move the dolly distance by `delta` world units; passing through 0
    *  releases the camera back to the default follow distance. */
@@ -175,14 +141,6 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     npcCount: 4,
     npcAggroRadius: 12,
     npcScatterSeconds: 6,
-    npcGunEnabled: true,
-    npcGunScale: 0.5,
-    npcGunOffX: 0,
-    npcGunOffY: 0,
-    npcGunOffZ: 0,
-    npcGunRotX: 0,
-    npcGunRotY: 0,
-    npcGunRotZ: 0,
     npcArmedEnabled: true,
     npcFireInterval: 1.6,
     npcFireRange: 14,
@@ -196,15 +154,6 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   running: false,
   emotionRequest: null,
   jumpRequest: null,
-  revision: 0,
-
-  set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
-
-  patchSettings: (patch) =>
-    set((s) => {
-      Object.assign(s.settings, patch);
-      return { revision: s.revision + 1 };
-    }),
 
   setStick: (stick) => set({ stick }),
 

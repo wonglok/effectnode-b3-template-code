@@ -27,12 +27,20 @@ import type {
   HeadInsertion,
   MotionConfig,
   Offset3,
+  WeaponEntry,
 } from './types'
 
 function vec3(value: unknown, fallback: Offset3['position']): Offset3['position'] {
-  return Array.isArray(value) && value.length === 3
-    ? ([Number(value[0]), Number(value[1]), Number(value[2])] as Offset3['position'])
-    : ([...fallback] as Offset3['position'])
+  if (!Array.isArray(value) || value.length !== 3) {
+    return [...fallback] as Offset3['position']
+  }
+  const out = value.map((n) => (typeof n === 'number' && Number.isFinite(n) ? n : NaN))
+  // Reject a partly-garbage tuple wholesale rather than returning it with a NaN
+  // axis: `Number(undefined)` is NaN and `Number(null)` is 0, so the old
+  // `Number(...)` coercion would happily build `[1, NaN, 3]` from bad JSON. A
+  // NaN here is not a visible error — it poisons the object's world matrix, so
+  // the mesh silently disappears, several layers away from the malformed input.
+  return out.some((n) => Number.isNaN(n)) ? ([...fallback] as Offset3['position']) : (out as Offset3['position'])
 }
 
 /** An offset group with every missing axis defaulted to `fallback`'s. */
@@ -135,6 +143,60 @@ export function normalizeOffsets(value: unknown): AvatarOffsets | undefined {
   return out.length > 0 ? out : undefined
 }
 
+/** Fallbacks for a weapon entry that names only some of its fields. */
+export const DEFAULT_WEAPON_BONE = 'mixamorigRightHand'
+
+/** Natural-size-relative default for {@link WeaponEntry.scale}. */
+const DEFAULT_WEAPON_SCALE = 0.5
+
+/**
+ * Coerce a raw `weapons` array into well-formed entries.
+ *
+ * Only an entry with no `url` is **dropped** — a weapon with no GLB cannot be
+ * attached, so carrying it would only fail later, further from the bad JSON.
+ * Everything else is defaulted, including a missing `id`, which falls back to
+ * the url's basename: dropping it instead would leave the entry absent, and an
+ * empty result is reseeded with the built-in catalog — so a hand-written entry
+ * that merely forgot its id would appear to have been *replaced* by the water
+ * gun. Duplicate ids are dropped after the first, matching how
+ * `normalizeOffsets` dedupes pairings.
+ *
+ * Returns `undefined` when nothing survives, so the field can be omitted.
+ */
+export function normalizeWeapons(value: unknown): WeaponEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out: WeaponEntry[] = []
+  const seen = new Set<string>()
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const raw = entry as Partial<WeaponEntry>
+    if (typeof raw.url !== 'string' || !raw.url) continue
+    const id = typeof raw.id === 'string' && raw.id ? raw.id : basenameOf(raw.url)
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push({
+      id,
+      name: typeof raw.name === 'string' && raw.name ? raw.name : id,
+      url: raw.url,
+      bone:
+        typeof raw.bone === 'string' && raw.bone ? raw.bone : DEFAULT_WEAPON_BONE,
+      enabled: raw.enabled !== false,
+      // A non-positive or non-numeric scale would render the model at nothing
+      // or at infinity; treat both as "unset" and take the default.
+      scale:
+        typeof raw.scale === 'number' && Number.isFinite(raw.scale) && raw.scale > 0
+          ? raw.scale
+          : DEFAULT_WEAPON_SCALE,
+      // Plain tuples, not an `Offset3` — a weapon has no scale-vector, and its
+      // offset is in centimetres (see `WeaponEntry`).
+      offset: vec3(raw.offset, [0, 0, 0]),
+      rotation: vec3(raw.rotation, [0, 0, 0]),
+    })
+  }
+  return out.length > 0 ? out : undefined
+}
+
 /**
  * Fills every optional slot so an `AvatarManifest` is always well-formed, using
  * only structure — no built-in asset catalog. Callers must supply concrete
@@ -165,6 +227,9 @@ export function assembleManifest(input?: AvatarManifestInput): AvatarManifest {
     head: offset3(input?.head, IDENTITY_HEAD),
     body: offset3(input?.body, bodyDefault),
     offsets: normalizeOffsets(input?.offsets) ?? [],
+    // Threaded explicitly because `assembleManifest` reads only the keys it
+    // knows: a field left out here is silently dropped on every import.
+    weapons: normalizeWeapons(input?.weapons) ?? [],
     motion: {
       clips: input?.motion?.clips ?? [],
       default: input?.motion?.default ?? '',
@@ -218,6 +283,13 @@ export function parseManifest(json: unknown): AvatarManifest {
   const motion: Partial<MotionConfig> = raw.motion ?? {}
   if (motion.clips && !Array.isArray(motion.clips)) {
     throw new Error('Manifest motion.clips must be an array.')
+  }
+  // Field-level only, like `motion.clips` above: a `weapons` that is not an
+  // array at all is a structural error, while a *well-formed array* holding
+  // malformed entries is not — `normalizeWeapons` drops what it cannot use, and
+  // a character with no usable weapon is still a perfectly good character.
+  if (raw.weapons && !Array.isArray(raw.weapons)) {
+    throw new Error('Manifest weapons must be an array.')
   }
 
   return assembleManifest(raw)

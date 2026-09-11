@@ -3464,6 +3464,26 @@
       }
     }
   ],
+  "weapons": [
+    {
+      "id": "water-gun",
+      "name": "Water Gun",
+      "url": "/props/water-gun.glb",
+      "bone": "mixamorigRightHand",
+      "enabled": true,
+      "scale": 0.5,
+      "offset": [
+        4.7,
+        -4.3,
+        5.9
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
   "motion": {
     "clips": [
       {

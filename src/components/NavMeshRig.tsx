@@ -13,6 +13,8 @@ import type { EmotionDef } from '../b3/b3-runtime/src/components/stores/navRigSt
 import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
 import { loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
 import { createNpcEnemies, type NpcEnemies } from './npcEnemies'
+import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/components/AvatarSDK'
+import type { NpcWeapon } from './npcProps'
 import { avatarConfigSnapshot, useAvatarStore } from './avatar/useAvatarStore'
 import {
     ImmersiveControls,
@@ -114,6 +116,26 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         // Mutable settings shared with the lil-gui controls (which write in place).
         const settings = useNavRigStore.getState().settings
+
+        // The weapon the NPC crowd carries, mirrored from the avatar store into
+        // a plain object the crowd holds by reference — the same contract as
+        // `settings`. It is written in place rather than replaced so a crowd
+        // that is already built (and reading it every frame) keeps seeing the
+        // live values; the avatar store's `weapons` array is immutable, and
+        // re-reading it per frame would mean a store lookup per NPC per frame.
+        const weapon: NpcWeapon = {
+            url: '',
+            bone: DEFAULT_WEAPON_BONE,
+            enabled: false,
+            scale: 0,
+            offset: [0, 0, 0],
+            rotation: [0, 0, 0],
+        }
+        // Which entry `weapon` mirrors, and the url/bone last handed to a crowd.
+        // The crowd bakes those two into every avatar it builds, so a change to
+        // either is the one weapon edit that needs a respawn.
+        let weaponId: string | null = null
+        let weaponSpec = ''
 
         // ------------------------------------------------------------------
         // Navmesh
@@ -303,6 +325,50 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             if (s.playing !== prev.playing) rig.setPaused(!s.playing)
         })
 
+        /**
+         * The entry the crowd carries: the first enabled one, or — when none is
+         * enabled — the first entry at all.
+         *
+         * That fallback is load-bearing. `enabled` is the crowd's live *draw*
+         * flag (`applyGunTuning` reads it every frame), so the sidebar toggle is
+         * an instant show/hide. Selecting strictly on `enabled` would instead
+         * make the toggle change *which weapon the crowd carries*, and since
+         * url/bone are baked into every built avatar that would force a respawn
+         * on every click.
+         */
+        const pickWeapon = (weapons: WeaponEntry[]): WeaponEntry | null =>
+            weapons.find((w) => w.enabled) ?? weapons[0] ?? null
+
+        /**
+         * Mirror the active manifest weapon into the crowd's `weapon` object.
+         * Returns true when the url/bone changed, which is the one case the
+         * already-built avatars cannot absorb.
+         */
+        const syncWeapon = (weapons: WeaponEntry[]): boolean => {
+            const entry = pickWeapon(weapons)
+            if (!entry) {
+                weapon.enabled = false
+                return false
+            }
+            weaponId = entry.id
+            weapon.enabled = entry.enabled
+            weapon.scale = entry.scale
+            weapon.offset[0] = entry.offset[0]
+            weapon.offset[1] = entry.offset[1]
+            weapon.offset[2] = entry.offset[2]
+            weapon.rotation[0] = entry.rotation[0]
+            weapon.rotation[1] = entry.rotation[1]
+            weapon.rotation[2] = entry.rotation[2]
+
+            const spec = `${entry.url}~${entry.bone}`
+            // `weaponSpec` is latched by `ensureNpcs`, so an empty one means no
+            // crowd has been built yet and there is nothing to respawn.
+            const changed = weaponSpec !== '' && spec !== weaponSpec
+            weapon.url = entry.url
+            weapon.bone = entry.bone
+            return changed
+        }
+
         // ------------------------------------------------------------------
         // Place the player on the navmesh
         // ------------------------------------------------------------------
@@ -383,6 +449,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             if (npcsLoading) return
             npcsLoading = true
             const generation = npcsGeneration
+            // Latched before the (slow) avatar loads, so the respawn this crowd
+            // is built from can be compared against later edits.
+            weaponSpec = `${weapon.url}~${weapon.bone}`
             void createNpcEnemies({
                 scene,
                 navMesh,
@@ -391,6 +460,8 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 // lil-gui mutates `settings` in place, so the crowd reads the
                 // live values every frame with no wiring.
                 tunables: settings,
+                // Same contract: the crowd holds `weapon` and reads it per frame.
+                weapon,
             })
                 .then((created) => {
                     npcsLoading = false
@@ -410,6 +481,31 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                     console.warn('[NavMeshRig] Failed to spawn NPCs:', err)
                 })
         }
+
+        /**
+         * Tear the crowd down and build it again. Everything a built avatar
+         * bakes in — its weapon's url and hand bone, its clip sets — can only be
+         * changed this way.
+         *
+         * The generation bump is what makes it safe: an avatar load already in
+         * flight sees the bump and drops itself rather than landing on top of
+         * the replacement.
+         */
+        const respawnNpcs = () => {
+            npcsGeneration++
+            npcs?.dispose()
+            npcs = null
+            ensureNpcs()
+        }
+
+        // Seed before the first crowd exists — a store subscription only fires
+        // on *changes*, so without this an untouched manifest would leave the
+        // crowd reading the placeholder above.
+        syncWeapon(useAvatarStore.getState().weapons)
+        const unsubWeapon = useAvatarStore.subscribe((s, prev) => {
+            if (s.weapons === prev.weapons) return
+            if (syncWeapon(s.weapons)) respawnNpcs()
+        })
 
         // Generate now; if the collider hasn't synced yet, retry for a while.
         let retries = 0
@@ -681,26 +777,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         npcFolder.add(settings, 'npcAggroRadius', 2, 40, 1).name('Aggro Radius')
         npcFolder.add(settings, 'npcScatterSeconds', 1, 30, 1).name('Wander Re-scatter (s)')
         npcFolder.add(settings, 'npcCount', 0, 12, 1).name('Count (respawning)')
-        // Gun placement, all live: every NPC's gun is re-posed from these the
-        // frame after a slider moves, so a nudge can be dialled in while
-        // watching the crowd rather than by editing `GRIP` and reloading.
-        // The offset is in centimetres (the rig's own unit — see
-        // `GunTuning`), in the avatar's own axes, so it reads the same way on
-        // every NPC. The sidebar's Weapon Settings tab edits the same fields.
-        const gunFolder = npcFolder.addFolder('Gun Settings')
-        // `.listen()` on these because the sidebar's Weapon Settings tab edits
-        // the same fields. lil-gui only refreshes a control's displayed value
-        // when *it* is the one changed, so without this the two panels would
-        // show different numbers for the same gun (lil-gui keeps reading the
-        // object for playback either way — only the label goes stale).
-        gunFolder.add(settings, 'npcGunEnabled').name('Water Gun').listen()
-        gunFolder.add(settings, 'npcGunScale', 0.1, 1.5, 0.01).name('Scale (m)').listen()
-        gunFolder.add(settings, 'npcGunOffX', -10, 10, 0.1).name('Offset X (cm)').listen()
-        gunFolder.add(settings, 'npcGunOffY', -10, 10, 0.1).name('Offset Y (cm)').listen()
-        gunFolder.add(settings, 'npcGunOffZ', -10, 10, 0.1).name('Offset Z (cm)').listen()
-        gunFolder.add(settings, 'npcGunRotX', -180, 180, 1).name('Rot X°').listen()
-        gunFolder.add(settings, 'npcGunRotY', -180, 180, 1).name('Rot Y°').listen()
-        gunFolder.add(settings, 'npcGunRotZ', -180, 180, 1).name('Rot Z°').listen()
+        // Gun placement lives in the sidebar's Weapon Settings tab, on the
+        // avatar manifest — it describes the *character*, not the scene, so it
+        // is not a nav-rig setting and has no controls here.
 
         // Armed / peace. Every control here is read straight off `settings` by
         // the crowd's own frame loop (through the `tunables` object it holds a
@@ -716,24 +795,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         armedFolder.add(settings, 'npcArmedRunTimescale', 0.2, 6, 0.1).name('Armed Run Rate')
         armedFolder.close()
         npcFolder
-            .add(
-                {
-                    respawn: () => {
-                        // Each NPC composes its own avatar, which is far too
-                        // expensive to do live — so a count change is applied by
-                        // tearing the crowd down and building it again, not by
-                        // adding or removing agents in place. Bumping the
-                        // generation retires any load still in flight, so the
-                        // respawn can't be silently overtaken by a crowd built
-                        // from the previous count.
-                        npcsGeneration++
-                        npcs?.dispose()
-                        npcs = null
-                        ensureNpcs()
-                    },
-                },
-                'respawn',
-            )
+            .add({ respawn: respawnNpcs }, 'respawn')
             .name('Respawn NPCs')
 
         // ------------------------------------------------------------------
@@ -1183,6 +1245,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             targetMarker.geometry.dispose()
             targetMarker.material.dispose()
             unsubAvatar()
+            unsubWeapon()
             if (avatarRig) {
                 avatarRig.dispose()
                 disposeObject(avatarRig.scene)

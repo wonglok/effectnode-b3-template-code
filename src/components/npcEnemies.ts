@@ -59,12 +59,11 @@ import {
     applyGunTuning,
     attachGun,
     calibrateGun,
-    readyNpcProps,
-    DEFAULT_GUN_TUNING,
-    type GunTuning,
+    loadWeaponTemplate,
     type NpcGun,
+    type NpcWeapon,
 } from './npcProps'
-import { createNpcProjectiles, type NpcProjectiles } from './npcProjectiles'
+import { createNpcProjectiles } from './npcProjectiles'
 import {
     makeDefaultManifest,
     MOTION_SECTIONS,
@@ -134,12 +133,6 @@ const AIM_HEIGHT = 1.1
  */
 const GUN_CALIBRATE_FALLBACK_SECONDS = 4
 
-/**
- * Reused gun tuning, refreshed at the top of `update` from the live settings —
- * so the GUI sliders re-pose every gun without allocating per NPC per frame.
- */
-const gunTuning: GunTuning = { ...DEFAULT_GUN_TUNING }
-
 // ---------------------------------------------------------------------------
 // Armed clip set
 // ---------------------------------------------------------------------------
@@ -207,16 +200,6 @@ function armedSetConfig(tunables: NpcTunables): ClipSetConfig | undefined {
 export interface NpcTunables {
     npcAggroRadius: number
     npcScatterSeconds: number
-    /** Water gun on/off and its hand placement, all live. */
-    npcGunEnabled: boolean
-    npcGunScale: number
-    /** Hand-placement offset in world units, in the avatar's own axes. */
-    npcGunOffX: number
-    npcGunOffY: number
-    npcGunOffZ: number
-    npcGunRotX: number
-    npcGunRotY: number
-    npcGunRotZ: number
     /** Master switch for the armed/peace states. Off leaves every NPC in peace. */
     npcArmedEnabled: boolean
     /** Seconds between shots while an armed NPC holds at the standoff ring. */
@@ -241,6 +224,16 @@ export interface NpcEnemiesOptions {
     getPlayerPosition: () => THREE.Vector3 | null
     /** Read per frame so GUI edits take effect immediately. */
     tunables: NpcTunables
+    /**
+     * The weapon the crowd carries, or null to carry none. The rig owns this
+     * object and **mutates it in place** from the avatar store, exactly like
+     * `tunables` — the crowd holds the reference and reads it every frame, so
+     * replacing it would leave the crowd reading a detached copy.
+     *
+     * `url` and `bone` are consumed once per avatar, at attach. Changing either
+     * needs a respawn; the rest is live.
+     */
+    weapon: NpcWeapon | null
 }
 
 export interface NpcEnemies {
@@ -345,7 +338,7 @@ function manifestFor(index: number) {
 // ---------------------------------------------------------------------------
 
 export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnemies> {
-    const { scene, getPlayerPosition, tunables } = opts
+    const { scene, getPlayerPosition, tunables, weapon } = opts
     let navMesh = opts.navMesh
 
     let disposed = false
@@ -464,11 +457,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
     // Arm the guns before the first avatar lands, so `attachGun` is a plain
     // synchronous call inside the loop below. The template is cached across
-    // crowds, so this resolves immediately for every crowd but the first, and a
-    // failure just leaves the NPCs unarmed.
+    // crowds *by URL*, so this resolves immediately for every crowd but the
+    // first to use that weapon, and a failure just leaves the NPCs unarmed.
     // (A teardown during that await is caught by the loop's own `disposed`
     // guard — `dispose()` has already removed the agents and the root.)
-    const armed = await readyNpcProps()
+    const template = weapon ? await loadWeaponTemplate(weapon.url) : null
 
     // Built once and shared by every NPC's `loadAvatar` — the clip *bytes* are
     // cached per URL in the SDK's motion library, so the crowd pays for the
@@ -506,7 +499,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             // Attached after the rig is parented, because the hand's frame is
             // read relative to the group — the node whose +Z is forward — and
             // that needs the rig in the graph with live world matrices.
-            if (armed) npcs[i].gun = attachGun(rig, npcs[i].group, gunTuning)
+            if (weapon) npcs[i].gun = attachGun(rig, npcs[i].group, weapon, template)
         } catch (err) {
             console.warn(`[NpcEnemies] failed to load avatar for npc-${i}:`, err)
         }
@@ -667,15 +660,10 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             const playerPos = getPlayerPosition()
             const aggro = tunables.npcAggroRadius || DEFAULT_AGGRO
             const scatterSeconds = tunables.npcScatterSeconds || DEFAULT_SCATTER_SECONDS
-            // Live gun tuning: one refresh for the whole crowd, applied below.
-            gunTuning.enabled = tunables.npcGunEnabled
-            gunTuning.scale = tunables.npcGunScale
-            gunTuning.offX = tunables.npcGunOffX
-            gunTuning.offY = tunables.npcGunOffY
-            gunTuning.offZ = tunables.npcGunOffZ
-            gunTuning.rotX = tunables.npcGunRotX
-            gunTuning.rotY = tunables.npcGunRotY
-            gunTuning.rotZ = tunables.npcGunRotZ
+            // No gun refresh here any more: the rig hands us its weapon object
+            // and mutates it in place, so `applyGunTuning` below reads the live
+            // placement straight off it. (This block used to copy nine
+            // `tunables.npcGun*` fields into a module-level mirror every frame.)
 
             // Live armed cadence. The rifle walk/run are authored slower than
             // the navmesh moves the NPCs, so their timescales are dialled from
@@ -769,13 +757,15 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             // --- 3. Pose from the updated agent state ---------------------
             for (const npc of npcs) {
                 // Guns ride the hand bone, so they need no posing — only the
-                // live tuning, which is what makes the GUI sliders immediate.
-                if (npc.gun) {
-                    applyGunTuning(npc.gun, gunTuning)
-                    // Holstered in peace. Written *after* the tuning pass, which
-                    // owns `visible` (through `enabled`) and runs every frame;
-                    // this only ever narrows what that pass allowed.
-                    npc.gun.mount.visible = gunTuning.enabled && npc.armed
+                // live placement, which is what makes the sidebar sliders
+                // immediate. `weapon` is the rig's own object, kept current by
+                // its store subscription.
+                if (npc.gun && weapon) {
+                    applyGunTuning(npc.gun, weapon)
+                    // Holstered in peace. Written *after* the placement pass,
+                    // which owns `visible` (through `enabled`) and runs every
+                    // frame; this only ever narrows what that pass allowed.
+                    npc.gun.mount.visible = weapon.enabled && npc.armed
                 }
                 if (armedCadenceChanged && npc.armedClips) {
                     npc.rig?.setClipSetTimeScale(ARMED_SET_KEY, armedTimeScale)

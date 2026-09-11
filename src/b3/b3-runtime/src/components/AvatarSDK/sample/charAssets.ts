@@ -12,7 +12,7 @@
  * imports from here.
  */
 
-import { assembleManifest, defaultBodyFor } from '../manifest'
+import { assembleManifest, defaultBodyFor, DEFAULT_WEAPON_BONE } from '../manifest'
 import type {
   AvatarAssets,
   AvatarManifest,
@@ -20,6 +20,7 @@ import type {
   BodyInsertion,
   Gender,
   MotionClipDef,
+  WeaponEntry,
 } from '../types'
 
 /** Default motion library served from `/char/motion-2/fbx/stay` (the "stay"
@@ -39,6 +40,35 @@ export function createMotionCatalog(
   baseUrl = '/char/motion-2/fbx/stay',
 ): MotionClipDef[] {
   return MOTION_NAMES.map((name) => ({ name, url: `${baseUrl}/${name}.fbx` }))
+}
+
+/** Served from `public/props/`. */
+const WATER_GUN_URL = '/props/water-gun.glb'
+
+/**
+ * The props a character ships with when its manifest names none — so a
+ * hand-written or older manifest still produces an armed crowd instead of an
+ * empty one. Mirrors `createMotionCatalog`'s role for `motion.clips`.
+ *
+ * The values are the ones the crowd was tuned with; the model is ~1 m long, and
+ * `scale` is the world size so 0.5 reads as "half a metre in a 1.7 m avatar".
+ *
+ * Note this reseeds for `weapons: []` too, exactly as an empty `motion.clips`
+ * does. Disarming is `enabled: false`, not an empty array.
+ */
+export function createWeaponCatalog(): WeaponEntry[] {
+  return [
+    {
+      id: 'water-gun',
+      name: 'Water Gun',
+      url: WATER_GUN_URL,
+      bone: DEFAULT_WEAPON_BONE,
+      enabled: true,
+      scale: 0.5,
+      offset: [0, 0, 0],
+      rotation: [0, 0, 0],
+    },
+  ]
 }
 
 /**
@@ -563,6 +593,9 @@ export function makeDefaultManifest(input?: AvatarManifestInput): AvatarManifest
     assets,
     genderDefaults: input?.genderDefaults ?? GENDER_ASSETS,
     body: input?.body ?? bodyPlacementFor(assets.body),
+    // Like the motion catalog: only fall back to the built-in when the manifest
+    // names no weapons of its own, so an explicit (even empty-ish) list wins.
+    weapons: input?.weapons?.length ? input.weapons : createWeaponCatalog(),
     motion: {
       clips: input?.motion?.clips?.length
         ? input.motion.clips

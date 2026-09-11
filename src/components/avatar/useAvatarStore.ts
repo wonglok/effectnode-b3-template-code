@@ -57,6 +57,7 @@ import type {
     MotionClipDef,
     Offset3,
     Vec3,
+    WeaponEntry,
 } from '../../b3/b3-runtime/src/components/AvatarSDK'
 import type { AvatarConfig, LocomotionKey } from '../avatarLoader'
 
@@ -124,6 +125,11 @@ interface AvatarState {
      * defaults the first time).
      */
     offsets: AvatarOffsets
+    /**
+     * Props this character carries, by id. The crowd draws the first `enabled`
+     * one; the Weapon tab edits the placement of `weapons[0]`.
+     */
+    weapons: WeaponEntry[]
     clips: MotionClipDef[]
     /** Which motion library (`MOTION_SECTIONS` id) the clip chips come from. */
     motionSectionId: string
@@ -160,6 +166,9 @@ interface AvatarState {
     setHeadGroup: (key: OffsetKey, value: Offset3[OffsetKey]) => void
     resetBody: () => void
     resetHead: () => void
+    /** Merge `patch` into one weapon entry (no-op on an unknown id). The shape
+     *  of the `weapons` array never changes here — the UI only retunes. */
+    setWeaponField: (id: string, patch: Partial<WeaponEntry>) => void
     /** Load a motion library's clips (replaces `clips`, recalls its active clip). */
     setMotionSection: (sectionId: string) => void
     setActiveMotion: (name: string) => void
@@ -199,6 +208,7 @@ function toManifest(state: AvatarState): AvatarManifest {
         head: state.head,
         body: state.body,
         offsets: state.offsets,
+        weapons: state.weapons,
         motion: {
             clips: state.clips,
             default: state.activeMotion,
@@ -266,6 +276,19 @@ function cloneEntry(entry: ComboOffsets): ComboOffsets {
 
 function cloneOffsets(offsets: AvatarOffsets): AvatarOffsets {
     return offsets.map(cloneEntry)
+}
+
+/**
+ * Deep-copy the weapon list. The `offset`/`rotation` tuples are the only nested
+ * values, so they are the only thing a shallow `map` would leave shared with the
+ * manifest the values came from.
+ */
+function cloneWeapons(weapons: WeaponEntry[]): WeaponEntry[] {
+    return weapons.map((w) => ({
+        ...w,
+        offset: [...w.offset] as Vec3,
+        rotation: [...w.rotation] as Vec3,
+    }))
 }
 
 /** Index of a body × face namespace in the flat `offsets` array (−1 if absent). */
@@ -373,6 +396,7 @@ function stateFromManifest(manifest: AvatarManifest) {
         body,
         head,
         offsets,
+        weapons: cloneWeapons(manifest.weapons ?? []),
         clips: manifest.motion.clips.map((c) => ({ ...c })),
         motionSectionId: motionSectionForClips(manifest.motion.clips).id,
         motionBySection: {
@@ -401,6 +425,7 @@ export const useAvatarStore = create<AvatarState>()((set, get) => ({
     body: cloneOffset(DEFAULTS.body),
     head: cloneOffset(DEFAULTS.head),
     offsets: cloneOffsets(DEFAULTS.offsets ?? []),
+    weapons: cloneWeapons(DEFAULTS.weapons ?? []),
     clips: DEFAULTS.motion.clips.map((c) => ({ ...c })),
     motionSectionId: motionSectionForClips(DEFAULTS.motion.clips).id,
     motionBySection: {
@@ -567,6 +592,15 @@ export const useAvatarStore = create<AvatarState>()((set, get) => ({
             return { offsets, body: live.body, head: live.head }
         }),
 
+    setWeaponField: (id, patch) =>
+        set((s) => {
+            const index = s.weapons.findIndex((w) => w.id === id)
+            if (index < 0) return {}
+            const weapons = s.weapons.slice()
+            weapons[index] = { ...weapons[index], ...patch }
+            return { weapons }
+        }),
+
     setMotionSection: (sectionId) =>
         set((s) => {
             const section = MOTION_SECTIONS.find((sec) => sec.id === sectionId)
@@ -609,42 +643,18 @@ export const useAvatarStore = create<AvatarState>()((set, get) => ({
     setDetectedBone: (detectedBone) => set({ detectedBone }),
     setNotice: (notice) => set({ notice }),
 
-    applyManifest: (manifest) => {
-        const head = cloneOffset(manifest.head)
-        const body = cloneOffset(manifest.body)
-        const { body: bodyUrl, face: faceUrl } = manifest.assets
-        // Restore every stored combination carried by the manifest, then make sure
-        // the active combo's namespace reflects the manifest `head`/`body`.
-        const offsets = upsertEntry(cloneOffsets(manifest.offsets ?? []), bodyUrl, faceUrl, { body, head })
+    applyManifest: (manifest) =>
         set({
-            name: manifest.name,
-            gender: manifest.gender ?? genderFromAssets(manifest.assets) ?? DEFAULT_GENDER,
-            assets: { ...manifest.assets },
-            genderDefaults: cloneGenderDefaults(manifest.genderDefaults ?? GENDER_ASSETS),
-            assetsByGender: seedAssetsByGender(
-                manifest.gender ?? genderFromAssets(manifest.assets) ?? DEFAULT_GENDER,
-                manifest.assets,
-                manifest.genderDefaults ?? GENDER_ASSETS,
-            ),
-            headBone: manifest.headBone,
-            body,
-            head,
-            offsets,
-            clips: manifest.motion.clips.map((c) => ({ ...c })),
-            motionSectionId: motionSectionForClips(manifest.motion.clips).id,
-            motionBySection: {
-                [motionSectionForClips(manifest.motion.clips).id]: manifest.motion.default,
-            },
-            activeMotion: manifest.motion.default,
-            loop: manifest.motion.loop,
-            speed: manifest.motion.speed,
-            playing: manifest.motion.playing,
-            rigClips: defaultRigClips(),
-            detectedBone: null,
+            // The same fields `stateFromManifest` seeds on first run — spread
+            // rather than listed again. These two used to be copies of one
+            // another, and every new manifest field had to be added twice; the
+            // second copy is exactly where a field goes missing.
+            ...stateFromManifest(manifest),
+            // …plus the two things only an explicit load owns: it remounts the
+            // avatar and tells the user what happened.
             nonce: get().nonce + 1,
             notice: `Loaded “${manifest.name}”`,
-        })
-    },
+        }),
     importFromText: (text) => {
         try {
             // Neutral `parseManifest` validates/normalizes structure only; re-run

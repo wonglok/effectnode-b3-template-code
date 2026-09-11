@@ -104,6 +104,45 @@ export interface MotionConfig {
   playing: boolean
 }
 
+/**
+ * A prop a character carries — currently the crowd's water gun.
+ *
+ * Deliberately not an {@link Offset3}, and deliberately not in metres: the
+ * fields carry the *runtime's* units, which are the ones the tuning UI shows.
+ * See each field.
+ */
+export interface WeaponEntry {
+  /** Stable id — the entry the tuning UI edits and the one a future picker selects. */
+  id: string
+  /** Human label. */
+  name: string
+  /** GLB served from `/props/…`. A weapon with no URL cannot attach and is dropped on import. */
+  url: string
+  /** Bone the weapon mounts to, e.g. `mixamorigRightHand`. */
+  bone: string
+  /** Whether the carrier actually draws it (holstered otherwise). */
+  enabled: boolean
+  /**
+   * **World** length in metres, as a fraction of the model's natural size. 0.5
+   * puts a half-metre gun in a ~1.7 m avatar's hands. The skeleton's own
+   * centimetre scale is divided out at attach time.
+   */
+  scale: number
+  /**
+   * Nudge off the model's grip, in **centimetres** — not metres, and not the
+   * metres {@link Offset3.position} uses. The rig is authored in cm, so a node
+   * under the hand bone is scaled by 0.01; the runtime normalises for that, so
+   * the number means the same distance on a body of any scale.
+   *
+   * Read in the avatar's own axes (`X` left/right, `Y` up, `Z` forward) — the
+   * frame the barrel alignment targets — so it reads the same way whatever pose
+   * the arm is in.
+   */
+  offset: Vec3
+  /** Nudge **in degrees**, on top of the computed alignment that already cancels the hand's frame. */
+  rotation: Vec3
+}
+
 export interface AvatarAssets {
   /** Rigged body GLB (skinned mesh + mixamorig skeleton). */
   body: string
@@ -140,6 +179,15 @@ export interface AvatarManifest {
    */
   offsets?: AvatarOffsets | null
   motion: MotionConfig
+  /**
+   * Props the character can carry, by id. **Required, not optional**, unlike the
+   * other array field (`offsets`): `assembleManifest` always fills it (seeding
+   * the built-in catalog), so a hand-written manifest that omits it — or writes
+   * `[]` — still loads armed, while making it required turns "forgot to
+   * serialize it" into a compile error instead of a field that vanishes only on
+   * export. Disarm with `enabled: false`; an empty array is reseeded.
+   */
+  weapons: WeaponEntry[]
 }
 
 /**
@@ -158,4 +206,7 @@ export interface AvatarManifestInput {
    * import and normalized to the array). */
   offsets?: AvatarOffsets | AvatarManifest['offsets']
   motion?: Partial<MotionConfig>
+  /** Complete entries only — a partial weapon is built from {@link WeaponEntry}'s
+   *  defaults, minus any entry that names no `url`. */
+  weapons?: WeaponEntry[] | null
 }
