@@ -24,6 +24,16 @@ interface NavRigSettings {
   runningSpeed: number;
   offsetAbove: number;
   offsetBehind: number;
+
+  /** How many NPC enemies to spawn. Applied on spawn / respawn — each one
+   *  loads its own composed avatar, which is far too costly to do live. */
+  npcCount: number;
+  /** Distance at which an NPC notices the player and gives chase, in world
+   *  units. Beyond it the NPC resumes wandering. */
+  npcAggroRadius: number;
+  /** How long an NPC walks a wander target before being re-scattered to a new
+   *  random point on the navmesh. */
+  npcScatterSeconds: number;
 }
 
 interface NavRigState {
@@ -114,6 +124,9 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     runningSpeed: 8,
     offsetAbove: 15,
     offsetBehind: 10,
+    npcCount: 4,
+    npcAggroRadius: 12,
+    npcScatterSeconds: 6,
   },
 
   zoomRadius: 0,

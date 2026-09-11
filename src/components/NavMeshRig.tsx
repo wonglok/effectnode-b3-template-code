@@ -12,6 +12,7 @@ import { useBlenderStore, useNavRigStore } from '../b3/b3-runtime/src'
 import type { EmotionDef } from '../b3/b3-runtime/src/components/stores/navRigStore'
 import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
 import { loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
+import { createNpcEnemies, type NpcEnemies } from './npcEnemies'
 import { avatarConfigSnapshot, useAvatarStore } from './avatar/useAvatarStore'
 import {
     ImmersiveControls,
@@ -191,6 +192,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             const result = generateSoloNavMesh(input, config)
             navMesh = result.navMesh
 
+            // Every path that produces a navmesh comes through here, so this is
+            // the one place the NPC crowd has to be told about it. `navMesh` is
+            // a brand-new object each time — a crowd left pointing at the old
+            // one would be steering agents on a mesh with no relation to the
+            // scene. Avatars are kept; only the crowd is re-based.
+            ensureNpcs()
+
             navMeshHelper = createNavMeshHelper(navMesh)
             navMeshHelper.object.position.y += 0.15
             scene.add(navMeshHelper.object)
@@ -348,6 +356,59 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 }
             }
             console.warn('[NavMeshRig] Could not find starting position on navmesh')
+        }
+
+        // ------------------------------------------------------------------
+        // NPC enemies
+        // ------------------------------------------------------------------
+        // Created lazily from whichever code path first produces a navmesh, and
+        // re-based (never rebuilt) when one replaces it. Declared here, above
+        // the generate call below, because `generateNavMesh` calls it — the
+        // lazy on-demand path inside `updateTargetFromPointer` runs long after
+        // this line, so the binding is always initialised by then.
+        let npcs: NpcEnemies | null = null
+        let npcsLoading = false
+        // Bumped whenever the crowd is torn down, so an avatar load that was
+        // already in flight can tell it has been superseded.
+        let npcsGeneration = 0
+
+        const ensureNpcs = () => {
+            if (!navMesh) return
+            if (npcs) {
+                npcs.setNavMesh(navMesh)
+                return
+            }
+            // Two generates in quick succession would otherwise start two
+            // crowds, since `npcs` stays null until the avatars finish loading.
+            if (npcsLoading) return
+            npcsLoading = true
+            const generation = npcsGeneration
+            void createNpcEnemies({
+                scene,
+                navMesh,
+                count: settings.npcCount,
+                getPlayerPosition: () => playerGroup.position,
+                // lil-gui mutates `settings` in place, so the crowd reads the
+                // live values every frame with no wiring.
+                tunables: settings,
+            })
+                .then((created) => {
+                    npcsLoading = false
+                    if (disposed || generation !== npcsGeneration) {
+                        // Torn down (or respawned with a new count) while the
+                        // avatars loaded. Drop this crowd — it was built from
+                        // superseded settings — and let the respawn that
+                        // bumped the generation build the current one.
+                        created.dispose()
+                        if (!disposed) ensureNpcs()
+                        return
+                    }
+                    npcs = created
+                })
+                .catch((err) => {
+                    npcsLoading = false
+                    console.warn('[NavMeshRig] Failed to spawn NPCs:', err)
+                })
         }
 
         // Generate now; if the collider hasn't synced yet, retry for a while.
@@ -615,6 +676,31 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const cameraFolder = gui.addFolder('Camera')
         cameraFolder.add(settings, 'offsetBehind', 5, 30, 1).name('Offset Behind')
         cameraFolder.add(settings, 'offsetAbove', 2, 15, 1).name('Offset Above')
+
+        const npcFolder = gui.addFolder('NPC Enemies')
+        npcFolder.add(settings, 'npcAggroRadius', 2, 40, 1).name('Aggro Radius')
+        npcFolder.add(settings, 'npcScatterSeconds', 1, 30, 1).name('Wander Re-scatter (s)')
+        npcFolder.add(settings, 'npcCount', 0, 12, 1).name('Count (respawning)')
+        npcFolder
+            .add(
+                {
+                    respawn: () => {
+                        // Each NPC composes its own avatar, which is far too
+                        // expensive to do live — so a count change is applied by
+                        // tearing the crowd down and building it again, not by
+                        // adding or removing agents in place. Bumping the
+                        // generation retires any load still in flight, so the
+                        // respawn can't be silently overtaken by a crowd built
+                        // from the previous count.
+                        npcsGeneration++
+                        npcs?.dispose()
+                        npcs = null
+                        ensureNpcs()
+                    },
+                },
+                'respawn',
+            )
+            .name('Respawn NPCs')
 
         // ------------------------------------------------------------------
         // Movement / animation / camera scratch state
@@ -1016,6 +1102,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 navMeshHelper.object.visible = settings.showNavMeshHelper
             }
             agentHelper.visible = settings.showAgentHelper
+
+            // --- NPC enemies ---
+            // Stepped after the player has moved, so a chase re-aim this frame
+            // aims at where the player actually is rather than last frame's
+            // position.
+            npcs?.update(clamped)
         }
 
         frameRef.current = { frame }
@@ -1047,6 +1139,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 scene.remove(navMeshHelper.object)
                 disposeObject(navMeshHelper.object)
             }
+            // Removes its own group from the scene and disposes the avatars'
+            // GPU resources. `disposed` is already true above, so a crowd still
+            // loading will tear its partial result down instead of attaching.
+            npcs?.dispose()
+            npcs = null
             scene.remove(playerGroup)
             scene.remove(targetMarker)
             targetMarker.geometry.dispose()
