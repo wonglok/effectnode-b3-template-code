@@ -542,6 +542,10 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         }
 
         const handlePointerDown = (event: PointerEvent) => {
+            // Left button only. Every other button is inert here: without this
+            // guard a right-click on the collider sets a walk target, so the
+            // character strolls off the moment the context menu is dismissed.
+            if (event.button !== 0) return
             pointerDown = true
             pointerX = event.clientX
             pointerY = event.clientY
@@ -555,14 +559,23 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             pointerY = event.clientY
         }
 
-        const stopFollowing = () => {
+        const stopFollowing = (event: PointerEvent) => {
+            // A non-left button releasing must not end a left-button hold —
+            // otherwise right-clicking mid-walk stops the character.
+            if (event.type === 'pointerup' && event.button !== 0) return
             pointerDown = false
         }
+
+        // Right-click has no meaning on the collider, so suppress the browser
+        // menu rather than let it surface over the scene. Scoped to the canvas,
+        // so right-click still behaves normally everywhere else on the page.
+        const suppressContextMenu = (event: MouseEvent) => event.preventDefault()
 
         gl.domElement.addEventListener('pointerdown', handlePointerDown)
         document.addEventListener('pointermove', handlePointerMove)
         document.addEventListener('pointerup', stopFollowing)
         document.addEventListener('pointercancel', stopFollowing)
+        gl.domElement.addEventListener('contextmenu', suppressContextMenu)
 
         // ------------------------------------------------------------------
         // GUI
@@ -1027,6 +1040,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             document.removeEventListener('pointermove', handlePointerMove)
             document.removeEventListener('pointerup', stopFollowing)
             document.removeEventListener('pointercancel', stopFollowing)
+            gl.domElement.removeEventListener('contextmenu', suppressContextMenu)
             gui.destroy()
 
             if (navMeshHelper?.object) {
