@@ -23,11 +23,3 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
         </>
     )
 }
-
-//
-
-//
-
-//
-
-//
