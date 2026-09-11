@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 import type { TextureData, GeoBuffer } from '../types/blenderTypes'
 import { buildTSLMaterial, type ShaderGraph } from './tslMaterialBuilder'
+import { decodeImageBytes, potSizeWithinCap, rasterize, type ImageSource } from './textureSizing'
 
 // ---------------------------------------------------------------------------
 // Module-level caches (shared across Viewer and export utilities)
@@ -17,58 +18,30 @@ const _textureCache = new Map<string, THREE.Texture>()
 
 export type TexKind = 'color' | 'noncolor'
 
-/** Round a dimension to the nearest power of two. */
-function nearestPOT(value: number): number {
-    return Math.pow(2, Math.round(Math.log2(value)))
-}
-
 /**
  * Decode encoded PNG / JPEG / WebP bytes, then draw them onto an offscreen
- * canvas resized to the nearest power of two — mirroring `loadAndResizePOTTexture`.
- * POT textures keep mipmap generation + RepeatWrapping working on renderers that
- * require them (WebGL1 / some GPU stacks) and shrink large images before GPU
- * upload. Sources that are already POT are returned untouched, avoiding a lossy
- * resample and an extra canvas allocation.
+ * canvas rounded to the nearest power of two and capped at `MAX_TEXTURE_SIZE`
+ * — mirroring `loadAndResizePOTTexture`.
+ *
+ * POT keeps mipmap generation + RepeatWrapping working on renderers that
+ * require them, and gives a single uniform downscale that preserves the aspect
+ * ratio. The **cap** is the part that matters for memory: rounding alone is a
+ * no-op for an already-POT 4096² source, which then uploaded at a full 64 MB.
+ * See `utils/textureSizing`.
  *
  * Decoding goes through the browser's native decoder via a Blob URL, so the
  * resulting image data (and sRGB handling) matches the previous TextureLoader
  * path.
  */
-function decodeImageToPOT(bytes: ArrayBuffer, mime: string): Promise<HTMLImageElement | HTMLCanvasElement> {
-    return new Promise((resolve, reject) => {
-        const blob = new Blob([bytes], { type: mime })
-        const url = URL.createObjectURL(blob)
-        const image = new Image()
-        image.onload = () => {
-            URL.revokeObjectURL(url)
-
-            const width = nearestPOT(image.width)
-            const height = nearestPOT(image.height)
-            if (width === image.width && height === image.height) {
-                resolve(image)
-                return
-            }
-
-            // Scale the decoded image onto a POT-sized offscreen canvas.
-            const canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = height
-            const ctx = canvas.getContext('2d')
-            if (!ctx) {
-                reject(new Error('getOrCreateTexture: could not get a 2D canvas context.'))
-                return
-            }
-            ctx.drawImage(image, 0, 0, width, height)
-            resolve(canvas)
-        }
-
-        image.onerror = () => {
-            URL.revokeObjectURL(url)
-            reject(new Error(`getOrCreateTexture: failed to decode image bytes (${mime}).`))
-        }
-
-        image.src = url
-    })
+async function decodeImageToPOT(bytes: ArrayBuffer, mime: string): Promise<ImageSource> {
+    const image = await decodeImageBytes(bytes, mime)
+    const target = potSizeWithinCap(image.width, image.height)
+    // Already POT and within the cap: hand back the decoded image untouched
+    // rather than paying a lossy resample and an extra canvas allocation.
+    if (target.width === image.width && target.height === image.height) {
+        return image
+    }
+    return rasterize(image, target.width, target.height)
 }
 
 export function getOrCreateTexture(

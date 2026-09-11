@@ -12,6 +12,7 @@ import { useMeshSync } from '../canvas-units/useMeshSync'
 import { useEmptySync } from '../canvas-units/useEmptySync'
 import { useEnvironmentMap } from '../canvas-units/useEnvironmentMap'
 import { buildGeometryFromBuffer, computeMeshCacheKey, type TexKind } from '../../utils/meshBuilder'
+import { decodeImageBytes, fitWithinCap, rasterize } from '../../utils/textureSizing'
 import { CanvasGPU } from '../CanvasGPU'
 import { LoadObject3DAsync } from '../../custom/LoadObject3DAsync'
 
@@ -59,16 +60,34 @@ function resolveTexture(scene: ProductionScene, name: string | undefined, kind: 
     const entry = scene.textureData.get(name)
     if (!entry) return null
 
-    // Go through a Blob URL so the browser's native decoder handles the
-    // sRGB → linear conversion for colour maps.
-    const blob = new Blob([entry.bytes], { type: entry.mime })
-    const url = URL.createObjectURL(blob)
-    const texture = new THREE.TextureLoader().load(url, () => URL.revokeObjectURL(url))
+    // Reserve the texture up front: callers read its uuid to build material
+    // cache keys immediately, and the decoded image is published once decode
+    // finishes — the same async contract `getOrCreateTexture` uses.
+    const texture = new THREE.Texture()
 
     texture.wrapS = THREE.RepeatWrapping
     texture.wrapT = THREE.RepeatWrapping
     texture.flipY = true
     texture.colorSpace = kind === 'color' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
+
+    // Decode through the browser's native decoder (Blob URL → <img>) rather than
+    // TextureLoader, so the image can be downscaled *before* it reaches the GPU.
+    // A deployed 4096² texture would otherwise upload at a full 64 MB.
+    //
+    // This path never enforced power-of-two sizes, so the cap preserves the
+    // exact aspect ratio rather than snapping — see utils/textureSizing.
+    decodeImageBytes(entry.bytes, entry.mime)
+        .then((image) => {
+            const target = fitWithinCap(image.width, image.height)
+            texture.image =
+                target.width === image.width && target.height === image.height
+                    ? image
+                    : rasterize(image, target.width, target.height)
+            texture.needsUpdate = true
+        })
+        .catch((error) => {
+            console.error(`resolveTexture: failed to load texture "${name}"`, error)
+        })
 
     cache.set(cacheKey, texture)
     return texture
