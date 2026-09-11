@@ -101,6 +101,33 @@ def _set_running(running: bool, error: str = ""):
         _state["error"] = error
 
 
+def _sync_geometry_enabled() -> bool:
+    """Read the panel's "Sync Geometry" checkbox.
+
+    Defaults to True whenever the property can't be read (restricted context
+    during install/enable, or a stale .blend that predates the toggle), so the
+    sync always behaves as it did before the checkbox existed.
+    """
+    try:
+        return bool(bpy.context.scene.b3sync_sync_geometry)
+    except (AttributeError, TypeError):
+        return True
+
+
+def _on_sync_geometry_changed(self, context):
+    """Re-enabling geometry asks for a full pass on the next tick.
+
+    Without this the client would wait out GEO_DISCOVERY_INTERVAL for each
+    object's turn, so a scene that was frozen would fill in gradually rather
+    than on the tick after the click. Switching *off* needs no such nudge —
+    the pass it interrupts simply stops sending blobs.
+    """
+    if getattr(self, "b3sync_sync_geometry", False):
+        with _lock:
+            _state["geo_force_refresh"] = True
+    _redraw_all()
+
+
 def _redraw_all():
     """Force Blender to redraw every UI area so the panel updates.
     MUST be called from the main thread.
@@ -764,12 +791,25 @@ def _extract_material(obj, flat_shading, v_count, i_count, uv_cksum):
     return fields, graph
 
 
-def get_scene_data(force_geometry=False):
+def get_scene_data(force_geometry=False, sync_geometry=True):
     """Returns (json_string, geometry_dict).
 
     Pass force_geometry=True to re-extract every object on this pass, ignoring
     both the discovery interval and the per-tick budget — this backs the panel's
     "Refresh Geometry" button.
+
+    Pass sync_geometry=False (the panel's "Sync Geometry" checkbox) to skip
+    geometry extraction and blob transmission entirely — the cheap way to keep
+    iterating on transforms, materials and lighting in a heavy scene. Objects
+    whose geometry was already extracted keep emitting their *existing* version,
+    so a client that already holds the mesh keeps it and goes on receiving live
+    transforms; no new blobs are produced and none are sent.
+
+    Why the version is held steady rather than dropped: useMeshSync rebuilds a
+    mesh whenever its cache key changes, and that key folds in this version. A
+    rebuild with no geometry buffer available leaves the object removed from the
+    scene — it disappears and does not come back on its own. Keeping the version
+    identical is what makes "geometry off" a freeze rather than a blackout.
 
     json_string — scene data WITHOUT vertices/indices/UVs arrays.
     geometry_dict — {object_name: (version, vCount, iCount, hasUVs, blob_bytes)}
@@ -814,7 +854,12 @@ def get_scene_data(force_geometry=False):
     geometry_objects = [obj for obj in visible if obj.type in ('MESH', 'CURVE')]
 
     now = time.monotonic()
-    if force_geometry:
+    if not sync_geometry:
+        # Geometry sync is off — extract nothing this pass. Cached entries keep
+        # the version they already had, which is what holds the client's meshes
+        # in place (see the docstring).
+        refreshing = set()
+    elif force_geometry:
         # Manual refresh — take the whole scene in one pass rather than letting
         # the interval and budget spread it over several ticks.
         refreshing = {obj.name for obj in geometry_objects}
@@ -848,6 +893,11 @@ def get_scene_data(force_geometry=False):
         # ------------------------------------------------------------------
         if obj.type == 'CURVE':
             entry = cache.get(obj.name)
+            if entry is None and not sync_geometry:
+                # Never sampled and geometry sync is off — transform only. The
+                # curve appears once geometry sync is switched back on.
+                data["objects"].append(obj_data)
+                continue
             if obj.name in refreshing or entry is None:
                 payload = _extract_curve_payload(obj, depsgraph)
                 if payload is not None:
@@ -873,6 +923,13 @@ def get_scene_data(force_geometry=False):
         # shader graph re-read every tick
         # ==================================================================
         entry = cache.get(obj.name)
+        if entry is None and not sync_geometry:
+            # Never extracted and geometry sync is off — transform only, no
+            # version and no blob. useMeshSync has nothing to build from, so the
+            # object stays absent rather than flickering in and out. It appears
+            # on the first tick after geometry sync is switched back on.
+            data["objects"].append(obj_data)
+            continue
         if obj.name in refreshing or entry is None:
             extracted = _extract_mesh_geometry(obj, depsgraph)
             # Mark seen whether or not it worked, so a mesh that fails to
@@ -918,13 +975,21 @@ def get_scene_data(force_geometry=False):
 
         # Blob is sent once per client per version; reusing the cached bytes
         # under a bumped version is what keeps material edits live at 5 Hz.
-        geometry_dict[obj.name] = (
-            fields["version"],
-            entry["v_count"],   # vCount
-            entry["i_count"],   # iCount
-            entry["has_uvs"],
-            entry["blob"],
-        )
+        #
+        # With geometry sync off the version is still emitted but the blob is
+        # withheld: the version above is computed from cached counts and the
+        # material, so for an untouched object it is byte-identical to last
+        # tick. Clients see the same version, skip the rebuild, and go on
+        # rendering the mesh they already have — with live transforms and live
+        # materials — while no bytes cross the wire.
+        if sync_geometry:
+            geometry_dict[obj.name] = (
+                fields["version"],
+                entry["v_count"],   # vCount
+                entry["i_count"],   # iCount
+                entry["has_uvs"],
+                entry["blob"],
+            )
 
         data["objects"].append(obj_data)
 
@@ -1371,7 +1436,13 @@ def _timer():
                         sent.clear()
 
             # --- Scene data (JSON text) + geometry blobs (binary) ---
-            data_json, geometry_dict = get_scene_data(force_geometry=force_geo)
+            # The "Sync Geometry" checkbox is read every tick rather than cached
+            # so flipping it takes effect on the next tick, mid-session, without
+            # a stop/start.
+            data_json, geometry_dict = get_scene_data(
+                force_geometry=force_geo,
+                sync_geometry=_sync_geometry_enabled(),
+            )
 
             # Versions still in play this tick. Each client's sent-set is trimmed
             # to these, so a version that no longer exists — e.g. a material
@@ -1771,10 +1842,28 @@ class B3SYNC_PT_panel(bpy.types.Panel):
 
         layout.separator()
 
+        # Geometry sync toggle. Off means transforms, materials and shader
+        # graphs stay live at 5 Hz while no mesh or curve data is extracted or
+        # sent — the cheap way to keep iterating in a heavy scene. Meshes
+        # already on a client stay exactly where they are (see get_scene_data).
+        col = layout.column()
+        col.prop(scene, "b3sync_sync_geometry", text="Sync Geometry")
+        if not scene.b3sync_sync_geometry:
+            col.label(
+                text="Geometry frozen on clients" if running else "Geometry will not be sent",
+                icon='INFO',
+            )
+
+        layout.separator()
+
         # Buttons
         if running:
             layout.operator("b3sync.stop", icon='PAUSE')
-            layout.operator("b3sync.refresh_geometry", icon='FILE_REFRESH')
+            # Nothing to refresh while geometry is off — the operator would set
+            # a flag the next tick deliberately ignores.
+            row = layout.row()
+            row.enabled = scene.b3sync_sync_geometry
+            row.operator("b3sync.refresh_geometry", icon='FILE_REFRESH')
         else:
             layout.operator("b3sync.start", icon='PLAY')
 
@@ -1802,7 +1891,7 @@ def register():
             pass  # wasn't registered — fine
 
     # Remove old scene properties if they exist (e.g. from a prior version)
-    for prop in ("b3sync_port",):
+    for prop in ("b3sync_port", "b3sync_sync_geometry"):
         try:
             delattr(bpy.types.Scene, prop)
         except (AttributeError, KeyError):
@@ -1820,6 +1909,19 @@ def register():
         max=65535,
     )
 
+    # Geometry sync toggle. Off keeps transforms/materials/lights live while
+    # mesh and curve data is neither extracted nor sent — see get_scene_data().
+    bpy.types.Scene.b3sync_sync_geometry = bpy.props.BoolProperty(
+        name="Sync Geometry",
+        description=(
+            "Send mesh and curve geometry to connected clients. Turn off to keep "
+            "working on transforms, materials and lighting in a heavy scene — "
+            "geometry already sent stays put on the client and stops updating"
+        ),
+        default=True,
+        update=_on_sync_geometry_changed,
+    )
+
     print("[B3Sync] Panel registered — open the 3D View sidebar (N) → B3Sync")
 
     # Auto-start the server on add-on registration
@@ -1831,7 +1933,13 @@ def unregister():
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
 
-    del bpy.types.Scene.b3sync_port
+    # Tolerate a property that was never registered (an unregister running
+    # after a failed register, or a Blender that refused the assignment).
+    for prop in ("b3sync_port", "b3sync_sync_geometry"):
+        try:
+            delattr(bpy.types.Scene, prop)
+        except (AttributeError, KeyError):
+            pass
 
     print("[B3Sync] Unregistered")
 
