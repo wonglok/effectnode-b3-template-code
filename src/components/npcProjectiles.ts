@@ -48,7 +48,7 @@ const POOL_SIZE = 24
 const LIFETIME = 1.6
 
 /** Downward acceleration, world units / s². Gentle — this is a squirt, not a lob. */
-const GRAVITY = 4.5
+const GRAVITY = 9.0
 
 /** A droplet that gets this close to the target has "hit" and is recycled. */
 const HIT_RADIUS = 0.35
