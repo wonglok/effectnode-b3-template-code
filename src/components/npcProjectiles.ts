@@ -154,7 +154,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
     const material = new THREE.MeshStandardMaterial({
         color: 0x3aa8ff,
         emissive: 0x1b6fd4,
-        emissiveIntensity: 0.55,
+        emissiveIntensity: 1.55,
         roughness: 0.15,
         metalness: 0.0,
         transparent: true,
@@ -186,7 +186,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
 
     const splashes: Splash[] = []
     for (let i = 0; i < SPLASH_POOL; i++) {
-        const material = new THREE.MeshBasicMaterial({
+        const material = new THREE.MeshPhysicalMaterial({
             color: 0x8fd4ff,
             transparent: true,
             opacity: 0,
@@ -196,6 +196,8 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
             // Additive-looking glow fading *toward* a fog colour is not a look
             // worth having; the droplets stay fogged, the burst does not.
             fog: false,
+            emissive: 0x8fd4ff,
+            emissiveIntensity: 0.5,
         })
 
         const flash = new THREE.Mesh(flashGeometry, material)
