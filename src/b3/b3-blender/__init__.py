@@ -39,6 +39,7 @@ import threading
 import time
 import sys
 import subprocess
+import queue
 
 # ---------------------------------------------------------------------------
 # Auto-install websockets in Blender's bundled Python
@@ -65,11 +66,6 @@ SERVER_PORT_DEFAULT = 8765
 TICK_INTERVAL = 1.0 / 5.0
 GEO_DISCOVERY_INTERVAL = 30.0
 
-# How many rows the panel's queue list shows before collapsing the rest into a
-# "… and N more" line. The sidebar scrolls, but a 200-row list is unreadable and
-# costs a label allocation per row on every redraw (5 Hz).
-QUEUE_LIST_MAX = 10
-
 
 # ---------------------------------------------------------------------------
 # Shared state — all protected by _lock
@@ -94,11 +90,6 @@ _state = {
     # show the interval field's real cost without re-walking the scene itself.
     "geo_object_count": 0,   # mesh + curve objects considered
     "geo_budget": 0,         # how many of them were due this tick
-    # Ordered geometry refresh queue — [(name, due_in_seconds, has_geometry)],
-    # soonest-due first, which is the order the scheduler processes them in.
-    "geo_queue": [],
-    # Per-client transfer backlog, republished at the end of every tick.
-    "queue_transfers": None,
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -156,16 +147,175 @@ def _on_sync_geometry_changed(self, context):
     _redraw_all()
 
 
-def _shorten(name: str, limit: int = 22) -> str:
-    """Trim an object name for the panel's queue rows.
+# ---------------------------------------------------------------------------
+# Background reader — keeps blocking asset I/O off Blender's main thread
+# ---------------------------------------------------------------------------
+# Blender's Python API is not thread-safe. bpy, bmesh and the depsgraph may only
+# be touched from the main thread — the thread _timer runs on — and reaching them
+# from a worker corrupts state or takes the process down outright. What can move
+# off the main thread is therefore exactly the work that touches no bpy object.
+#
+# In a sync pass that leaves one genuinely unbounded cost: reading asset bytes
+# from disk. A 4K HDR is tens of megabytes and a handful of 4096² textures can
+# be a hundred, all of which used to block the UI for the length of the read.
+# The other candidates were measured and are not worth a thread — _pack_geometry
+# is ~12 ms for a 200k-vertex mesh and the whole scene's json.dumps is ~2 ms at
+# 173 objects, both an order of magnitude below a single bmesh pass.
+#
+# So jobs carry plain values only — a path and some strings in, bytes out — and
+# never a bpy object. That rule is the whole safety argument for this thread, so
+# it is stated here rather than left to the reader.
+#
+# The protocol is deliberately one-way: the main thread asks for a read and moves
+# on, and picks the bytes up on a later tick. Nothing ever waits on the worker,
+# so a slow read can only delay that one asset — it cannot stall the sync.
 
-    Blender clips a label that overflows the sidebar rather than wrapping it, so
-    a long name would push the due-time — the reason the row is there — out of
-    view. Trimming the name instead keeps the right-hand column readable.
+# Refuse absurd files rather than try to buffer them. A .hdr this large is a
+# mistake, and reading it would stall the reader thread and eat the heap.
+_READ_MAX_BYTES = 256 * 1024 * 1024
+
+# Returned by _take_read while the bytes are still being fetched, so callers can
+# tell "not ready yet" apart from "no result".
+_READ_PENDING = object()
+
+# Returned by _extract_world_hdr while the HDR bytes are still being fetched.
+# Distinct from None, which means "this world genuinely has no HDR" — the caller
+# broadcasts that to clients and marks them sent, so conflating the two would
+# drop the environment map permanently.
+_HDR_PENDING = object()
+
+_read_jobs = queue.Queue()
+_read_results = {}        # slot -> (mime, bytes, key) | None when the read failed
+_reads_in_flight = set()  # slots with a read queued or running
+_read_warned = set()      # (slot, path) already reported, to avoid 5 Hz spam
+# Each worker gets its own stop Event rather than sharing one. start_server
+# calls stop_server first, so a shared Event would be cleared again by the
+# restart before the old thread noticed it had been set — the old thread would
+# then loop forever and leak on every start/stop cycle.
+_worker_stop = None
+_worker_thread = None
+
+_MIME_BY_EXT = {
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.hdr':  'application/octet-stream',
+    '.exr':  'application/octet-stream',
+}
+
+
+def _mime_for_ext(path: str) -> str:
+    """MIME type for an asset path, defaulting to PNG as the sync always has."""
+    return _MIME_BY_EXT.get(os.path.splitext(path)[1].lower(), 'image/png')
+
+
+def _start_worker():
+    """Start the reader thread if it isn't already running."""
+    global _worker_thread, _worker_stop
+    if _worker_thread is not None and _worker_thread.is_alive():
+        return
+    stop = threading.Event()
+    _worker_stop = stop
+    _worker_thread = threading.Thread(
+        target=_worker_loop, args=(stop,), name="B3Sync-Reader", daemon=True
+    )
+    _worker_thread.start()
+
+
+def _stop_worker():
+    """Ask the reader thread to exit. Safe to call when it was never started."""
+    global _worker_thread, _worker_stop
+    if _worker_stop is not None:
+        _worker_stop.set()
+    with _lock:
+        # Nothing can still be in flight once the worker is told to stop, and a
+        # slot left marked that way would make _take_read answer _READ_PENDING
+        # forever with no worker left to resolve it.
+        _reads_in_flight.clear()
+        _read_results.clear()
+    # Dropping the references is what makes a restart safe: the old thread keeps
+    # its own (now set) Event and winds down, while the next _start_worker gets a
+    # fresh one. There is no join — the thread polls on a 0.25 s timeout and
+    # joining would risk hanging shutdown behind a large in-progress read.
+    _worker_thread = None
+    _worker_stop = None
+
+
+def _worker_loop(stop):
+    """Reader thread body. Touches no bpy object, ever — see the note above."""
+    while not stop.is_set():
+        try:
+            slot, path, mime, key = _read_jobs.get(timeout=0.25)
+        except queue.Empty:
+            continue
+
+        data = None
+        error = None
+        try:
+            if os.path.getsize(path) > _READ_MAX_BYTES:
+                error = f"larger than {_READ_MAX_BYTES // (1024 * 1024)} MB"
+            else:
+                with open(path, 'rb') as f:
+                    data = f.read()
+        except OSError as exc:
+            error = str(exc)
+
+        with _lock:
+            if stop.is_set():
+                # The server was restarted while this read was running. Drop the
+                # result instead of publishing it into the new run's state.
+                continue
+            _read_results[slot] = None if data is None else (mime, data, key)
+            _reads_in_flight.discard(slot)
+            # Warn once per (slot, path). The main thread re-queues an unreadable
+            # file every tick, so an un-suppressed message would flood the
+            # console at 5 Hz; a later success re-arms it.
+            warn = error is not None and (slot, path) not in _read_warned
+            if warn:
+                _read_warned.add((slot, path))
+            elif data is not None:
+                _read_warned.discard((slot, path))
+
+        if warn:
+            print(f"[B3Sync] WARNING: could not read '{path}': {error}")
+
+
+def _request_read(slot, path, mime, key):
+    """Queue a disk read for `slot`. Ignored when one is already in flight."""
+    _start_worker()
+    with _lock:
+        if slot in _reads_in_flight:
+            return
+        _reads_in_flight.add(slot)
+    _read_jobs.put((slot, path, mime, key))
+
+
+def _take_read(slot):
+    """Collect a finished read.
+
+    Returns (mime, bytes, key) once ready, _READ_PENDING while the bytes are
+    still being fetched, or None when there is no result (a failed read, or no
+    read was ever requested).
     """
-    if len(name) <= limit:
-        return name
-    return name[: limit - 1] + "…"
+    with _lock:
+        if slot in _reads_in_flight:
+            return _READ_PENDING
+        if slot in _read_results:
+            return _read_results.pop(slot)
+    return None
+
+
+def _image_disk_path(img):
+    """Absolute path of an image's source file, or None if it isn't on disk.
+
+    Reads bpy attributes, so main thread only — but cheap, and it is the one
+    thing the worker cannot work out for itself, since it must not touch bpy.
+    """
+    if not img.filepath:
+        return None
+    path = bpy.path.abspath(img.filepath)
+    return path if os.path.isfile(path) else None
 
 
 def _redraw_all():
@@ -930,23 +1080,11 @@ def get_scene_data(force_geometry=False, sync_geometry=True, geo_interval=GEO_DI
                 if len(refreshing) >= budget:
                     break
 
-    # Ordered queue for the panel. Sorting by due time reproduces the order the
-    # loop above will actually process them in: objects that have never been
-    # extracted sort first (due_in 0), and ties keep scene order because sort()
-    # is stable — which is exactly how the budget loop walks them.
-    queue = []
-    for obj in geometry_objects:
-        last = discovered.get(obj.name)
-        due_in = 0.0 if last is None else max(0.0, geo_interval - (now - last))
-        queue.append((obj.name, due_in, obj.name in cache))
-    queue.sort(key=lambda row: row[1])
-
     # Publish the workload so the panel can show what the interval currently
     # costs, rather than re-walking the scene on every redraw to work it out.
     with _lock:
         _state["geo_object_count"] = len(geometry_objects)
         _state["geo_budget"] = budget
-        _state["geo_queue"] = queue
 
     # One depsgraph for the whole pass.
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -1127,14 +1265,24 @@ def _extract_world_hdr():
                     hdr_bytes = img.packed_file.data
                 except Exception:
                     pass
+
             if hdr_bytes is None and img.filepath:
-                try:
-                    path = bpy.path.abspath(img.filepath)
-                    with open(path, 'rb') as f:
-                        hdr_bytes = f.read()
-                except Exception as e:
-                    print(f"[B3Sync] WARNING: could not read environment file '{img.filepath}': {e}")
-                    continue
+                path = bpy.path.abspath(img.filepath)
+                if os.path.isfile(path):
+                    # On disk — fetch it on the worker thread. Until the bytes
+                    # land, report pending rather than falling through: the
+                    # caller reads None as "this world has no HDR", tells every
+                    # client so, and marks them sent, so the real blob would
+                    # then never be delivered at all.
+                    done = _take_read("hdr")
+                    if done is _READ_PENDING:
+                        return _HDR_PENDING
+                    if done is not None and done[2] == key:
+                        hdr_bytes = done[1]
+                    else:
+                        _request_read("hdr", path, _mime_for_ext(path), key)
+                        return _HDR_PENDING
+
             if not hdr_bytes:
                 print(f"[B3Sync] WARNING: no data for environment image '{img.name}'")
                 continue
@@ -1185,14 +1333,9 @@ def _extract_textures():
                 if name in textures:
                     continue
 
-                # Get encoded image bytes (PNG / JPG / WebP)
-                img_bytes, mime, ext = _get_image_bytes(img)
-                if img_bytes is None:
-                    print(f"[B3Sync] WARNING: no image data for '{name}'")
-                    continue
-
                 w, h = img.size
                 key = f"{name}_{w}x{h}"
+                slot = f"tex:{name}"
 
                 # Check cache
                 with _lock:
@@ -1201,20 +1344,51 @@ def _extract_textures():
                     textures[name] = cached
                     continue
 
-                result = (mime, img_bytes, key)
+                # Bytes fetched off-thread since the last tick, if any. The key
+                # check discards a read that finished after the image changed on
+                # disk, so a resize can never publish stale dimensions.
+                done = _take_read(slot)
+                if done is _READ_PENDING:
+                    # Still being read — serve the previous bytes so the client
+                    # keeps the texture it has, rather than dropping it.
+                    if cached is not None:
+                        textures[name] = cached
+                    continue
+                if done is not None and done[2] == key:
+                    result = done
+                else:
+                    path = _image_disk_path(img)
+                    if path is not None:
+                        # Read it off the main thread and pick it up next tick.
+                        _request_read(slot, path, _mime_for_ext(path), key)
+                        if cached is not None:
+                            textures[name] = cached
+                        continue
+                    # No file on disk, so the bytes exist only inside Blender
+                    # (packed data or a generated image) and the read has to
+                    # happen here.
+                    img_bytes, mime, ext = _get_image_bytes(img)
+                    if img_bytes is None:
+                        print(f"[B3Sync] WARNING: no image data for '{name}'")
+                        continue
+                    result = (mime, img_bytes, key)
+
                 textures[name] = result
 
                 with _lock:
                     _state["tex_cache"][name] = result
                     for ws_set in _state["tex_sent"].values():
                         ws_set.discard(name)
-                print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
+                print(f"[B3Sync] Texture extracted: {name} ({w}×{h})")
             break
 
-    # Purge stale cache entries
+    # Purge stale cache entries — but keep anything whose read is still in
+    # flight. Those are absent from `textures` this tick, and evicting them
+    # would drop bytes the client may still need and force a pointless re-send.
     with _lock:
+        loading = set(_reads_in_flight)
         for name in list(_state["tex_cache"].keys()):
-            if name not in textures:
+            if name not in textures and f"tex:{name}" not in loading:
                 del _state["tex_cache"][name]
                 for ws_set in _state["tex_sent"].values():
                     ws_set.discard(name)
@@ -1563,29 +1737,34 @@ def _timer():
 
             # --- World HDR (binary blob) — send once per client, no intensity ---
             hdr = _extract_world_hdr()
-            for ws in current:
-                ws_id = id(ws)
-                with _lock:
-                    already_sent = ws_id in _state["hdr_sent"]
-                if already_sent:
-                    continue
-                if hdr is not None:
-                    w, h, pixels_bytes, _ = hdr
-                    header = json.dumps({"type": "hdr", "width": w, "height": h})
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                        asyncio.run_coroutine_threadsafe(ws.send(pixels_bytes), loop)
-                    except RuntimeError:
+            # A pending HDR means the bytes are still being read off-thread. Skip
+            # the whole block for this tick — falling into the else below would
+            # tell every client this world has no environment map and mark them
+            # sent, so the real blob would never arrive.
+            if hdr is not _HDR_PENDING:
+                for ws in current:
+                    ws_id = id(ws)
+                    with _lock:
+                        already_sent = ws_id in _state["hdr_sent"]
+                    if already_sent:
                         continue
-                else:
-                    # No world HDR — tell client there's nothing
-                    header = json.dumps({"type": "hdr", "width": 0, "height": 0})
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                    except RuntimeError:
-                        continue
-                with _lock:
-                    _state["hdr_sent"].add(ws_id)
+                    if hdr is not None:
+                        w, h, pixels_bytes, _ = hdr
+                        header = json.dumps({"type": "hdr", "width": w, "height": h})
+                        try:
+                            asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                            asyncio.run_coroutine_threadsafe(ws.send(pixels_bytes), loop)
+                        except RuntimeError:
+                            continue
+                    else:
+                        # No world HDR — tell client there's nothing
+                        header = json.dumps({"type": "hdr", "width": 0, "height": 0})
+                        try:
+                            asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                        except RuntimeError:
+                            continue
+                    with _lock:
+                        _state["hdr_sent"].add(ws_id)
 
             # --- World HDR intensity — send every tick (lightweight JSON) ---
             hdr_intensity_msg = json.dumps({
@@ -1677,51 +1856,14 @@ def _timer():
                     except RuntimeError:
                         pass
 
-            # --- Queue snapshot for the panel -----------------------------
-            # Taken after every send above, so these counts describe what is
-            # still owed to clients once this tick's work has gone out — not
-            # what was owed before it. Everything is derived from the same
-            # bookkeeping the sends themselves use, so the panel cannot drift
-            # from reality: a count is zero exactly when there is nothing left
-            # to send.
-            n_clients = len(current)
-            geo_pending = tex_pending = 0
-            hdr_done = cams_done = lights_done = 0
-            with _lock:
-                for ws in current:
-                    ws_id = id(ws)
-                    geo_pending += max(
-                        0, len(geometry_dict) - len(_state["geo_sent"].get(ws_id, ()))
-                    )
-                    tex_pending += max(
-                        0, len(textures) - len(_state["tex_sent"].get(ws_id, ()))
-                    )
-                    hdr_done += 1 if ws_id in _state["hdr_sent"] else 0
-                    cams_done += 1 if ws_id in _state["scene_cams_sent"] else 0
-                    lights_done += 1 if ws_id in _state["lights_sent"] else 0
-
-                _state["queue_transfers"] = {
-                    "clients": n_clients,
-                    # Blob bytes still owed. Summed across clients, so a single
-                    # texture missing for two clients counts twice — that is the
-                    # number of transfers, not of distinct textures.
-                    "geo_pending": geo_pending,
-                    "tex_pending": tex_pending,
-                    "hdr_done": hdr_done,
-                    "cams_done": cams_done,
-                    "lights_done": lights_done,
-                }
         else:
-            # No clients, or no live server: nothing is queued. Clear the
-            # snapshot rather than leaving the last one in place, which would
-            # show a frozen queue that never drains on a panel that keeps
-            # redrawing at 5 Hz. The panel keys off this being None.
+            # No clients, or no live server, so get_scene_data never ran this
+            # tick and would otherwise leave the last pass's numbers in place —
+            # the panel would go on reporting a relay that isn't happening.
+            # Zeroed together because the panel derives its sweep from them as a
+            # ratio, and a zero budget must also mean a zero count or that
+            # division is by zero on every redraw.
             with _lock:
-                _state["queue_transfers"] = None
-                _state["geo_queue"] = []
-                # Zeroed together: the panel derives its sweep from these two as
-                # a ratio, so clearing the count while leaving the budget would
-                # leave it dividing by zero on every redraw.
                 _state["geo_budget"] = 0
                 _state["geo_object_count"] = 0
 
@@ -1802,6 +1944,10 @@ def start_server():
         _state["geo_cache"].clear()
         _state["geo_discovered"].clear()
         _state["geo_force_refresh"] = False
+    # The reads from the previous run were already dropped by _stop_worker (via
+    # stop_server above), and a worker told to stop discards whatever it was
+    # holding rather than publishing into this run.
+    _start_worker()
 
     # During add-on registration, bpy.context may be a restricted context
     # that lacks a 'scene' attribute. Fall back to the default port.
@@ -1843,6 +1989,11 @@ def stop_server():
         _state["geo_cache"].clear()
         _state["geo_discovered"].clear()
         _state["geo_force_refresh"] = False
+
+    # Stop the reader thread with the server it serves. A read already running
+    # finishes and parks its bytes in _read_results, where the next start_server
+    # clears them.
+    _stop_worker()
 
     # Flag the old server as stopped BEFORE any blocking work — the panel
     # reads these flags on the next redraw.
@@ -2001,55 +2152,6 @@ class B3SYNC_PT_panel(bpy.types.Panel):
                 # is what makes that visible.
                 sweep = math.ceil(object_count / budget) * TICK_INTERVAL
                 col.label(text=f"full sweep ≈ {sweep:.1f}s")
-
-        layout.separator()
-
-        # ------------------------------------------------------------------
-        # Sync queue — what the sync still owes, republished every tick
-        # ------------------------------------------------------------------
-        # Both sources are written on the main thread during _timer and redrawn
-        # at the same 5 Hz cadence, so this list tracks the sync live rather
-        # than sampling it on demand.
-        with _lock:
-            queue = list(_state["geo_queue"])
-            transfers = _state["queue_transfers"]
-
-        # transfers stays None until the first tick with a client connected, so
-        # this doubles as the "is anything actually connected" check.
-        if running and transfers is not None:
-            box = layout.box()
-            box.label(text="Sync Queue")
-
-            if not queue:
-                box.label(text="No meshes or curves to sync")
-            else:
-                col = box.column(align=True)
-                for name, due_in, has_geometry in queue[:QUEUE_LIST_MAX]:
-                    # An object that was never extracted has no meaningful
-                    # countdown, and one that is past due reads as "due" rather
-                    # than as a negative number.
-                    when = "due" if due_in <= 0 else f"{due_in:.1f}s"
-                    # "no geo" rather than "new": it covers both an object that
-                    # has never been extracted and one whose extraction failed,
-                    # which are indistinguishable from here and both mean the
-                    # client has nothing for this name yet.
-                    suffix = "" if has_geometry else "  (no geo)"
-                    col.label(text=f"{_shorten(name)} — {when}{suffix}")
-                hidden = len(queue) - QUEUE_LIST_MAX
-                if hidden > 0:
-                    col.label(text=f"… and {hidden} more")
-
-            box.separator()
-            box.label(text="Pending transfers")
-            col = box.column(align=True)
-            col.label(text=f"geometry blobs — {transfers['geo_pending']}")
-            col.label(text=f"textures — {transfers['tex_pending']}")
-            clients = transfers["clients"]
-            # The once-per-client payloads: "N/N sent" is exactly the set the
-            # send loop skips on, so a full count means nothing is retried.
-            col.label(text=f"hdr — {transfers['hdr_done']}/{clients} sent")
-            col.label(text=f"cameras — {transfers['cams_done']}/{clients} sent")
-            col.label(text=f"lights — {transfers['lights_done']}/{clients} sent")
 
         layout.separator()
 
