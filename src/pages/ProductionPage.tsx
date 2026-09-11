@@ -10,6 +10,7 @@ import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { AvatarPicker } from '../components/avatar/AvatarPicker'
+import { IntelligenceScan } from '../runtime-intelligence/src/clients/IntelligenceScan'
 
 const DEPLOY_URL = '/deploy/scene.zip'
 
@@ -96,6 +97,7 @@ export function ProductionPage() {
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
                         <BloomRender />
+                        {process.env.NODE_ENV === 'development' && <IntelligenceScan></IntelligenceScan>}
                     </ProductionViewer>
                 )}
 
