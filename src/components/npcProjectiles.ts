@@ -104,7 +104,7 @@ interface Splash {
      * fade every live splash in lockstep. Pre-built with the pool, so a burst
      * still allocates nothing.
      */
-    material: THREE.MeshBasicMaterial
+    material: THREE.MeshPhysicalMaterial
     /** One launch velocity per bead, parallel to `beads`. */
     beadVelocity: THREE.Vector3[]
     /** Seconds remaining; <= 0 means the splash is free. */

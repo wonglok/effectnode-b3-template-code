@@ -795,9 +795,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         armedFolder.add(settings, 'npcArmedWalkTimescale', 0.2, 6, 0.1).name('Armed Walk Rate')
         armedFolder.add(settings, 'npcArmedRunTimescale', 0.2, 6, 0.1).name('Armed Run Rate')
         armedFolder.close()
-        npcFolder
-            .add({ respawn: respawnNpcs }, 'respawn')
-            .name('Respawn NPCs')
+        npcFolder.add({ respawn: respawnNpcs }, 'respawn').name('Respawn NPCs')
 
         // ------------------------------------------------------------------
         // Movement / animation / camera scratch state

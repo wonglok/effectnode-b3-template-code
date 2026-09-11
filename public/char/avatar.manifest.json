@@ -4,14 +4,14 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/winter-clothing-male.glb",
-    "face": "/char/male/face/mexican.glb"
+    "body": "/char/male/body/water-guy.glb",
+    "face": "/char/male/face/mexican2.glb"
   },
   "headBone": null,
   "head": {
     "position": [
       0,
-      0,
+      0.004999999999999998,
       0
     ],
     "rotation": [
@@ -37,9 +37,9 @@
       0
     ],
     "scale": [
-      1,
-      1,
-      1
+      1.1,
+      1.1,
+      1.1
     ]
   },
   "offsets": [
@@ -3462,6 +3462,82 @@
           1
         ]
       }
+    },
+    {
+      "bodyUrl": "/char/male/body/water-guy.glb",
+      "faceUrl": "/char/male/face/mexican.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "bodyUrl": "/char/male/body/water-guy.glb",
+      "faceUrl": "/char/male/face/mexican2.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1.1,
+          1.1,
+          1.1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0.004999999999999998,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     }
   ],
   "weapons": [
@@ -3526,8 +3602,8 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/winter-clothing-male.glb",
-      "face": "/char/male/face/mexican.glb"
+      "body": "/char/male/body/water-guy.glb",
+      "face": "/char/male/face/mexican2.glb"
     },
     "female": {
       "body": "/char/female/body/pink.glb",

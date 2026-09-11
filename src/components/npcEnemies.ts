@@ -294,23 +294,44 @@ function pickVariant<T>(pool: T[], index: number): T | null {
     return pool[index % pool.length]
 }
 
-/**
- * Build the scene group for one NPC, choosing a body × face look from the
- * avatar library's catalog for its gender. Male and female alternate so the
- * crowd reads as mixed, and the body/face indices are offset differently so
- * repeated genders don't come out identical.
- */
+/** The per-NPC transform the avatar rig is parented to. Named for the index so
+ *  a scene dump lines it up with `npcs[i]` and the spawn log. */
 function createNpcGroup(index: number): THREE.Group {
     const group = new THREE.Group()
     group.name = `npc-${index}`
     return group
 }
 
-/** Resolve the manifest for an NPC from the avatar library, or null when the
- *  catalog has nothing for that gender (defensive — the pools are populated). */
+/**
+ * The body the whole crowd wears, per gender.
+ *
+ * Pinned rather than drawn from the pool so the enemies read as one squad
+ * instead of an assorted crowd of passers-by — they are all carrying the same
+ * gun, and a uniform makes that legible at a glance. Faces still vary (see
+ * `manifestFor`), which is what keeps them from looking like clones.
+ *
+ * By catalog **id**, not URL: the catalog stays the single place a body's path
+ * is written down, so moving the GLB never means editing the crowd.
+ */
+const NPC_BODY_ID: Record<Gender, string> = {
+    male: 'waterguy-body',
+    female: 'waterlady-body',
+}
+
+/**
+ * Resolve the manifest for an NPC from the avatar library, or null when the
+ * catalog has nothing for that gender (defensive — the pools are populated).
+ *
+ * Genders alternate so the crowd is mixed; the *body* is fixed per gender (see
+ * `NPC_BODY_ID`) and only the head is picked from the pool by index, so the
+ * squad is uniform without being identical.
+ */
 function manifestFor(index: number) {
     const gender: Gender = index % 2 === 0 ? 'male' : 'female'
-    const body = pickVariant(partsFor(gender, 'body'), index)
+    const bodies = partsFor(gender, 'body')
+    // Falls back to the pool when the pinned look is missing, so a renamed
+    // catalog id degrades to an assorted crowd rather than to no crowd at all.
+    const body = bodies.find((v) => v.id === NPC_BODY_ID[gender]) ?? pickVariant(bodies, index)
     const face = pickVariant(partsFor(gender, 'face'), index)
     if (!body || !face) return null
     return makeDefaultManifest({

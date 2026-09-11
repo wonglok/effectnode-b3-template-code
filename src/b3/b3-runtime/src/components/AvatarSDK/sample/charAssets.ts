@@ -433,9 +433,12 @@ export interface PartPool {
  * 2026 (all single-mesh rigged "Scene" exports, independent looks): bodies
  * army-1 / commander-1 / rocket-01 / space-army-01..03 / swat /
  * wintersnow / lime, plus the chinese head — the current male boot default
- * is `swat × chinese`. Female looks: body-01 / body-02 + eight Tripo bodies
- * (blue-polo / office-01 / office-02 / runner / space / street / teal-polo /
- * pink) and head-01 + five Tripo heads (blond / lady / princess / snow-white /
+ * is `swat × chinese`. water-guy / water-lady were added Sept 2026 (both
+ * 65-bone single-mesh rigs in the same export frame as `chinese`, so they take
+ * the uniform body sink unmodified).
+ * Female looks: body-01 / body-02 + nine Tripo bodies (blue-polo / office-01 /
+ * office-02 / runner / space / street / teal-polo / pink / water-lady) and
+ * head-01 + five Tripo heads (blond / lady / princess / snow-white /
  * southern). Bodies and heads are independent, so any body × any head of a
  * gender composes. `<Avatar>` auto-seats cross-character heads (different
  * skeleton rest space) via `seating.ts` (rigid glue when >1 cm apart,
@@ -469,6 +472,9 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'lime2-body', label: 'lime2', kind: 'body', gender: 'male', url: '/char/male/body/lime2.glb' },
       // Added Sept 2026 — lok-body single-mesh rigged export.
       { id: 'lok-body', label: 'lok', kind: 'body', gender: 'male', url: '/char/male/body/lok-body.glb' },
+      // Added Sept 2026 — water-guy single-mesh rigged export (65-bone, scene
+      // "Armature" + one skinned mesh, like `chinese.glb`).
+      { id: 'waterguy-body', label: 'water-guy', kind: 'body', gender: 'male', url: '/char/male/body/water-guy.glb' },
     ],
     face: [
       { id: 'male-head', label: 'asian', kind: 'face', gender: 'male', url: '/char/male/face/asian.glb' },
@@ -497,6 +503,9 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'tealpolo-body', label: 'teal-polo', kind: 'body', gender: 'female', url: '/char/female/body/teal-polo.glb' },
       // Added Sept 2026 — pink single-mesh rigged export.
       { id: 'pink-body', label: 'pink', kind: 'body', gender: 'female', url: '/char/female/body/pink.glb' },
+      // Added Sept 2026 — water-lady single-mesh rigged export (65-bone, scene
+      // "Armature" + one skinned mesh, like `chinese.glb`).
+      { id: 'waterlady-body', label: 'water-lady', kind: 'body', gender: 'female', url: '/char/female/body/water-lady.glb' },
     ],
     face: [
       { id: 'female-head', label: 'head-01', kind: 'face', gender: 'female', url: '/char/female/face/head-01.glb' },
