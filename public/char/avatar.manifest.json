@@ -4,8 +4,8 @@
   "name": "avatar-01",
   "gender": "male",
   "assets": {
-    "body": "/char/male/body/lok-body.glb",
-    "face": "/char/male/face/lok-head.glb"
+    "body": "/char/male/body/winter-clothing-male.glb",
+    "face": "/char/male/face/mexican.glb"
   },
   "headBone": null,
   "head": {
@@ -3386,6 +3386,44 @@
           0.9
         ]
       }
+    },
+    {
+      "bodyUrl": "/char/male/body/lok-body.glb",
+      "faceUrl": "/char/male/face/lok-head.glb",
+      "body": {
+        "position": [
+          0,
+          -0.045,
+          0
+        ],
+        "rotation": [
+          -90,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "head": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     }
   ],
   "motion": {
@@ -3430,8 +3468,8 @@
   },
   "genderDefaults": {
     "male": {
-      "body": "/char/male/body/lok-body.glb",
-      "face": "/char/male/face/lok-head.glb"
+      "body": "/char/male/body/winter-clothing-male.glb",
+      "face": "/char/male/face/mexican.glb"
     },
     "female": {
       "body": "/char/female/body/pink.glb",
