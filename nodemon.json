@@ -1,7 +1,7 @@
 {
-    "watch": ["src/effectnode-intelligence/src/"],
+    "watch": ["src/runtime-intelligence/src/"],
     "ext": "ts",
-    "exec": "node --import tsx src/effectnode-intelligence/src/server.ts",
+    "exec": "node --import tsx src/runtime-intelligence/src/server.ts",
     "signal": "SIGTERM",
     "delay": "500"
 }

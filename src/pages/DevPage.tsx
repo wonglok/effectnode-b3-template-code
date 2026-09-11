@@ -21,7 +21,7 @@ import { VirtualJoystick } from '../components/VirtualJoystick'
 import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
 import { RunToggleButton } from '../components/RunToggleButton'
-import { IntelligenceScan } from '../effectnode-intelligence/src/clients/IntelligenceScan'
+import { IntelligenceScan } from '../runtime-intelligence/src/clients/IntelligenceScan'
 
 // Export folder (File System Access API) handle persisted in IndexedDB via
 // localForage so the chosen folder survives page reloads. IndexedDB stores the

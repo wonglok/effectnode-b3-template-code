@@ -10,7 +10,7 @@ import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { AvatarPicker } from '../components/avatar/AvatarPicker'
-import { IntelligenceScan } from '../effectnode-intelligence/src/clients/IntelligenceScan'
+import { IntelligenceScan } from '../runtime-intelligence/src/clients/IntelligenceScan'
 
 /**
  * Production — optimised deployment preview.

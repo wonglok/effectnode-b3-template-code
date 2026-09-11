@@ -19,7 +19,7 @@ import {
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import { trackPipeline } from "../../../../../../effectnode-intelligence/src/clients/store/useRuntimePerf";
+import { trackPipeline } from "../../../../../../runtime-intelligence/src/clients/store/useRuntimePerf";
 
 // ---------------------------------------------------------------------------
 // Types
