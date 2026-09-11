@@ -684,17 +684,23 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // Gun placement, all live: every NPC's gun is re-posed from these the
         // frame after a slider moves, so a nudge can be dialled in while
         // watching the crowd rather than by editing `GRIP` and reloading.
-        // The offset is in world units in the avatar's own axes — the frame the
-        // barrel alignment targets — so it reads the same on every NPC.
+        // The offset is in centimetres (the rig's own unit — see
+        // `GunTuning`), in the avatar's own axes, so it reads the same way on
+        // every NPC. The sidebar's Weapon Settings tab edits the same fields.
         const gunFolder = npcFolder.addFolder('Gun Settings')
-        gunFolder.add(settings, 'npcGunEnabled').name('Water Gun')
-        gunFolder.add(settings, 'npcGunScale', 0.1, 1.5, 0.01).name('Scale (m)')
-        gunFolder.add(settings, 'npcGunOffX', -0.3, 0.3, 0.005).name('Offset X (m)')
-        gunFolder.add(settings, 'npcGunOffY', -0.3, 0.3, 0.005).name('Offset Y (m)')
-        gunFolder.add(settings, 'npcGunOffZ', -0.3, 0.3, 0.005).name('Offset Z (m)')
-        gunFolder.add(settings, 'npcGunRotX', -180, 180, 1).name('Rot X°')
-        gunFolder.add(settings, 'npcGunRotY', -180, 180, 1).name('Rot Y°')
-        gunFolder.add(settings, 'npcGunRotZ', -180, 180, 1).name('Rot Z°')
+        // `.listen()` on these because the sidebar's Weapon Settings tab edits
+        // the same fields. lil-gui only refreshes a control's displayed value
+        // when *it* is the one changed, so without this the two panels would
+        // show different numbers for the same gun (lil-gui keeps reading the
+        // object for playback either way — only the label goes stale).
+        gunFolder.add(settings, 'npcGunEnabled').name('Water Gun').listen()
+        gunFolder.add(settings, 'npcGunScale', 0.1, 1.5, 0.01).name('Scale (m)').listen()
+        gunFolder.add(settings, 'npcGunOffX', -10, 10, 0.1).name('Offset X (cm)').listen()
+        gunFolder.add(settings, 'npcGunOffY', -10, 10, 0.1).name('Offset Y (cm)').listen()
+        gunFolder.add(settings, 'npcGunOffZ', -10, 10, 0.1).name('Offset Z (cm)').listen()
+        gunFolder.add(settings, 'npcGunRotX', -180, 180, 1).name('Rot X°').listen()
+        gunFolder.add(settings, 'npcGunRotY', -180, 180, 1).name('Rot Y°').listen()
+        gunFolder.add(settings, 'npcGunRotZ', -180, 180, 1).name('Rot Z°').listen()
 
         // Armed / peace. Every control here is read straight off `settings` by
         // the crowd's own frame loop (through the `tunables` object it holds a

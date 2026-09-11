@@ -62,11 +62,18 @@ export interface GunTuning {
      */
     scale: number
     /**
-     * Nudge off the grip, in **world units** (the same ones `scale` is in), so
-     * `offY = 0.05` lifts the gun 5 cm out of the palm whatever the skeleton's
-     * own scale is. Applied in the avatar's own axes — the frame the barrel
-     * alignment targets — not the hand's, so a nudge here means the same thing
-     * for every NPC regardless of how the arm is posed.
+     * Nudge off the grip, in **centimetres** — so `offY = 5` lifts the gun 5 cm
+     * out of the palm.
+     *
+     * Centimetres, not metres, because that is the rig's own unit: the mixamo
+     * bodies are authored in cm, so a node under the hand bone is scaled by
+     * 0.01 (measured across the crowd). `applyGunTuning` normalises for that,
+     * so the number means the same distance on a body of any scale — and unlike
+     * `scale`, it is *not* expected to be read as a world length.
+     *
+     * Applied in the avatar's own axes — the frame the barrel alignment targets
+     * — not the hand's, so a nudge here means the same thing for every NPC
+     * regardless of how the arm is posed.
      */
     offX: number
     offY: number
@@ -271,14 +278,22 @@ export function attachGun(
 }
 
 /** Apply live tuning. Called on attach and again whenever the GUI changes. */
+/** Metres in one rig unit — the mixamo bodies are authored in centimetres. */
+const RIG_UNIT = 0.01
+
 export function applyGunTuning(gun: NpcGun, tuning: GunTuning): void {
     gun.mount.visible = tuning.enabled
-    // The holder hangs off the calibration mount, which is unit-scaled, so a
-    // position here is plain world units — the hand's centimetre scale is
-    // already behind us (it is divided out of `scale` below, and never reaches
-    // this node). Its own rotation does not move its origin, so the offset is
-    // read in the avatar's axes however the gun is later rotated.
-    gun.holder.position.set(tuning.offX, tuning.offY, tuning.offZ)
+    // The holder sits under the calibration mount, which is a child of the hand
+    // bone and so carries the skeleton's centimetre scale (measured 0.01). A
+    // position here is therefore *rig units*, not metres: moving it by 1 moves
+    // the gun 1 cm. Dividing by that scale converts the caller's centimetres so
+    // the number means the same distance on a body of any scale — the same
+    // correction `scale` needs below.
+    //
+    // A node's own rotation does not move its origin, so the offset is read in
+    // the avatar's axes however the gun is later rotated.
+    const perCm = RIG_UNIT / gun.handWorldScale
+    gun.holder.position.set(tuning.offX * perCm, tuning.offY * perCm, tuning.offZ * perCm)
     gun.holder.scale.setScalar(tuning.scale / gun.handWorldScale)
     gun.holder.rotation.set(
         THREE.MathUtils.degToRad(tuning.rotX),

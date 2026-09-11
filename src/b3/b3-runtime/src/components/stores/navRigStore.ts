@@ -40,8 +40,8 @@ interface NavRigSettings {
   /** Gun size in the hand. The model is ~1 m long against a ~1.7 m avatar, so
    *  this is well under 1. */
   npcGunScale: number;
-  /** Nudge off the grip, in world units. `npcGunOffY: 0.05` lifts the gun 5 cm
-   *  out of the palm. */
+  /** Nudge off the grip, in centimetres. `npcGunOffY: 5` lifts the gun 5 cm out
+   *  of the palm — the rig is authored in cm, so these are not metres. */
   npcGunOffX: number;
   npcGunOffY: number;
   npcGunOffZ: number;
@@ -80,6 +80,20 @@ interface NavRigState {
 
   /** Replace one or more settings fields (used by the lil-gui controls). */
   set: (patch: Partial<NavRigSettings>) => void;
+
+  /**
+   * Update settings **in place** and bump `revision`.
+   *
+   * The rig captures the `settings` object once (`NavMeshRig`) and lil-gui
+   * writes into it directly, so replacing it — which `set` does — would leave
+   * the running crowd reading a detached copy. This keeps the reference stable
+   * and still notifies React: the revision tick is what re-runs selectors, and
+   * because the fields really did change, they re-render with the new values.
+   */
+  patchSettings: (patch: Partial<NavRigSettings>) => void;
+
+  /** Increments on every `patchSettings` call — subscribe to this to re-render. */
+  revision: number;
 
   /** Move the dolly distance by `delta` world units; passing through 0
    *  releases the camera back to the default follow distance. */
@@ -182,8 +196,15 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
   running: false,
   emotionRequest: null,
   jumpRequest: null,
+  revision: 0,
 
   set: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+
+  patchSettings: (patch) =>
+    set((s) => {
+      Object.assign(s.settings, patch);
+      return { revision: s.revision + 1 };
+    }),
 
   setStick: (stick) => set({ stick }),
 

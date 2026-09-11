@@ -13,6 +13,7 @@ import {
 import type { Axis, OffsetKey } from "./useAvatarStore";
 import { Chip, MONO, Section, SliderRow, SUB, ToggleRow } from "./panel";
 import { EmotionTester } from "./EmotionTester";
+import { WeaponTuning } from "./WeaponTuning";
 
 /**
  * Stop sidebar events from bubbling to the document/window listeners owned by
@@ -23,14 +24,18 @@ import { EmotionTester } from "./EmotionTester";
 const stopEvent = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 /**
- * Avatar-tuning sidebar for the DevPage nav-rig: two tabs only (Character +
- * Motion — no stage lighting). Every control writes straight into the avatar
- * store, which NavMeshRig consumes live, so the walker retunes in real time.
+ * Avatar-tuning sidebar for the DevPage nav-rig (no stage lighting). Every
+ * control writes straight into a store, which NavMeshRig consumes live, so the
+ * scene retunes in real time.
  *
  * Character  — body/head remix, head-insert + body-placement offsets, mesh
  *              layers, and manifest import/export.
  * Motion     — which `/char/motion-2/fbx/stay` clip feeds each of the rig's
  *              four locomotion states (idle / walk / run / jump) + playback.
+ * Emotion    — the one-shot gesture / dance tester.
+ * Weapon     — the NPC crowd's water gun: the offset that seats it in the hand,
+ *              its rotation and size. Lives in the *nav-rig* store rather than
+ *              the avatar store, since the gun belongs to the crowd.
  */
 
 /** A remix picker for one body/head part slot (shown when >1 variant exists). */
@@ -114,10 +119,12 @@ function OffsetGroup({
   );
 }
 
+/** Tab ids, in display order. The label is the id, capitalized by CSS. */
+const TABS = ["character", "motion", "emotion", "weapon settings"] as const;
+type Tab = (typeof TABS)[number];
+
 export function AvatarTuning() {
-  const [tab, setTab] = useState<"character" | "motion" | "emotion">(
-    "character",
-  );
+  const [tab, setTab] = useState<Tab>("character");
 
   const name = useAvatarStore((s) => s.name);
   const assets = useAvatarStore((s) => s.assets);
@@ -166,9 +173,9 @@ export function AvatarTuning() {
       onKeyUp={stopEvent}
       onContextMenu={stopEvent}
     >
-      {/* tab switcher: character · motion · emotion */}
-      <div className="flex shrink-0 gap-1 border-b border-studio-700 px-3 py-2">
-        {(["character", "motion", "emotion"] as const).map((value) => {
+      {/* tab switcher: character · motion · emotion · weapon settings */}
+      <div className="flex shrink-0 flex-wrap gap-1 border-b border-studio-700 px-3 py-2">
+        {TABS.map((value) => {
           const active = tab === value;
           return (
             <button
@@ -187,7 +194,9 @@ export function AvatarTuning() {
         })}
       </div>
 
-      {tab === "emotion" ? (
+      {tab === "weapon settings" ? (
+        <WeaponTuning />
+      ) : tab === "emotion" ? (
         <EmotionTester />
       ) : tab === "motion" ? (
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
