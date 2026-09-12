@@ -13,6 +13,10 @@
  * walking into the player, and drops back to wandering once the player is out
  * of range.
  *
+ * An armed NPC tracks the player with its **whole body** and will not shoot
+ * until the muzzle is on them (`facePlayer` / `aimedAtPlayer`) — the gun is
+ * calibrated to the group's forward, so facing the player *is* aiming at them.
+ *
  * ## Why this is not a set of R3F components
  *
  * The crowd is one simulation stepped once per frame, and its agents are plain
@@ -54,7 +58,6 @@ import { createNpcProjectiles } from './npcProjectiles'
 import {
     makeDefaultManifest,
     MOTION_SECTIONS,
-    partsFor,
     type Gender,
     type MotionClipDef,
 } from '../b3/b3-runtime/src/components/AvatarSDK'
@@ -116,6 +119,19 @@ const MOVING_SPEED = 0.05
  * shot past the check.
  */
 const AIM_HEIGHT = 1.1
+
+/**
+ * How closely an armed NPC must be facing the player before it will shoot —
+ * the cosine of the half-angle it is allowed to be off by, ~20 degrees.
+ *
+ * The gun is calibrated to the group's forward (`npcProps.calibrateGun`), so
+ * "the NPC is facing the player" and "the muzzle is on the player" are the same
+ * statement, and this is the threshold that makes the aim a *precondition* of
+ * the shot rather than something that merely tends to be true. Tight enough
+ * that a shot is never fired across the NPC's own shoulder; loose enough that
+ * the turn, which converges in a handful of frames, never visibly stalls one.
+ */
+const AIM_TOLERANCE_COS = Math.cos(THREE.MathUtils.degToRad(20))
 
 // ---------------------------------------------------------------------------
 // Armed clip set
@@ -288,12 +304,6 @@ function disposeObject(root: THREE.Object3D) {
     })
 }
 
-/** Deterministic-ish spawn variation so NPCs don't all wear the same face. */
-function pickVariant<T>(pool: T[], index: number): T | null {
-    if (pool.length === 0) return null
-    return pool[index % pool.length]
-}
-
 /** The per-NPC transform the avatar rig is parented to. Named for the index so
  *  a scene dump lines it up with `npcs[i]` and the spawn log. */
 function createNpcGroup(index: number): THREE.Group {
@@ -303,41 +313,50 @@ function createNpcGroup(index: number): THREE.Group {
 }
 
 /**
- * The body the whole crowd wears, per gender.
+ * The enemy NPCs' whole wardrobe: one pinned body and two pinned heads per
+ * gender, written down by **URL**.
  *
- * Pinned rather than drawn from the pool so the enemies read as one squad
- * instead of an assorted crowd of passers-by — they are all carrying the same
- * gun, and a uniform makes that legible at a glance. Faces still vary (see
- * `manifestFor`), which is what keeps them from looking like clones.
+ * This is a hard whitelist, not a sample of the avatar catalog. The crowd may
+ * wear nothing else, so the looks are spelled out here rather than drawn from
+ * `partsFor(...)`: the catalog holds dozens of looks for the *player* to pick
+ * between, and every one of them would otherwise be a look an enemy could spawn
+ * in. Keep this list closed — that is the whole point of it.
  *
- * By catalog **id**, not URL: the catalog stays the single place a body's path
- * is written down, so moving the GLB never means editing the crowd.
+ * URLs rather than catalog ids because that is what the list is a list of, and
+ * because there is nothing here to gain by indirecting through the catalog: the
+ * two bodies happen to be catalog entries, but the four heads are not (they
+ * carry no variants, so they are not offered in the avatar picker), and
+ * `makeDefaultManifest` resolves a plain URL either way.
  */
-const NPC_BODY_ID: Record<Gender, string> = {
-    male: 'waterguy-body',
-    female: 'waterlady-body',
+const NPC_BODY_URL: Record<Gender, string> = {
+    male: '/char/male/body/water-guy.glb',
+    female: '/char/female/body/water-lady.glb',
+}
+
+/** Per gender, alternating so the squad is uniform without being identical. */
+const NPC_FACE_URLS: Record<Gender, string[]> = {
+    male: ['/char/male/face/low-poly-asian-head.glb', '/char/male/face/low-poly-west-head.glb'],
+    female: ['/char/female/face/low-poly-west.glb', '/char/female/face/low-poly-asian-head.glb'],
 }
 
 /**
- * Resolve the manifest for an NPC from the avatar library, or null when the
- * catalog has nothing for that gender (defensive — the pools are populated).
+ * Resolve the manifest for an NPC, read straight off the whitelist above. It
+ * cannot fail and cannot select a look that is not on the list.
  *
- * Genders alternate so the crowd is mixed; the *body* is fixed per gender (see
- * `NPC_BODY_ID`) and only the head is picked from the pool by index, so the
- * squad is uniform without being identical.
+ * Genders alternate so the crowd is mixed, and each gender alternates between
+ * its two heads. The head index is the **per-gender ordinal** — `floor(index/2)`
+ * because parity is what picks the gender — and not `index`: every male is an
+ * even index, so `index % 2` would hand all of them head 0 and the variation
+ * would silently vanish from the crowd.
  */
 function manifestFor(index: number) {
     const gender: Gender = index % 2 === 0 ? 'male' : 'female'
-    const bodies = partsFor(gender, 'body')
-    // Falls back to the pool when the pinned look is missing, so a renamed
-    // catalog id degrades to an assorted crowd rather than to no crowd at all.
-    const body = bodies.find((v) => v.id === NPC_BODY_ID[gender]) ?? pickVariant(bodies, index)
-    const face = pickVariant(partsFor(gender, 'face'), index)
-    if (!body || !face) return null
+    const faces = NPC_FACE_URLS[gender]
+    const face = faces[Math.floor(index / 2) % faces.length]
     return makeDefaultManifest({
         name: `npc-${index}`,
         gender,
-        assets: { body: body.url, face: face.url },
+        assets: { body: NPC_BODY_URL[gender], face },
     })
 }
 
@@ -476,10 +495,6 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     for (let i = 0; i < npcs.length; i++) {
         if (disposed) break
         const manifest = manifestFor(i)
-        if (!manifest) {
-            console.warn(`[NpcEnemies] no catalog look for npc-${i}`)
-            continue
-        }
         try {
             const rig = await loadAvatar({
                 manifest,
@@ -582,6 +597,52 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         _euler.set(0, Math.atan2(vx, vz), 0)
         _quat.setFromEuler(_euler)
         npc.group.quaternion.slerp(_quat, Math.min(1, _lerpFactor(delta) * 5))
+    }
+
+    /**
+     * Turn an NPC to face the player — whole body, not just the gun.
+     *
+     * The gun is calibrated (every frame) to the group's forward, so yawing the
+     * group is what swings the muzzle onto the player: there is nothing to aim
+     * separately. Body and barrel turn together, which is what makes the threat
+     * read from any distance.
+     *
+     * Yaw-only, matching `faceVelocity` and the player's own facing maths —
+     * `atan2(x, z)` puts the group's +Z on the player. This is also why the
+     * shot still lands: the barrel points horizontally at the player, and the
+     * droplet's ballistic solve (`npcProjectiles.spawn`) supplies the small
+     * upward correction to the chest. Pitching the body would tilt the whole
+     * avatar, which reads worse than the ~centimetres it would gain.
+     */
+    const facePlayer = (npc: Npc, playerPos: THREE.Vector3, delta: number) => {
+        const dx = playerPos.x - npc.group.position.x
+        const dz = playerPos.z - npc.group.position.z
+        // Standing on the player: `atan2(0, 0)` has no answer, and any heading
+        // is as good as another, so keep the one we have rather than snapping.
+        if (dx * dx + dz * dz < 1e-6) return
+        _euler.set(0, Math.atan2(dx, dz), 0)
+        _quat.setFromEuler(_euler)
+        npc.group.quaternion.slerp(_quat, Math.min(1, _lerpFactor(delta) * 5))
+    }
+
+    /**
+     * Is the muzzle actually on the player? The gate that makes aiming a
+     * *precondition* of firing rather than a thing that usually happens.
+     *
+     * The muzzle rides the group's forward (`calibrateGun`), so this reduces to
+     * the group's yaw against the horizontal direction to the player — no muzzle
+     * world transform needed, and no `sqrt` until the final compare.
+     */
+    const aimedAtPlayer = (npc: Npc, playerPos: THREE.Vector3): boolean => {
+        const dx = playerPos.x - npc.group.position.x
+        const dz = playerPos.z - npc.group.position.z
+        const horizontal = Math.hypot(dx, dz)
+        // Coincident with the player: nothing to be off by, so don't block on it.
+        if (horizontal < 1e-4) return true
+        // The group's local +Z in world space. `facePlayer`/`faceVelocity` only
+        // ever write yaw, so the quaternion carries no roll or pitch to undo.
+        _forward.set(0, 0, 1).applyQuaternion(npc.group.quaternion)
+        return (_forward.x * dx + _forward.z * dz) / horizontal >= AIM_TOLERANCE_COS
     }
 
     /** Blend the locomotion clips and advance the mixers. */
@@ -779,7 +840,15 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
                 npc.group.position.fromArray(agent.position)
-                faceVelocity(npc, agent, delta)
+                // Armed NPCs keep the player at gunpoint with their whole body —
+                // this is the aim the shot below is gated on. It replaces (does
+                // not compose with) the travel facing, because the two disagree:
+                // `faceVelocity` early-returns under `MOVING_SPEED`, so an NPC
+                // standing at the standoff ring would otherwise keep whichever
+                // heading it happened to arrive on and fire across its shoulder.
+                // Peaceful NPCs still face where they are going.
+                if (npc.armed && playerPos) facePlayer(npc, playerPos, delta)
+                else faceVelocity(npc, agent, delta)
                 animate(npc, agent, delta)
 
                 // Keep the gun aimed along the character's forward, on every
@@ -806,11 +875,19 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // chasing NPC is still closing the distance and a shot mid-
                 // stride reads as a stumble. `hold` is the stance that is
                 // already standing still, so the muzzle is settled.
+                //
+                // `aimedAtPlayer` is the "aim, then shoot" gate: the shot waits
+                // until `facePlayer` above has actually swung the muzzle onto
+                // the player. It is a check on the pose of *this* frame — read
+                // after the turn and the mixers — so a shot can never leave the
+                // barrel before the barrel points. The wait is short (the turn
+                // converges in a handful of frames) but it is what closes the
+                // gap where a just-aggroed NPC fires the instant it stops.
                 if (npc.armed && npc.gun && playerPos) {
                     const dx = playerPos.x - npc.group.position.x
                     const dz = playerPos.z - npc.group.position.z
                     const inRange = dx * dx + dz * dz <= fireRangeSq
-                    if (npc.mode === 'hold' && inRange) {
+                    if (npc.mode === 'hold' && inRange && aimedAtPlayer(npc, playerPos)) {
                         // Fires last, after the mixers have posed this frame, so
                         // the droplet leaves the muzzle where it is now
                         // pointing (see `fire`).
@@ -863,6 +940,9 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
 const _quat = new THREE.Quaternion()
 const _euler = new THREE.Euler()
+
+/** The group's forward, read by the aim gate (see `aimedAtPlayer`). */
+const _forward = new THREE.Vector3()
 
 /** Aim point for the projectile pool's `getTarget` (see `aimPoint`). */
 const _aimPoint = new THREE.Vector3()
