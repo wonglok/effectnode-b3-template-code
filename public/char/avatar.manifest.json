@@ -5,13 +5,13 @@
   "gender": "male",
   "assets": {
     "body": "/char/male/body/water-guy.glb",
-    "face": "/char/male/face/mexican2.glb"
+    "face": "/char/male/face/low-poly-west-head.glb"
   },
   "headBone": null,
   "head": {
     "position": [
       0,
-      0.004999999999999998,
+      0,
       0
     ],
     "rotation": [
@@ -37,9 +37,9 @@
       0
     ],
     "scale": [
-      1.1,
-      1.1,
-      1.1
+      1,
+      1,
+      1
     ]
   },
   "offsets": [
@@ -3641,7 +3641,7 @@
   "genderDefaults": {
     "male": {
       "body": "/char/male/body/water-guy.glb",
-      "face": "/char/male/face/mexican2.glb"
+      "face": "/char/male/face/low-poly-west-head.glb"
     },
     "female": {
       "body": "/char/female/body/pink.glb",
