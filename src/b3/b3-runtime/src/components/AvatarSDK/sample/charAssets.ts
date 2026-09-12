@@ -433,13 +433,17 @@ export interface PartPool {
  * 2026 (all single-mesh rigged "Scene" exports, independent looks): bodies
  * army-1 / commander-1 / rocket-01 / space-army-01..03 / swat /
  * wintersnow / lime, plus the chinese head — the current male boot default
- * is `swat × chinese`. water-guy / water-lady were added Sept 2026 (both
+ * is `swat × chinese`. The low-poly heads (male low-poly-asian /
+ * low-poly-west-head, female low-poly-asian / low-poly-west) were added Sept
+ * 2026 too, and are also what the enemy crowd wears (npcEnemies.ts).
+ * water-guy / water-lady were added Sept 2026 (both
  * 65-bone single-mesh rigs in the same export frame as `chinese`, so they take
  * the uniform body sink unmodified).
  * Female looks: body-01 / body-02 + nine Tripo bodies (blue-polo / office-01 /
  * office-02 / runner / space / street / teal-polo / pink / water-lady) and
  * head-01 + five Tripo heads (blond / lady / princess / snow-white /
- * southern). Bodies and heads are independent, so any body × any head of a
+ * southern), plus the low-poly heads noted above. Bodies and heads are
+ * independent, so any body × any head of a
  * gender composes. `<Avatar>` auto-seats cross-character heads (different
  * skeleton rest space) via `seating.ts` (rigid glue when >1 cm apart,
  * dual-drive when congruent).
@@ -488,6 +492,10 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'chinese-head', label: 'chinese', kind: 'face', gender: 'male', url: '/char/male/face/chinese.glb' },
       // Added Sept 2026 — lok-head single-mesh rigged export.
       { id: 'lok-head', label: 'lok', kind: 'face', gender: 'male', url: '/char/male/face/lok-head.glb' },
+      // Added Sept 2026 — the low-poly heads, also the enemy crowd's two male
+      // looks (see npcEnemies.ts).
+      { id: 'lowpolyasian-head', label: 'low-poly-asian', kind: 'face', gender: 'male', url: '/char/male/face/low-poly-asian-head.glb' },
+      { id: 'lowpolywest-head', label: 'low-poly-west', kind: 'face', gender: 'male', url: '/char/male/face/low-poly-west-head.glb' },
     ],
   },
   female: {
@@ -514,6 +522,10 @@ export const GENDER_PARTS: Record<Gender, PartPool> = {
       { id: 'princess-face', label: 'princess', kind: 'face', gender: 'female', url: '/char/female/face/princess.glb' },
       { id: 'snowwhite-face', label: 'snow-white', kind: 'face', gender: 'female', url: '/char/female/face/snow-white.glb' },
       { id: 'southern-face', label: 'southern', kind: 'face', gender: 'female', url: '/char/female/face/southern.glb' },
+      // Added Sept 2026 — the low-poly heads, also the enemy crowd's two
+      // female looks (see npcEnemies.ts).
+      { id: 'lowpolyasian-face', label: 'low-poly-asian', kind: 'face', gender: 'female', url: '/char/female/face/low-poly-asian-head.glb' },
+      { id: 'lowpolywest-face', label: 'low-poly-west', kind: 'face', gender: 'female', url: '/char/female/face/low-poly-west.glb' },
     ],
   },
 }

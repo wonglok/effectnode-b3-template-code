@@ -109,7 +109,7 @@ const SPAWN_FALLBACK_DISTANCE = 8
 const ARRIVED_THRESHOLD = 0.6
 
 /** Below this speed an NPC is treated as standing still and blends to idle. */
-const MOVING_SPEED = 0.05
+const MOVING_SPEED = 0.04
 
 /**
  * Height above the player's origin that the NPCs shoot at — roughly the chest of
@@ -118,7 +118,7 @@ const MOVING_SPEED = 0.05
  * recycled; aiming at the chest but testing against the feet would sail every
  * shot past the check.
  */
-const AIM_HEIGHT = 1.1
+const AIM_HEIGHT = 0.8
 
 /**
  * How closely an armed NPC must be facing the player before it will shoot —
