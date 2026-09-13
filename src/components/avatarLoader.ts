@@ -24,6 +24,7 @@
  */
 
 import * as THREE from 'three'
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 
 import { UPRIGHT_REVEAL, applyBodyOffset, uprightFraction } from '../b3/b3-runtime/src/components/AvatarSDK/avatarPose'
 import { loadGLB } from '../b3/b3-runtime/src/components/AvatarSDK/decoders'
@@ -406,9 +407,18 @@ export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promis
     const manifest = cfg?.manifest ?? (await fetchSavedManifest())
 
     // --- load + compose body & face on the shared mixamorig skeleton ----------
+    // `loadGLB` memoizes per URL, so for a crowd these are the *shared*
+    // templates — clone before composing. Each avatar reparents its body and
+    // face into its own `root` and seats the head, so handing two avatars one
+    // scene would let the second `root.add` move the first avatar's model.
+    //
+    // `SkeletonUtils.clone`, not `Object3D.clone`: both GLBs are skinned
+    // (a `skins` entry each) and a plain clone leaves the copy bound to the
+    // original's bones. Geometry and materials stay shared by reference, which
+    // is what keeps the textures uploaded exactly once.
     const [bodyGltf, faceGltf] = await Promise.all([loadGLB(manifest.assets.body), loadGLB(manifest.assets.face)])
-    const bodyScene = bodyGltf.scene
-    const faceScene = faceGltf.scene
+    const bodyScene = cloneSkinned(bodyGltf.scene)
+    const faceScene = cloneSkinned(faceGltf.scene)
 
     // Classify (congruent dual-drive vs cross-look seat) while both scenes are
     // still unparented so the measurement can't be skewed by the upright rotation.

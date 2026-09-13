@@ -88,8 +88,11 @@ export function fitWithinCap(
     }
 }
 
-/** Something drawable onto a canvas: a decoded `<img>` or an existing canvas. */
-export type ImageSource = HTMLImageElement | HTMLCanvasElement
+/**
+ * Something drawable onto a canvas: a decoded `<img>`, an existing canvas, or
+ * the `ImageBitmap` that `GLTFLoader` hands back for an image embedded in a GLB.
+ */
+export type ImageSource = HTMLImageElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas
 
 /**
  * Draw `image` onto an offscreen canvas at `width`×`height`.
