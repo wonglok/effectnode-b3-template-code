@@ -262,6 +262,99 @@ reflects the default render context, not necessarily the variant in use.
 
 ---
 
+# Optimization heuristics (WebGPU)
+
+The queries above say *what* is expensive. These are the levers that actually
+change it, most-impactful first. Each is a change to app code, not a query — use
+`/api/mutation/eval` to prototype against the live scene, then edit the source.
+
+## Swapping in `WebGPURenderer` is not itself the optimization
+
+Simply replacing `WebGLRenderer` with `WebGPURenderer` does not yield massive
+gains. The win is moving CPU-bound work — particle systems, flocking physics,
+procedural terrain, anything looping per-entity in JavaScript — onto the GPU as
+a **compute shader** written in TSL (Three Shader Language). The power is in the
+offload, not the backend.
+
+This app already runs TSL end to end: `/api/query/shader` answering
+`language: "wgsl"` with `uniforms.from: "node-builder"` is the fingerprint.
+
+Where to look: low `triangles` but high `frameMs` and a *modest*
+`runtime.load.drawCalls` means the cost is simulation on the CPU, not
+rasterization — that is your compute-shader candidate.
+
+## CPU timings are not GPU timings
+
+`runtime.framerate` and `runtime.slowEffects` are built from
+`performance.now()`, so they include JavaScript overhead and queue wait. They
+tell you *a frame* was slow, not *which pass* was slow. The GPU timestamp query
+is the ground truth, and it needs the renderer constructed with:
+
+```js
+new WebGPURenderer({ trackTimestamp: true })
+```
+
+then `await renderer.resolveTimestampsAsync()` after a pass to read the exact
+GPU milliseconds for compute and render work. If `slowEffects` blames a pass
+that the timestamp says is cheap, the cost is in JS, not the shader.
+
+## Consolidate draw calls (target < 100)
+
+CPU→GPU draw calls stay expensive under WebGPU. Two tools:
+
+- **`InstancedMesh`** for many copies of one geometry — grass, debris, rocks.
+  `/api/query/memory` already ranks exactly these as `instancingCandidates`,
+  with the projected `drawCallsNow → drawCallsAfter`. Treat that list as the
+  work queue.
+- **`BatchedMesh`** to merge *varied* geometries into a single call. Reach for
+  it when `instancingCandidates` is empty yet `/api/query/drawcalls` still shows
+  many small objects sharing a material — distinct geometries don't collide in
+  the instancing heuristic.
+
+Verify against the measured number, not the estimate: re-run
+`/api/query/performance` and compare `runtime.load.drawCalls` (whole frame,
+passes included) before and after.
+
+## VRAM-optimized asset formats
+
+`totals.textureBytes` is the number to watch. Full-resolution PNG/JPG decodes
+into uncompressed VRAM and dominates memory bandwidth at sample time.
+
+- **KTX2** keeps textures compressed *on the GPU*, which is the single biggest
+  VRAM lever — the texture is never blown out to raw RGBA.
+- **Draco / Meshopt** compress the geometry payloads that show up as
+  `geometryBytes` and `load.memory.attributesSize`.
+
+Confirm through `/api/query/memory`: `gpu.textures` and `gpu.totalBytes` come
+from `renderer.info.memory` and count only what the GPU actually holds, so they
+are the honest before/after.
+
+## Dispose, or the tab crashes
+
+WebGPU memory leaks crash browser tabs. Three.js does **not** garbage-collect
+unused GPU assets; a removed mesh's geometry, material and textures stay
+resident until you release them explicitly:
+
+```js
+geometry.dispose()
+material.dispose()
+texture.dispose()
+```
+
+The two queries that catch this:
+
+- `/api/query/memory` **`gpu` vs `totals`** — a persistent gap is unreferenced
+  but still-resident memory.
+- **`leakCandidates`** — a differential walk, not a verdict. Query *twice*,
+  before and after the suspected action, or the list is empty merely because it
+  was the first walk.
+
+`/api/mutation/dispose` performs the subtree disposal for you. For entities
+spawned and destroyed repeatedly, prefer **object pooling** — reuse the
+instances and never dispose on the hot path at all.
+
+---
+
 # Mutations
 
 > **Local only.** These routes refuse non-loopback callers and cross-origin
