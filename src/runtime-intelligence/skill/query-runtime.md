@@ -36,7 +36,7 @@ GET http://localhost:4343/api/editors
 
 ```json
 { "editors": [
-    { "id": "597424ca1396d3c7", "loadId": "20986c91b6fbad7d",
+    { "id": "959e7c1b-9fcb-4387-a93b-f4e08c932b2d", "loadId": "60502996-c646-47a4-9333-b81d3d77ed89",
       "label": "macOS · Chrome · /production", "platform": "macOS", "browser": "Chrome",
       "page": "/production", "viewport": { "width": 1728, "height": 854 },
       "devicePixelRatio": 1, "userAgent": "Mozilla/5.0 …",
@@ -81,7 +81,7 @@ Every route returns one shape:
 
 ```
 GET /api/query/performance?editor=safari
-GET /api/query/performance?editor=597424ca1396d3c7
+GET /api/query/performance?editor=959e7c1b-9fcb-4387-a93b-f4e08c932b2d
 POST /api/mutation/eval?editor=iphone
 ```
 

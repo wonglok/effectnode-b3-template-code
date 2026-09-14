@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import type { EditorIdentity } from '../protocol'
 
 /**
@@ -73,20 +74,6 @@ export function readEnvironment(): RuntimeEnvironment {
 // Identity
 // ---------------------------------------------------------------------------
 
-/** `crypto.randomUUID` is `undefined` outside a secure context, which a phone
- *  hitting the dev server over plain `http://192.168.x.x` is — exactly the
- *  device this feature exists for. `getRandomValues` carries no such
- *  restriction, so it is the primitive used here. */
-function randomId(): string {
-    const c = typeof crypto !== 'undefined' ? crypto : null
-    if (c && typeof c.getRandomValues === 'function') {
-        const bytes = new Uint8Array(8)
-        c.getRandomValues(bytes)
-        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-    }
-    return Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-6)
-}
-
 const ID_STORAGE_KEY = 'runtime-intelligence:editor-id'
 
 /**
@@ -96,19 +83,26 @@ const ID_STORAGE_KEY = 'runtime-intelligence:editor-id'
  * so two tabs get two ids, and unlike a module-level constant it is not reset
  * every time Vite re-evaluates this module on HMR — otherwise a `?editor=`
  * target captured a moment ago would stop resolving mid-session.
+ *
+ * Ids come from the `uuid` package rather than a bare `crypto.randomUUID()`,
+ * which is `undefined` outside a secure context — that is a phone hitting the
+ * dev server over plain `http://192.168.x.x`, exactly the device this feature
+ * exists for. `uuid`'s `v4()` prefers `crypto.randomUUID` where it exists and
+ * otherwise falls back to `crypto.getRandomValues`, which carries no such
+ * restriction, so the same call site is safe in both.
  */
 function persistentTabId(): string {
     try {
         const existing = sessionStorage.getItem(ID_STORAGE_KEY)
         if (existing) return existing
-        const created = randomId()
+        const created = uuidv4()
         sessionStorage.setItem(ID_STORAGE_KEY, created)
         return created
     } catch {
         // Storage access can throw outright (blocked storage, some private
         // modes). Losing the stable id is a far smaller problem than losing the
         // editor, so fall back to a per-call one.
-        return randomId()
+        return uuidv4()
     }
 }
 
@@ -122,8 +116,8 @@ function persistentTabId(): string {
  */
 function perLoadId(): string {
     const scope = typeof window === 'undefined' ? null : (window as unknown as { __riLoadId?: string })
-    if (!scope) return randomId()
-    if (!scope.__riLoadId) scope.__riLoadId = randomId()
+    if (!scope) return uuidv4()
+    if (!scope.__riLoadId) scope.__riLoadId = uuidv4()
     return scope.__riLoadId
 }
 
