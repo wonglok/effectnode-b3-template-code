@@ -66,21 +66,24 @@ The **Dev** page sidebar can:
 
 `src/runtime-intelligence` is a local agent bridge in two halves: a **backend** (Express + socket.io, default `localhost:4343`) that holds no scene state and merely forwards requests, and an **editor** (`IntelligenceScan`) mounted inside each page's R3F canvas that answers them about the live scene. `bun run dev` starts it next to Vite, and Vite proxies `/api` + `/socket.io` to it, so everything works same-origin from `http://localhost:5173`.
 
-**The app must be open in a browser tab, or every query answers `503`.**
+**At least one tab must be open, or every query answers `503`.** Every request fans out to *all* connected tabs and comes back with one labelled answer per device, so a single call compares an iPhone, an Android and a laptop against the same scene.
 
 ```bash
-# is an editor connected?
-curl -s localhost:4343/api/health
+# who is connected? These labels are what `?editor=` takes.
+curl -s localhost:4343/api/editors | jq '.editors[] | {label, viewport, devicePixelRatio}'
 
-# what is a frame actually costing?
-curl -s localhost:4343/api/query/performance | jq '.result.runtime.framerate, .result.runtime.load'
+# what is a frame costing, on every device at once?
+curl -s localhost:4343/api/query/performance \
+  | jq '.result.responses[] | {who: .editor.label, fps: .result.runtime.framerate.fps}'
 
-# why is GPU memory growing?
-curl -s localhost:4343/api/query/memory | jq '.result.gpu, .result.leakCandidates'
+# why is GPU memory growing? (aimed at one device)
+curl -s 'localhost:4343/api/query/memory?editor=mac' \
+  | jq '.result.responses[0].result | {gpu, leakCandidates}'
 ```
 
 | Route | Answers |
 |---|---|
+| `GET /api/editors` | who is connected — label, platform, viewport, DPR |
 | `GET /api/query/scene` | scene graph, world-space bounds, cull flags |
 | `GET /api/query/performance` | geometry cost + live fps / frame budget / effect timing / browser environment |
 | `GET /api/query/memory` | GPU registry, leak candidates, instancing candidates |
@@ -90,7 +93,9 @@ curl -s localhost:4343/api/query/memory | jq '.result.gpu, .result.leakCandidate
 | `POST /api/mutation/eval` | run a snippet with `$0` / `scene` / `camera` / `gl` in scope |
 | `POST /api/mutation/dispose` | detach a subtree and release its GPU resources |
 
-Mutations are **local-only** — they refuse non-loopback callers and cross-origin browser requests, and the editor disables them outside a dev build. `eval` is arbitrary JavaScript execution in the page, by design.
+Add `?editor=<id or label substring>` to any route, GET or POST, to aim it at one tab instead of all of them — `?editor=safari`, `?editor=iphone`. An ambiguous selector is refused rather than guessed at.
+
+Mutations are **local-only** — they refuse non-loopback callers and cross-origin browser requests, and the editor disables them outside a dev build. `eval` is arbitrary JavaScript execution in the page, by design. Note that a mutation without `?editor=` lands on **every** connected tab.
 
 The full protocol — selector resolution, failure modes, how to read each facet, and the WebGPU optimisation heuristics — lives in [`src/runtime-intelligence/skill/query-runtime.md`](src/runtime-intelligence/skill/query-runtime.md).
 

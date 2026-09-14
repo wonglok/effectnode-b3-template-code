@@ -582,30 +582,53 @@ the other room you then have to walk over and reload.
 # Worked example: frame drops after an avatar swap
 
 ```bash
-# 1. Baseline. Is it drawing or CPU-bound?
-curl -s localhost:4343/api/query/performance | jq '.totals, .runtime.load.drawCalls, .runtime.framerate'
+# 0. Who is answering? These are the labels `?editor=` takes.
+curl -s localhost:4343/api/editors | jq '.editors[] | {label, viewport, devicePixelRatio}'
 
-# 2. Which object costs the most draw calls?
-curl -s localhost:4343/api/query/drawcalls | jq '.objects[:5]'
+# 1. Baseline across every device at once. Is it drawing, or CPU-bound?
+#    One responses[] entry per connected editor.
+curl -s localhost:4343/api/query/performance | jq '
+  .result.responses[] | { who: .editor.label,
+    fps: .result.runtime.framerate.fps, frameMs: .result.runtime.framerate.frameMs,
+    drawCalls: .result.runtime.load.drawCalls, passes: .result.runtime.load.frameCalls }'
+#    A device stuck at a low fps while the others sit at 60 is the one to chase.
 
-# 3. Nothing looks heavy in the scene graph, but the measured count is far higher
-#    — the gap is passes. Check effect timing.
-curl -s localhost:4343/api/query/performance | jq '.runtime.slowEffects'
+# 2. Which object costs the most draw calls? Ask one device — the counts are
+#    per-scene, and a phone may legitimately differ.
+curl -s 'localhost:4343/api/query/drawcalls?editor=mac' | jq '.result.responses[0].result.objects[:5]'
+
+# 3. Nothing looks heavy in the scene graph, but the measured count is far
+#    higher — the gap is passes. Check effect timing on the slowest device.
+curl -s 'localhost:4343/api/query/performance?editor=safari' \
+  | jq '.result.responses[0].result.runtime.slowEffects'
 
 # 4. Confirm the shader isn't the problem: read it, then its live uniform values.
-curl -s 'localhost:4343/api/query/shader?object=$0' | jq '.language, .uniforms.from, .uniforms.entries[:5]'
+#    Name the object outright. `$0` would work here too, but it is per-tab and
+#    only set once that tab has addressed something, so it is null on a fresh
+#    tab — and aiming it at several editors would read a different object on each.
+curl -s 'localhost:4343/api/query/shader?object=buildibng&editor=mac' \
+  | jq '.result.responses[0].result | .language, .uniforms.from, .uniforms.entries[:5]'
 
 # 5. Hypothesis test: hide the suspect and re-measure, without editing code.
+#    No `?editor=` — this hides it everywhere, which is what we want for a
+#    before/after that is comparable across devices.
 curl -s -X POST localhost:4343/api/mutation/patch \
   -H 'Content-Type: application/json' \
   -d '{"patch":[{"op":"replace","path":"/Tree/visible","value":false}]}'
-curl -s localhost:4343/api/query/performance | jq '.runtime.load.drawCalls'
+curl -s localhost:4343/api/query/performance \
+  | jq '.result.responses[] | {who: .editor.label, drawCalls: .result.runtime.load.drawCalls}'
 
 # 6. Undo.
 curl -s -X POST localhost:4343/api/mutation/patch \
   -H 'Content-Type: application/json' \
   -d '{"patch":[{"op":"replace","path":"/Tree/visible","value":true}]}'
 
-# 7. Memory: was anything leaked? Query once, do the thing, query again.
-curl -s localhost:4343/api/query/memory | jq '.totals, .gpu'   # both times
+# 7. Memory: was anything leaked? Query once, do the thing, query again —
+#    compare `gpu` against `totals` on the same device both times.
+curl -s 'localhost:4343/api/query/memory?editor=mac' \
+  | jq '.result.responses[0].result | .totals, .gpu'   # both times
+
+# 8. Confirm the change landed everywhere before moving on. `partial` on the
+#    envelope means at least one tab disagreed.
+curl -s localhost:4343/api/query/performance | jq '{count: .result.count, partial: .result.partial}'
 ```
