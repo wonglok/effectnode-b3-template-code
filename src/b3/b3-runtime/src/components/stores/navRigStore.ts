@@ -67,6 +67,15 @@ interface NavRigSettings {
      *  Applied live. */
     playerArmedWalkTimescale: number
     playerArmedRunTimescale: number
+
+    /** Health every character starts with. Ten droplets at `dropletDamage`. */
+    maxHp: number
+    /** Damage one water droplet does on contact. */
+    dropletDamage: number
+    /** How long a downed NPC lies there before coming back at full health. */
+    npcRespawnSeconds: number
+    /** How long the player stays down before reviving. */
+    playerRespawnSeconds: number
 }
 
 interface NavRigState {
@@ -109,6 +118,17 @@ interface NavRigState {
 
     /** Flip attack mode — the X key / button action. */
     toggleAttackMode: () => void
+
+    /** The player's health, 0..`settings.maxHp`. Lives here rather than beside
+     *  the NPCs' because the player HUD is a React component and has to render
+     *  it; the crowd's NPCs each own theirs privately. */
+    playerHp: number
+
+    /** Take one droplet's damage. Clamped at 0. */
+    damagePlayer: (amount: number) => void
+
+    /** Back to full health — the revive after being downed. */
+    resetPlayerHp: () => void
 
     /** Last one-shot gesture/dance requested by an emotion button. `nonce`
      *  advances on every request so even the same gesture can be re-triggered;
@@ -153,6 +173,11 @@ export interface EmotionDef {
 export const MIN_CAMERA_DISTANCE = 0.5
 export const MAX_CAMERA_DISTANCE = 200
 
+/** Starting (and revived) health. Exported because the initial `playerHp` and
+ *  the `maxHp` tunable have to agree, and `settings` cannot reference itself
+ *  from inside its own initialiser. */
+export const DEFAULT_MAX_HP = 100
+
 export const useNavRigStore = create<NavRigState>((set, get) => ({
     settings: {
         showNavMeshHelper: false,
@@ -179,12 +204,17 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         npcArmedRunTimescale: 1.5,
         playerArmedWalkTimescale: 6.5,
         playerArmedRunTimescale: 2.7,
+        maxHp: DEFAULT_MAX_HP,
+        dropletDamage: 10,
+        npcRespawnSeconds: 4,
+        playerRespawnSeconds: 4,
     },
 
     zoomRadius: 0,
     stick: { x: 0, y: 0 },
     running: false,
     attackMode: false,
+    playerHp: DEFAULT_MAX_HP,
     emotionRequest: null,
     jumpRequest: null,
 
@@ -195,6 +225,14 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     setAttackMode: (attackMode) => set({ attackMode }),
 
     toggleAttackMode: () => set((s) => ({ attackMode: !s.attackMode })),
+
+    // Clamped at 0 rather than going negative: the rig watches for the crossing
+    // to zero to trigger the death beat, and a value that keeps falling would
+    // re-trigger it on every hit landed on an already-downed player.
+    damagePlayer: (amount) =>
+        set((s) => ({ playerHp: Math.max(0, s.playerHp - amount) })),
+
+    resetPlayerHp: () => set({ playerHp: get().settings.maxHp }),
 
     requestEmotion: (def) =>
         set((s) => ({

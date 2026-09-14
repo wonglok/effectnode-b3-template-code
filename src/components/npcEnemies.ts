@@ -61,6 +61,8 @@ import {
     type MotionClipDef,
 } from '../b3/b3-runtime/src/components/AvatarSDK'
 import { ARMED_FIRING_CLIP, ARMED_SET_KEY, armedClipSet } from './armedClipSet'
+import { deathClipFor } from './deathClip'
+import { BAR_HEIGHT_ABOVE, createHealthBar, type HealthBar } from './healthBar'
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -184,18 +186,35 @@ export interface NpcTunables {
      *  the feet from sliding. */
     npcArmedWalkTimescale: number
     npcArmedRunTimescale: number
+    /** Health every NPC starts with, and the value a respawn restores. */
+    maxHp: number
+    /** Damage one droplet does. Read by the crowd so `NpcTarget.damage` needs no
+     *  argument, and the damage number lives in exactly one place. */
+    dropletDamage: number
+    /** How long a downed NPC stays down before getting back up. */
+    npcRespawnSeconds: number
 }
 
 /** An opaque handle on one NPC, for a shooter outside this module.
  *  See {@link NpcEnemies.targetFromObject}. */
 export interface NpcTarget {
     /**
-     * The NPC's chest in world space, or null once the crowd is disposed.
+     * The NPC's chest in world space, or null once the crowd is disposed or the
+     * NPC is down.
      *
      * A **shared scratch vector**, like the crowd's own `aimPoint`: read it and
      * use it immediately, don't hold on to it across a frame.
      */
     aimPoint(): THREE.Vector3 | null
+    /**
+     * Apply one droplet's damage. Returns true if that was the killing blow.
+     *
+     * Takes no amount: the crowd reads `tunables.dropletDamage` itself, so the
+     * damage number lives in one place and a shooter needs no knowledge of it.
+     * A no-op on an NPC that is already down, which is what stops a stray
+     * droplet in flight from re-killing a corpse.
+     */
+    damage(): boolean
 }
 
 export interface NpcEnemiesOptions {
@@ -215,6 +234,14 @@ export interface NpcEnemiesOptions {
      * holsters its gun, and no already-airborne droplet can splash them.
      */
     getHostile: () => boolean
+    /**
+     * One of this crowd's droplets just landed on the player.
+     *
+     * Injected rather than the crowd reaching for the player's health directly,
+     * for the same reason as `getPlayerPosition`: it keeps this module importing
+     * nothing from the store, and lets the rig own where player state lives.
+     */
+    onPlayerHit: () => void
     /** Read per frame so GUI edits take effect immediately. */
     tunables: NpcTunables
     /**
@@ -287,6 +314,14 @@ interface Npc {
     armedClips: boolean
     /** Countdown to the next shot, in seconds. Only ticks while armed and holding. */
     shotTimer: number
+    /** Health, 0..`tunables.maxHp`. At 0 the NPC goes down. */
+    hp: number
+    /** Downed: out of the crowd, not shooting, not a valid target. */
+    dead: boolean
+    /** Seconds left before a downed NPC gets back up. */
+    respawnTimer: number
+    /** The floating bar above this NPC's head. */
+    bar: HealthBar
 }
 
 /** Dispose every mesh under `root` (geometry + material). */
@@ -362,7 +397,7 @@ function manifestFor(index: number) {
 // ---------------------------------------------------------------------------
 
 export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnemies> {
-    const { scene, getPlayerPosition, getHostile, tunables, weapon } = opts
+    const { scene, getPlayerPosition, getHostile, onPlayerHit, tunables, weapon } = opts
     let navMesh = opts.navMesh
 
     let disposed = false
@@ -457,6 +492,18 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         group.position.fromArray(spawn)
         root.add(group)
 
+        // The bar hangs off the group, not the rig, so it exists from the first
+        // tick — an NPC whose avatar is still loading (or failed to) is still a
+        // shootable target with health, and a bar that appeared late would make
+        // it look like a different character.
+        const bar = createHealthBar()
+        // No `|| fallback` here on purpose: `maxHp` is a required tunable, and a
+        // falsy-default would silently turn a deliberate 0 into a full bar.
+        const barMax = tunables.maxHp
+        bar.setFraction(1, barMax, barMax)
+        bar.sprite.position.set(0, BAR_HEIGHT_ABOVE, 0)
+        group.add(bar.sprite)
+
         const agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
         npcs.push({
             group,
@@ -469,6 +516,10 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             armed: false,
             armedClips: false,
             shotTimer: 0,
+            hp: barMax,
+            dead: false,
+            respawnTimer: 0,
+            bar,
         })
     }
 
@@ -561,9 +612,107 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     const npcAimPoint = (npc: Npc): THREE.Vector3 =>
         _npcAimPoint.set(npc.group.position.x, npc.group.position.y + AIM_HEIGHT, npc.group.position.z)
 
+    // ------------------------------------------------------------------
+    // Health, death and respawn
+    // ------------------------------------------------------------------
+
+    /** Redraw a bar for the NPC's current health. Only call on a change. */
+    const refreshBar = (npc: Npc) => {
+        npc.bar.setFraction(npc.hp / Math.max(1, tunables.maxHp), npc.hp, tunables.maxHp)
+    }
+
+    /** Index into `npcs`, needed because respawn has to hand the agent back with
+     *  the same id and the death clip is chosen by it. */
+    const indexOf = (npc: Npc) => npcs.indexOf(npc)
+
+    /**
+     * Take an NPC out of the fight.
+     *
+     * Removing the agent is what actually stops it — the crowd is stepped every
+     * frame, so an NPC left in the simulation would keep steering, keep facing
+     * the player and (worst) keep *shooting* from the ground. The `agentId` null
+     * is the flag every downstream pass already skips on.
+     */
+    const killNpc = (npc: Npc) => {
+        if (npc.dead) return
+        npc.dead = true
+        npc.hp = 0
+        npc.respawnTimer = Math.max(0, tunables.npcRespawnSeconds)
+        npc.bar.setFraction(0, 0, tunables.maxHp)
+        npc.bar.setVisible(false)
+
+        if (npc.agentId) {
+            crowd.removeAgent(state, npc.agentId)
+            npc.agentId = null
+        }
+        // Holstered, and `armed` cleared so the disarm survives whatever the mode
+        // computation decides next; a corpse must not count toward the crowd's
+        // armed tally either.
+        setArmed(npc, false)
+        if (npc.gun) npc.gun.mount.visible = false
+
+        const clip = deathClipFor(Math.max(0, indexOf(npc)))
+        if (!npc.rig) return
+        // With no clip available there is nothing to animate, so the body is
+        // removed on the spot rather than left standing over its own grave.
+        if (clip) npc.rig.playEmotionOnce(clip)
+        else npc.rig.scene.visible = false
+    }
+
+    /**
+     * Bring an NPC back at full health, somewhere else on the navmesh.
+     *
+     * Re-added as a *new* agent rather than having the old one resurrected —
+     * `removeAgent` takes the corridor and the boundary state with it, so there
+     * is nothing left to restore into.
+     */
+    const respawnNpc = (npc: Npc) => {
+        const spawn = spawnOnNavMesh()
+        if (!spawn) {
+            // Nowhere to put it. Keep it down and try again next frame rather
+            // than dropping it at the origin, which could be off the navmesh.
+            npc.respawnTimer = 0.5
+            return
+        }
+        npc.dead = false
+        npc.hp = tunables.maxHp
+        npc.respawnTimer = 0
+        npc.wanderAge = Infinity
+        npc.chaseAge = 0
+        npc.shotTimer = 0
+        npc.group.position.fromArray(spawn)
+        npc.agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
+        if (npc.rig) npc.rig.scene.visible = true
+        refreshBar(npc)
+        npc.bar.setVisible(true)
+    }
+
+    /**
+     * One droplet's worth of damage, through an `NpcTarget` handle.
+     *
+     * Returns whether it was the killing blow. Ignores an already-down NPC, so a
+     * droplet still in the air when its target dies cannot re-kill it.
+     */
+    const damageNpc = (npc: Npc): boolean => {
+        if (npc.dead) return false
+        npc.hp = Math.max(0, npc.hp - tunables.dropletDamage)
+        refreshBar(npc)
+        if (npc.hp > 0) return false
+        killNpc(npc)
+        return true
+    }
+
     // Droplets outlive no NPC in particular, so they are owned here rather than
     // per avatar (see npcProjectiles for the pooling rationale).
-    const projectiles = createNpcProjectiles({ scene, getTarget: aimPoint })
+    //
+    // Every droplet in this pool is aimed at the player, so the damage hook is
+    // pool-wide rather than per shot — the mirror of the player's own pool, where
+    // each shot may be locked onto a different NPC.
+    const projectiles = createNpcProjectiles({
+        scene,
+        getTarget: aimPoint,
+        onHit: () => onPlayerHit(),
+    })
 
     /**
      * Draw or holster, on the player's aggro and the armed master switch.
@@ -738,7 +887,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                     const npc = npcs[Number(match[1])]
                     if (!npc) return null
                     return {
-                        aimPoint: () => (disposed ? null : npcAimPoint(npc)),
+                        // Null once down, which is also what makes a corpse
+                        // un-targetable: the picker skips a target with no aim
+                        // point, so a dead NPC cannot be clicked or shot at.
+                        aimPoint: () => (disposed || npc.dead ? null : npcAimPoint(npc)),
+                        damage: () => (disposed ? false : damageNpc(npc)),
                     }
                 }
                 node = node.parent
@@ -752,6 +905,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             // The crowd is cheap to rebuild; the avatars are not. Keep them.
             state = crowd.create(NPC_RADIUS)
             for (const npc of npcs) {
+                // A downed NPC must stay down. Its `agentId` is null, and
+                // re-adding it here would teleport the corpse onto the new mesh
+                // and drop it back into the fight; `respawnNpc` puts it back
+                // against whichever mesh is live when its timer expires, so
+                // nothing is lost by skipping it.
+                if (npc.dead) continue
                 const at: Vec3 = [npc.group.position.x, npc.group.position.y, npc.group.position.z]
                 const hit = findNearestPoly(nearestScratch, next, at, TARGET_HALF_EXTENTS, DEFAULT_QUERY_FILTER)
                 const spawn: Vec3 = hit.success ? hit.position : at
@@ -767,6 +926,24 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             if (disposed || npcs.length === 0) return
             const playerPos = getPlayerPosition()
             const hostile = getHostile()
+
+            // --- 0. The dead -----------------------------------------------
+            // Ahead of everything else, because a downed NPC is a hole in the
+            // crowd: no agent to step, no mode to decide, and a respawn that has
+            // to land before the passes below look for one.
+            for (const npc of npcs) {
+                if (!npc.dead) continue
+                // The death clip is a one-shot, and the emotion path drops back
+                // to idle the instant it ends — so the body has to be removed
+                // when the clip finishes, or the NPC stands back up and waits
+                // out its timer on its feet. `isEmotionActive` is the only
+                // signal for "the clip is over".
+                if (npc.rig && npc.rig.scene.visible && !npc.rig.isEmotionActive()) {
+                    npc.rig.scene.visible = false
+                }
+                npc.respawnTimer -= delta
+                if (npc.respawnTimer <= 0) respawnNpc(npc)
+            }
             const aggro = tunables.npcAggroRadius || DEFAULT_AGGRO
             const scatterSeconds = tunables.npcScatterSeconds || DEFAULT_SCATTER_SECONDS
             // No gun refresh here any more: the rig hands us its weapon object
@@ -966,6 +1143,10 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             for (const npc of npcs) {
                 if (npc.agentId) crowd.removeAgent(state, npc.agentId)
                 npc.agentId = null
+                // Each bar owns a material and a canvas texture of its own, and
+                // `disposeObject` above only walks meshes — a Sprite is not one —
+                // so this does not happen by accident.
+                npc.bar.dispose()
                 // AvatarRig.dispose stops the mixers and detaches the head; the
                 // GPU resources under `scene` are this module's to release.
                 if (npc.rig) {

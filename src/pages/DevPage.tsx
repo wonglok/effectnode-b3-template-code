@@ -21,6 +21,7 @@ import { VirtualJoystick } from '../components/VirtualJoystick'
 import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
 import { AttackModeButton } from '../components/AttackModeButton'
+import { HealthHud } from '../components/HealthHud'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { IntelligenceScan } from '../runtime-intelligence/src/clients/IntelligenceScan'
 
@@ -192,6 +193,7 @@ export function DevPage() {
                             <RunToggleButton />
                             <JumpButton />
                             <AttackModeButton />
+                            <HealthHud />
                         </>
                     ) : null}
                 </div>

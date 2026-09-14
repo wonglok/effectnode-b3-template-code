@@ -98,6 +98,11 @@ interface Droplet {
      * `getTarget`. See `spawn`'s fourth argument.
      */
     hitPoint: (() => THREE.Vector3 | null) | null
+    /**
+     * Per-shot hit callback, or null to fall back to the pool-wide `onHit`. See
+     * `spawn`'s fifth argument.
+     */
+    onHit: (() => void) | null
 }
 
 interface Splash {
@@ -131,12 +136,20 @@ export interface NpcProjectiles {
      * wrong for a shooter that can re-aim between shots: the earlier ball would
      * stop being able to hit what it was fired at. Callers who can retarget
      * mid-volley pass a closure over their own target instead.
+     *
+     * `onHit` runs once, on the frame the droplet registers a hit, immediately
+     * after its splash. It is where damage is applied. It is *not* run for a
+     * droplet that merely expires or falls past its floor. As with `hitPoint`,
+     * omitting it falls back to the pool-wide hook — and a **free-aim** shot
+     * should omit it, since its `hitPoint` is its own landing spot and there is
+     * nothing there to damage.
      */
     spawn(
         from: THREE.Vector3,
         toward: THREE.Vector3,
         speed: number,
         hitPoint?: () => THREE.Vector3 | null,
+        onHit?: () => void,
     ): void
     /** Advance every live droplet. Call once per frame. */
     update(delta: number): void
@@ -155,6 +168,13 @@ export interface NpcProjectilesOptions {
      * closure to `spawn` instead.
      */
     getTarget: () => THREE.Vector3 | null
+    /**
+     * Runs when a droplet that was testing against `getTarget` hits it — the
+     * pool-level counterpart to `spawn`'s per-shot `onHit`, and where the crowd
+     * applies damage to the player. Droplets that carried their own `hitPoint`
+     * use their own callback instead; this is never both.
+     */
+    onHit?: () => void
     /**
      * Root names for the two groups this pool adds to the scene.
      *
@@ -175,7 +195,7 @@ const _splashU = new THREE.Vector3()
 const _splashW = new THREE.Vector3()
 
 export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectiles {
-    const { scene, getTarget, names } = opts
+    const { scene, getTarget, onHit, names } = opts
 
     const root = new THREE.Group()
     root.name = names?.droplets ?? 'npc-droplets'
@@ -208,6 +228,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
             life: 0,
             floorY: -Infinity,
             hitPoint: null,
+            onHit: null,
         })
     }
 
@@ -325,7 +346,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
     }
 
     return {
-        spawn(from, toward, speed, hitPoint) {
+        spawn(from, toward, speed, hitPoint, shotOnHit) {
             if (disposed) return
             // Round-robin from the cursor to find a free droplet. Scanning the
             // whole pool is what lets a burst exceed the free slots near the
@@ -356,6 +377,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
             // Latched per shot, so retargeting after this one is fired cannot
             // steal the hit from the enemy it was actually aimed at.
             slot.hitPoint = hitPoint ?? null
+            slot.onHit = shotOnHit ?? null
 
             // Solve the launch velocity that lands on `toward`.
             //
@@ -390,11 +412,12 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
             const sharedTarget = getTarget()
             for (const d of droplets) {
                 if (d.life <= 0) {
-                    // A free droplet holds no target. Done here rather than at
-                    // each of the three recycle sites so the invariant cannot be
-                    // missed by a path added later — and so a spent shot stops
-                    // retaining a closure over an NPC.
+                    // A free droplet holds no target and no callback. Done here
+                    // rather than at each of the three recycle sites so the
+                    // invariant cannot be missed by a path added later — and so
+                    // a spent shot stops retaining a closure over an NPC.
                     d.hitPoint = null
+                    d.onHit = null
                     continue
                 }
 
@@ -429,8 +452,16 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                         // centre. Splashing on the droplet keeps the burst
                         // attached to the water the player just watched arrive.
                         splash(d.mesh.position, d.velocity)
+                        // Zeroed on this very frame, which is what makes the hit
+                        // fire exactly once: the next frame's `life <= 0` guard
+                        // skips the droplet before it can be tested again.
                         d.life = 0
                         d.mesh.visible = false
+                        // Damage, attributed to whoever this droplet was fired
+                        // at: its own shooter's target if it carried one, else
+                        // the pool's. Read here rather than stored so it cannot
+                        // go stale, but it is only ever *called* the once.
+                        d.onHit ? d.onHit() : onHit?.()
                     }
                 }
             }

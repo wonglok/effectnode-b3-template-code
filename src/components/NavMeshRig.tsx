@@ -15,6 +15,8 @@ import { BASE_SET_KEY, loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type Avat
 import { createNpcEnemies, type NpcEnemies, type NpcTarget } from './npcEnemies'
 import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/components/AvatarSDK'
 import { ARMED_SET_KEY } from './armedClipSet'
+import { DEATH_CLIPS } from './deathClip'
+import { BAR_HEIGHT_ABOVE, createHealthBar } from './healthBar'
 import { createPlayerCombat, type PlayerCombat } from './playerCombat'
 import { loadWeaponTemplate, type NpcWeapon } from './npcProps'
 import { avatarConfigSnapshot, useAvatarStore } from './avatar/useAvatarStore'
@@ -265,6 +267,17 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // race a mode toggle and could attach twice.
         let gunTemplate: THREE.Object3D | null = null
 
+        // The player's own floating bar, exactly as each NPC has one. The HUD
+        // repeats the same number in DOM, because the camera trails the player
+        // and this can be hidden behind the avatar or the scenery.
+        const playerBar = createHealthBar()
+        playerBar.sprite.position.set(0, BAR_HEIGHT_ABOVE, 0)
+        playerGroup.add(playerBar.sprite)
+
+        /** Set while the player is down: no walking, no shooting, no damage. */
+        let playerDowned = false
+        let playerRespawnTimer = 0
+
         const agentHelper = new THREE.Mesh(
             new THREE.CapsuleGeometry(settings.walkableRadius, settings.walkableHeight),
             new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true }),
@@ -304,12 +317,61 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
          * its half straight off the store, so nothing is pushed to it here.
          */
         const applyAttackMode = (active: boolean) => {
-            playerCombat.setActive(active)
-            avatarRig?.setClipSet(active ? ARMED_SET_KEY : BASE_SET_KEY)
+            // Downed overrides attack mode: a corpse holds no gun. Routing both
+            // through here keeps one writer for the gun's visibility, so a mode
+            // toggle during the down window cannot pop it back into view.
+            playerCombat.setActive(active && !playerDowned)
+            avatarRig?.setClipSet(active && !playerDowned ? ARMED_SET_KEY : BASE_SET_KEY)
             // Only meaningful while armed, and cheap; kept unconditional so the
             // numbers are already right when the set becomes live.
             const { settings } = useNavRigStore.getState()
             playerCombat.setCadence(settings.playerArmedWalkTimescale, settings.playerArmedRunTimescale)
+        }
+
+        /**
+         * The player goes down: clear every order, drop the gun, play the fall.
+         *
+         * Input is not disabled per-source — the frame loop's `canMove` reads
+         * `playerDowned`, and firing is blocked by the gun being holstered, so
+         * there is nothing else to switch off. A held key is deliberately left
+         * held: releasing it while down should not fire a keyup that the loop
+         * then acts on, and `canMove` already ignores it.
+         */
+        const downPlayer = () => {
+            if (playerDowned) return
+            playerDowned = true
+            playerRespawnTimer = Math.max(0, settings.playerRespawnSeconds)
+            // Cancel an in-flight walk order and its marker, so the player does
+            // not resume mid-route on revive.
+            path.length = 0
+            targetReached = false
+            targetMarker.visible = false
+            isJumping = false
+            jumpOffset = 0
+            jumpVelocity = 0
+            // Holsters through the one writer, rather than poking the gun here.
+            applyAttackMode(useNavRigStore.getState().attackMode)
+            if (DEATH_CLIPS.length > 0) avatarRig?.playEmotionOnce(DEATH_CLIPS[0])
+        }
+
+        /**
+         * Back on your feet at full health.
+         *
+         * The HP write is the store's, and it re-enters through the subscription
+         * below — which is why that subscription only guards the *crossing* to
+         * zero rather than reacting to every change.
+         */
+        const revivePlayer = () => {
+            playerDowned = false
+            playerRespawnTimer = 0
+            useNavRigStore.getState().resetPlayerHp()
+            applyAttackMode(useNavRigStore.getState().attackMode)
+        }
+
+        /** Keep the floating bar on the live number. Called on every HP change. */
+        const syncPlayerBar = () => {
+            const { playerHp, settings: s } = useNavRigStore.getState()
+            playerBar.setFraction(playerHp / Math.max(1, s.maxHp), playerHp, s.maxHp)
         }
 
         const mountAvatar = (config: AvatarConfig) => {
@@ -545,6 +607,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 // Read per frame, so attack mode needs no seeding and cannot go
                 // stale across a respawn the way a pushed flag would.
                 getHostile: () => useNavRigStore.getState().attackMode,
+                // A droplet landed on the player. The damage amount comes from
+                // the live tunable rather than being baked in, so the GUI slider
+                // means something.
+                onPlayerHit: () =>
+                    useNavRigStore.getState().damagePlayer(settings.dropletDamage),
                 // lil-gui mutates `settings` in place, so the crowd reads the
                 // live values every frame with no wiring.
                 tunables: settings,
@@ -602,6 +669,21 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const unsubAttack = useNavRigStore.subscribe((s, prev) => {
             if (s.attackMode === prev.attackMode) return
             applyAttackMode(s.attackMode)
+        })
+
+        // Player health. Seeded for the same reason as the two above — a
+        // subscription only fires on changes, so without this the bar would show
+        // whatever the healthBar module's own default is until the first hit.
+        syncPlayerBar()
+        const unsubHp = useNavRigStore.subscribe((s, prev) => {
+            if (s.playerHp === prev.playerHp) return
+            syncPlayerBar()
+            // Only the *crossing* to zero starts the down beat. `damagePlayer`
+            // clamps at 0, so a droplet still in the air when the player goes
+            // down lands as a no-change and never reaches here — but guarding on
+            // `playerDowned` as well means a future change to that clamping
+            // cannot restart the timer mid-down.
+            if (s.playerHp === 0 && !playerDowned) downPlayer()
         })
 
         // Generate now; if the collider hasn't synced yet, retry for a while.
@@ -883,6 +965,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
          * still hit.
          */
         const fireAtPickedEnemy = (clientX: number, clientY: number): boolean => {
+            // A downed player shoots nothing — and returns false, so a tap while
+            // down does not get swallowed from whatever else wants it.
+            if (playerDowned) return false
             const target = pickEnemy(clientX, clientY)
             if (!target) return false
             const aim = target.aimPoint()
@@ -1202,6 +1287,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // the frame so the rendered pose is `surface + jumpOffset`.
             playerGroup.position.y -= jumpOffset
 
+            // Down and waiting to get up. Ahead of the movement below, so the
+            // revive lands on this frame rather than the next.
+            if (playerDowned) {
+                playerRespawnTimer -= clamped
+                if (playerRespawnTimer <= 0) revivePlayer()
+            }
+
             // Consume an emotion request (button press) — once per nonce. A dance that
             // is already playing is a toggle: tapping its button again stops it.
             const req = useNavRigStore.getState().emotionRequest
@@ -1282,9 +1374,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
                 movement.vector.set(0, 0, 0)
 
-                // Pause walking only while pinch-zooming or a one-shot *gesture* is
-                // playing — a looping dance never locks the character in place.
-                const canMove = !isPinching && (!emotionActive || emotionDanceActive)
+                // Pause walking while pinch-zooming, during a one-shot *gesture*
+                // (a looping dance never locks the character in place), or while
+                // downed. `playerDowned` is the one lever for all three movement
+                // sources — WASD, the joystick and click-to-move path following
+                // are each gated on this below.
+                const canMove = !playerDowned && !isPinching && (!emotionActive || emotionDanceActive)
                 if (canMove && anySteer) {
                     if (forward) movement.vector.z -= 1
                     if (back) movement.vector.z += 1
@@ -1512,11 +1607,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             unsubAvatar()
             unsubWeapon()
             unsubAttack()
+            unsubHp()
             // Before the rig is torn down, for the reason in `disposeRig`: this
             // detaches the gun and frees only what the gun owns, so
             // `disposeObject` below cannot reach the textures it shares with the
             // module-cached template and the crowd.
             playerCombat.dispose()
+            // Owns a material and a canvas texture of its own, and a Sprite is
+            // not a mesh, so the rig teardown below would walk straight past it.
+            playerBar.dispose()
+            playerGroup.remove(playerBar.sprite)
             if (avatarRig) {
                 avatarRig.dispose()
                 disposeObject(avatarRig.scene)

@@ -90,8 +90,10 @@ export interface PlayerCombat {
      * Fire one droplet at `destination`, optionally locked onto `target`.
      *
      * With a target the droplet tracks that enemy's live chest, so a moving
-     * enemy is still hit; without one it splashes where it lands, which is the
-     * free-aim case.
+     * enemy is still hit, and landing it costs the enemy a droplet's damage —
+     * applied by the crowd, through the same handle that supplied the aim point.
+     * Without a target it splashes where it lands and damages nothing, which is
+     * the free-aim case: there is no one at the landing spot to hurt.
      */
     fireAt(destination: THREE.Vector3, target?: NpcTarget | null): void
     dispose(): void
@@ -216,7 +218,16 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
             if (target) {
                 // Re-read per frame by the pool, so the ball follows the enemy.
                 const locked = target
-                projectiles.spawn(_muzzleWorld, destination, MUZZLE_SPEED, () => locked.aimPoint())
+                projectiles.spawn(
+                    _muzzleWorld,
+                    destination,
+                    MUZZLE_SPEED,
+                    () => locked.aimPoint(),
+                    // Damage, through the same handle that supplied the aim
+                    // point — the crowd decides what a droplet is worth, so
+                    // nothing here needs to know the number.
+                    () => locked.damage(),
+                )
             } else {
                 // A free-aim shot still needs something to hit, or it would fly
                 // through its own landing point and only vanish on the fall
