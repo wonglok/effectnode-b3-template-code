@@ -4,9 +4,11 @@ Inspect and patch the live Three.js scene running in the browser at
 `http://localhost:4343`.
 
 The backend holds no scene state. Every request is forwarded over a WebSocket to
-a connected **editor** — a browser tab running the app with the Dev or Preview
-page open — and the editor's answer is relayed back. So: **the app must be open
-in a browser, or every query returns 503.**
+the connected **editors** — browser tabs running the app — and **every editor
+answers**. A response is a list of per-editor answers, each labelled with the
+device behind it, so a single call compares an iPhone, an Android and a laptop
+against the same scene. So: **at least one tab must be open, or every query
+returns 503.**
 
 ## Check health first
 
@@ -15,22 +17,106 @@ GET http://localhost:4343/api/health
 ```
 
 ```json
-{ "uptime": 41203, "editors": 1, "warning": "…" }
+{ "uptime": 41203, "editors": 2, "identified": 2, "unidentified": 0, "duplicates": [] }
 ```
 
-`editors` is how many tabs can answer. Requests are broadcast to all of them and
-**the first reply wins**, so with `editors > 1` results are not deterministic —
-a mutation may land in a tab you are not looking at. Close the extra tabs.
+`editors` is how many tabs can answer. Every request goes to all of them and
+every answer comes back, so more than one is the *useful* case, not a problem.
+
+`unidentified` counts tabs that joined without announcing themselves — still
+answerable, but not nameable. `duplicates` lists editor ids presented by more
+than one live tab (duplicating a tab copies its id), which makes `?editor=` on
+that id ambiguous.
+
+To see who is connected, and get the ids `?editor=` takes:
+
+```
+GET http://localhost:4343/api/editors
+```
+
+```json
+{ "editors": [
+    { "id": "597424ca1396d3c7", "loadId": "20986c91b6fbad7d",
+      "label": "macOS · Chrome · /production", "platform": "macOS", "browser": "Chrome",
+      "page": "/production", "viewport": { "width": 1728, "height": 854 },
+      "devicePixelRatio": 1, "userAgent": "Mozilla/5.0 …",
+      "socketId": "JF3iecjYkdf0L1K4AAAA", "connectedAt": 1789349358273, "identified": true } ],
+  "duplicates": [] }
+```
+
+This route is loopback-guarded like the mutations — it lists user agents and
+viewports, which have no business being readable from the rest of the wifi.
+
+## Reading a response
+
+Every route returns one shape:
+
+```json
+{ "reqID": "performance_1a2b", "ok": true,
+  "result": {
+    "count": 2, "expected": 2, "timedOut": false, "partial": false,
+    "allFailed": false, "warnings": [],
+    "responses": [
+      { "editor": { "label": "macOS · Chrome · /production", "…": "…" },
+        "ok": true, "elapsedMs": 2, "result": { "…this facet, on this device…" } },
+      { "editor": { "label": "iOS · Safari · /production", "…": "…" },
+        "ok": true, "elapsedMs": 3, "result": { "…this facet, on this device…" } }
+    ] } }
+```
+
+- **Every example in this document shows one editor's `result`** — the contents
+  of `responses[].result`, not the whole body. Destructure before comparing:
+  `jq '.result.responses[] | {who: .editor.label, fps: .result.runtime.framerate.fps}'`
+- `count` is how many answered; `expected` is how many were asked. They differ
+  when an editor dropped out mid-request.
+- One editor failing its own collector is `ok: false` **on its answer only** — a
+  bad selector or a slow device does not cost you the other answers. `partial`
+  says at least one failed, `allFailed` says every one did. `warnings` carries
+  caveats about reading the set as a whole.
+- An editor that never answers is reported as `ok: false` with
+  `"did not answer before the timeout"` — you still get everyone else, but the
+  request waits the full 15s for it.
+
+## Targeting one editor
+
+```
+GET /api/query/performance?editor=safari
+GET /api/query/performance?editor=597424ca1396d3c7
+POST /api/mutation/eval?editor=iphone
+```
+
+Resolved in order: exact `id`, exact `label`, then a case-insensitive substring
+of either — so `?editor=safari` or `?editor=iphone` usually just works. An
+**ambiguous** selector is refused with `400` and the candidate list rather than
+picked at random; no match is `404`.
+
+Aim mutations at one device with it. Without it, a mutation applies to **every**
+connected editor — which is what you want for "run this probe everywhere" and is
+a footgun for `dispose`, which would detach the subtree on all of them.
+
+> `$0` is resolved **per editor** — it is the object *that tab* last addressed,
+> not a scene address. Fanning `?object=$0` out to three tabs asks about three
+> different objects, and `patch`es three different subtrees. The envelope warns
+> when it sees one, but prefer a real path or uuid when targeting several tabs.
 
 ## Failure modes
 
 | Status | Meaning |
 |---|---|
 | `503 no editor connected` | No tab is open, or it hasn't connected yet. |
-| `503 editor disconnected before answering` | The tab closed mid-request (often an HMR reload). |
-| `504 <facet> request timed out` | An editor was connected but never answered within 15s. |
-| `502` | The editor answered, but failed — usually a bad selector or a collector error. The message says which. |
-| `403` | You called a mutation from a non-local origin. |
+| `403` | You called a guarded route (a mutation, or `/api/editors`) from a non-local origin. |
+| `404` | `?editor=` matched no connected editor. |
+| `400` | `?editor=` matched more than one — the error lists them. |
+| `200` with `partial: true` | The request ran, but at least one editor failed or dropped out. Read `responses[]`. |
+
+There is no `504`: a request that outruns its editors still answers `200`, with
+the late ones marked `ok: false` and `timedOut: true`. Losing every answer is
+`allFailed`. A bare error body means the request never reached an editor at all.
+
+**A backgrounded tab still answers, but its frame numbers are stale.** It keeps
+receiving socket messages, so it will reply — but with `requestAnimationFrame`
+suspended, `runtime.framerate` reads zero. A device reporting `fps: 0` is a tab
+nobody is looking at, not a bug.
 
 ## Addressing an object
 
@@ -370,6 +456,12 @@ instances and never dispose on the hot path at all.
 > **Local only.** These routes refuse non-loopback callers and cross-origin
 > browser requests, and the editor disables them outside a dev build. `eval`
 > executes arbitrary JavaScript in the page — treat it as RCE by design.
+>
+> **A mutation lands on every connected editor** unless you pass `?editor=`.
+> That is what makes "run this probe on all three devices" work — and it means
+> an `eval` runs everywhere at once, while a `patch` that throws on one device
+> leaves the tabs silently divergent with no rollback. Check the envelope's
+> `partial` before assuming they still agree.
 
 ## Patch — RFC 6902 JSON Patch
 
@@ -394,15 +486,23 @@ selector otherwise: `"/player/position/y"` ≡ `{"object":"player"}` +
 
 ```json
 { "reqID": "patch_1a2b", "ok": true, "result": {
-    "applied": 3, "partial": false, "rebuildRisk": ["/material/wireframe"],
-    "target": { "uuid": "…", "name": "player", "type": "Group" },
-    "results": [ { "op": "replace", "path": "/position/y", "ok": true, "previous": 0 } ]
-} }
+    "count": 1, "expected": 1, "partial": false, "timedOut": false, "warnings": [],
+    "responses": [
+      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 1,
+        "result": {
+          "applied": 3, "partial": false, "rebuildRisk": ["/material/wireframe"],
+          "target": { "uuid": "…", "name": "player", "type": "Group" },
+          "results": [ { "op": "replace", "path": "/position/y", "ok": true, "previous": 0 } ]
+        } }
+    ] } }
 ```
 
 - **`partial: true` means an op failed and the rest were skipped — the scene is
   left partly modified.** Ops run in order and the patch stops at the first
   failure; it does not roll back. `results` says exactly how far it got.
+- **Two different `partial`s.** The one inside `responses[].result` is the
+  patch's own (an op failed on that device); the one on the envelope means *some
+  editor's whole answer failed*. Both being `false` is the only "clean" reading.
 - **`rebuildRisk`** lists paths whose change likely altered three's pipeline
   cache key (e.g. toggling `wireframe` or `side`, or a value crossing zero),
   forcing a shader rebuild that allocates a new GPU pipeline. Check
@@ -427,10 +527,20 @@ not an expression. `$0.position.y` alone returns `null`.
 
 ```json
 { "reqID": "eval_9x8y", "ok": true, "result": {
-    "ok": true, "result": [0, 1.8, 0], "elapsedMs": 1.42,
-    "target": { "uuid": "…", "name": "player", "type": "Group" }
-} }
+    "count": 2, "expected": 2, "partial": false, "timedOut": false, "warnings": [],
+    "responses": [
+      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 2,
+        "result": { "ok": true, "result": [0, 1.8, 0], "elapsedMs": 1.42,
+                    "target": { "uuid": "…", "name": "player", "type": "Group" } } },
+      { "editor": { "label": "iOS · Safari · /production" }, "ok": true, "elapsedMs": 3,
+        "result": { "ok": true, "result": [0, 1.8, 0], "elapsedMs": 0.9,
+                    "target": { "uuid": "…", "name": "player", "type": "Group" } } }
+    ] } }
 ```
+
+This is the sharpest tool for comparing devices: the same snippet runs on every
+editor at once, so `return navigator.userAgentData` or a timing probe comes back
+once per device. Add `?editor=` to run it on just one.
 
 Values are projected onto JSON-safe data: textures, matrices and typed arrays
 become short descriptors, `Object3D` becomes `{ "object3D": uuid }`, depth is
@@ -451,14 +561,21 @@ texture it referenced (deduped by identity). This is the remedy for a
 
 ```json
 { "reqID": "dispose_1", "ok": true, "result": {
-    "ok": true, "geometryCount": 2, "materialCount": 2, "textureCount": 1,
-    "detachedFrom": "scene", "target": { "uuid": "…", "name": "Rock_14" }
-} }
+    "count": 1, "expected": 1, "partial": false, "timedOut": false, "warnings": [],
+    "responses": [
+      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 4,
+        "result": { "ok": true, "geometryCount": 2, "materialCount": 2, "textureCount": 1,
+                    "detachedFrom": "scene", "target": { "uuid": "…", "name": "Rock_14" } } }
+    ] } }
 ```
 
 **Destructive and not undoable by a patch.** It refuses the scene root — dispose
 a subtree, not the world. Disposed resources are dropped from the leak registry,
 so re-querying `/api/query/memory` should show the candidate cleared.
+
+**Always pass `?editor=` to `dispose` unless you mean it.** Fanned out, this
+frees the same subtree on every connected tab at once — including the phone in
+the other room you then have to walk over and reload.
 
 ---
 

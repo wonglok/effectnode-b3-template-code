@@ -1,6 +1,11 @@
 import type { Object3D } from 'three'
 import { scanScene, type GeometryRecord } from './sceneResources'
 import { useRuntimePerf, type RuntimePerfSnapshot } from './store/useRuntimePerf'
+// `readEnvironment` is shared with the editor's hello, so a tab's reported
+// environment and its device label are derived from one definition.
+import { readEnvironment, type RuntimeEnvironment } from './deviceIdentity'
+
+export type { RuntimeEnvironment }
 
 /**
  * Performance digest of the live runtime scene for /api/query/performance —
@@ -29,55 +34,6 @@ export type ObjectCost = {
     vertexCount: number
     /** triangles rasterized per frame = base triangles × instances */
     triangleCount: number
-}
-
-/** The `NavigatorUAData` fields that can be read synchronously. */
-type UserAgentDataLike = {
-    brands?: { brand: string; version: string }[]
-    mobile?: boolean
-    platform?: string
-}
-
-/**
- * Browser and OS identity for the tab that answered.
- *
- * Frame timings only mean something alongside the machine that produced them —
- * 16.7 ms is comfortable on an integrated GPU and near the limit on a discrete
- * one — so the environment rides with the measurement rather than being a
- * separate request whose answer could come from a different editor tab.
- */
-export type RuntimeEnvironment = {
-    /** `navigator.userAgent`, verbatim. Always present. */
-    userAgent: string | null
-    /**
-     * `navigator.userAgentData` (User-Agent Client Hints), reduced to its
-     * low-entropy fields. Chromium-only — `null` in Firefox and Safari. The
-     * high-entropy hints (`architecture`, `platformVersion`, `fullVersionList`)
-     * are async and deliberately not read here.
-     */
-    userAgentData: {
-        brands: { brand: string; version: string }[]
-        mobile: boolean | null
-        platform: string | null
-    } | null
-}
-
-function readEnvironment(): RuntimeEnvironment {
-    // Guarded so the collector stays callable outside a browser context.
-    const nav = typeof navigator === 'undefined' ? null : navigator
-    const uaData = (nav as unknown as { userAgentData?: UserAgentDataLike } | null)?.userAgentData
-    return {
-        userAgent: nav?.userAgent ?? null,
-        userAgentData: uaData
-            ? {
-                  // Copied field-by-field: `brands` is a FrozenArray of brand
-                  // objects, and the reply crosses a socket as plain data.
-                  brands: (uaData.brands ?? []).map((b) => ({ brand: b.brand, version: b.version })),
-                  mobile: uaData.mobile ?? null,
-                  platform: uaData.platform ?? null,
-              }
-            : null,
-    }
 }
 
 /** Aggregate render-load numbers for the whole scene. */

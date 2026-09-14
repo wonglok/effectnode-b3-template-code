@@ -20,25 +20,32 @@ export async function runSetup({ port = 4343 }) {
 
     const server = createServer(app)
 
-    // Registered before the health route, because the handler reports how many
-    // editors are attached.
-    const { editorCount } = await createWSRoutes({ app, server })
+    // Registered before the health route, because the handler reports on the
+    // editors. `createWSRoutes` also mounts `/api/editors`, which needs the same
+    // registry.
+    const { editorCount, listEditors } = await createWSRoutes({ app, server })
 
     app.get('/api/health', (_req, res) => {
         const editors = editorCount()
+        const { editors: list, duplicates } = listEditors()
+        const identified = list.filter((editor) => editor.identified).length
         res.json({
             uptime: new Date().getTime() - start,
             /** how many editors can answer a request right now */
             editors,
+            /** how many of those announced themselves and can be named */
+            identified,
+            /** joined without a hello — still answerable, just not addressable */
+            unidentified: editors - identified,
             /**
-             * Requests are broadcast to every connected editor and the first
-             * reply wins, so with more than one tab open a result — or a
-             * mutation landing — is not deterministic. Surfaced here so a
-             * confusing response has a visible cause.
+             * Editor ids presented by more than one live tab. A duplicated tab
+             * copies `sessionStorage`, so `?editor=<that id>` is ambiguous and is
+             * refused with a 400 rather than guessed at.
              */
+            duplicates,
             warning:
-                editors > 1
-                    ? `${editors} editors are connected and the first reply wins — close the extra tabs for deterministic results.`
+                duplicates.length > 0
+                    ? `${duplicates.length} editor id(s) are presented by more than one tab — ?editor= on those is ambiguous.`
                     : undefined,
         })
     })

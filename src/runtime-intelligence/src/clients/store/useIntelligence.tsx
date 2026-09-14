@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client'
 import { create } from 'zustand'
-import { PROTOCOL_VERSION } from '../../protocol'
+import { EDITOR_HELLO, PROTOCOL_VERSION } from '../../protocol'
+import { getEditorIdentity } from '../deviceIdentity'
 
 type IntelligenceStore = {
     socket: null | Socket
@@ -19,7 +20,17 @@ export const useIntelligence = create<IntelligenceStore>((set) => {
                 auth: { protocol: PROTOCOL_VERSION },
             })
 
-            socket.on('connect', () => console.log('[intelligence] connected', socket.id))
+            // Announce this tab so the server can label its answers and address
+            // it with `?editor=`. Registered on the `connect` event rather than
+            // sent once here, because socket.io reuses the Socket object across
+            // reconnects and only reassigns `socket.id` — a hello emitted at
+            // construction would be lost on the first reconnect. The server
+            // upserts, so re-sends are harmless.
+            socket.on('connect', () => {
+                console.log('[intelligence] connected', socket.id)
+                const identity = getEditorIdentity()
+                socket.emit(EDITOR_HELLO, identity)
+            })
             socket.on('connect_error', (error) => {
                 console.warn('[intelligence] connect error:', error.message)
             })

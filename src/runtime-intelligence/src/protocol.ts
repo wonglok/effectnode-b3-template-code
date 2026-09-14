@@ -113,6 +113,9 @@ export const REQUEST_EVENT = 'req:query'
 /** editor → server, carrying the reqID that identifies the waiting request. */
 export const REPLY_EVENT = 'res:query'
 
+/** editor → server, once per connect, naming the device behind the tab. */
+export const EDITOR_HELLO = 'editor:hello'
+
 /**
  * Bumped whenever the wire shape changes incompatibly. There is no test suite
  * and server and client share no type-level link, so a stale browser bundle
@@ -120,8 +123,11 @@ export const REPLY_EVENT = 'res:query'
  * request would sit until the 15s timeout. The editor sends this in its
  * handshake and the server refuses a mismatch, turning that into an immediate,
  * legible 503.
+ *
+ * 2: every route now answers with a per-editor envelope instead of the single
+ * winning reply, and editors announce themselves with {@link EDITOR_HELLO}.
  */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /** Editor sockets join this room so requests target only them. */
 export const EDITOR_ROOM = 'editor-room'
@@ -129,13 +135,100 @@ export const EDITOR_ROOM = 'editor-room'
 /** How long a request waits for an editor to answer before giving up. */
 export const EDITOR_QUERY_TIMEOUT_MS = 15_000
 
-/** What the editor sends back for one request. */
+/** GET route listing the connected editors. Guarded like the mutations. */
+export const EDITOR_LIST_ROUTE = '/api/editors'
+
+/**
+ * Cap on one editor's serialized answer.
+ *
+ * engine.io's `maxHttpBufferSize` bounds *inbound* frames and
+ * `express.json({ limit })` bounds *request* bodies — neither bounds the HTTP
+ * response, which is now the sum of every editor's answer. `JSON.stringify`
+ * throws `RangeError` past V8's ~512MB string limit, so fanning a large
+ * `?object=scene` across three tabs would surface as an opaque 500. An over-size
+ * answer is replaced by an error naming the lever (`?object=`, `?maxDepth=`)
+ * instead, and the envelope is marked `partial`.
+ */
+export const EDITOR_ANSWER_MAX_BYTES = 32 * 1024 * 1024
+
+// ---------------------------------------------------------------------------
+// Editor identity
+// ---------------------------------------------------------------------------
+
+/**
+ * What an editor announces on connect, so the server can name it in a response
+ * and address it with `?editor=`.
+ *
+ * Nothing here is trusted: the server caps every field on arrival, because a
+ * buggy or hostile tab would otherwise be free to bloat `/api/editors` and the
+ * agent's context with it.
+ */
+export type EditorIdentity = {
+    /** Stable for the life of the tab — survives a reload (via sessionStorage). */
+    id: string
+    /**
+     * Fresh on every page load. A duplicated tab inherits the same `sessionStorage`
+     * and therefore the same `id`, so this is what tells two live tabs apart.
+     */
+    loadId: string
+    /** Human label, e.g. `"iOS · Safari · /production"`. */
+    label: string
+    platform: string
+    browser: string
+    /** Route path the editor is mounted on, e.g. `/production`. */
+    page: string
+    viewport: { width: number; height: number }
+    devicePixelRatio: number
+    userAgent: string
+}
+
+/** A connected editor, as the server knows it. */
+export type EditorInfo = EditorIdentity & {
+    /** socket.io's id — the transport handle, and what a request targets. */
+    socketId: string
+    connectedAt: number
+    /**
+     * `false` for a socket that joined the room without sending a hello. It can
+     * still answer requests; it just cannot be targeted by `?editor=`.
+     */
+    identified: boolean
+}
+
+/** One editor's answer inside a fan-out response. */
+export type EditorAnswer =
+    | { editor: EditorInfo; ok: true; elapsedMs: number; result: unknown }
+    | { editor: EditorInfo; ok: false; elapsedMs: number; error: string }
+
+/**
+ * The body of `result` on **every** route — one answer per connected editor,
+ * rather than the single first reply it used to be.
+ *
+ * Read `responses` as the point of the whole thing: an iPhone, an Android and a
+ * laptop each report their own frame timings for the same scene.
+ */
+export type QueryEnvelope = {
+    /** `responses.length` — the fan-out width actually collected. */
+    count: number
+    /** how many editors the request was addressed to, before any dropped out. */
+    expected: number
+    responses: EditorAnswer[]
+    /** at least one addressed editor never answered before the timeout. */
+    timedOut: boolean
+    /** at least one answer is `ok: false` — the editors have diverged. */
+    partial: boolean
+    /** every answer failed. */
+    allFailed: boolean
+    /** caveats about how to read this envelope, e.g. a per-tab `$0`. */
+    warnings: string[]
+}
+
+/** What the editor sends back for one request. Unchanged from v1. */
 export type EditorReply =
     | { reqID: string; ok: true; result: unknown }
     | { reqID: string; ok: false; error: string }
 
-/** What a client sees when the request could not be completed. */
+/** What a client sees when the request could not be dispatched at all. */
 export type ErrorReply = { reqID: string; ok: false; error: string }
 
-/** What a client sees when the request succeeded. */
-export type SuccessReply = { reqID: string; ok: true; result: unknown }
+/** What a client sees when the fan-out ran. */
+export type SuccessReply = { reqID: string; ok: true; result: QueryEnvelope }
