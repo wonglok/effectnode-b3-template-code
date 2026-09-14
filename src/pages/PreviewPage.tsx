@@ -8,6 +8,7 @@ import { NavMeshRig } from '../components/NavMeshRig'
 import { VirtualJoystick } from '../components/VirtualJoystick'
 import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
+import { AttackModeButton } from '../components/AttackModeButton'
 import { RunToggleButton } from '../components/RunToggleButton'
 import { AvatarPicker } from '../components/avatar/AvatarPicker'
 import { IntelligenceScan } from '../runtime-intelligence/src/clients/IntelligenceScan'
@@ -61,6 +62,7 @@ export function PreviewPage() {
                     <EmotionButtons />
                     <RunToggleButton />
                     <JumpButton />
+                    <AttackModeButton />
                 </>
             ) : null}
 

@@ -56,6 +56,17 @@ interface NavRigSettings {
      *  crowd's 2.2 m/s; run ≈ 2.96 m/s against 4.5). Applied live. */
     npcArmedWalkTimescale: number
     npcArmedRunTimescale: number
+
+    /** Cadence of the *player's* rifle-holding walk / run clips, in the armed
+     *  set. Separate from the NPC pair above because the two move at different
+     *  speeds — the armed pack is authored around 0.61 m/s walking and 2.96 m/s
+     *  running, so the multiplier is `movementSpeed / authoredSpeed` and the
+     *  crowd's 2.2 / 4.5 is not the player's 4 / 8. Reusing the NPC values
+     *  makes the player visibly skate. Seeded from that ratio (≈ 6.5 / 2.7);
+     *  these are arithmetic, not measured, so dial them in against the feet.
+     *  Applied live. */
+    playerArmedWalkTimescale: number
+    playerArmedRunTimescale: number
 }
 
 interface NavRigState {
@@ -85,6 +96,19 @@ interface NavRigState {
 
     /** Turn the run toggle on/off. */
     setRunning: (running: boolean) => void
+
+    /** Attack mode, set by the X key or the bottom-left button. While true the
+     *  player holds a water gun and can shoot the crowd, and the crowd treats
+     *  the player as hostile; while false (the default) the player is unarmed
+     *  and the crowd ignores them entirely. Read every frame by the rig and by
+     *  the crowd's `getHostile`, so it never needs a rebuild. */
+    attackMode: boolean
+
+    /** Turn attack mode on/off. */
+    setAttackMode: (attackMode: boolean) => void
+
+    /** Flip attack mode — the X key / button action. */
+    toggleAttackMode: () => void
 
     /** Last one-shot gesture/dance requested by an emotion button. `nonce`
      *  advances on every request so even the same gesture can be re-triggered;
@@ -153,17 +177,24 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         npcProjectileSpeed: 8,
         npcArmedWalkTimescale: 3.6,
         npcArmedRunTimescale: 1.5,
+        playerArmedWalkTimescale: 6.5,
+        playerArmedRunTimescale: 2.7,
     },
 
     zoomRadius: 0,
     stick: { x: 0, y: 0 },
     running: false,
+    attackMode: false,
     emotionRequest: null,
     jumpRequest: null,
 
     setStick: (stick) => set({ stick }),
 
     setRunning: (running) => set({ running }),
+
+    setAttackMode: (attackMode) => set({ attackMode }),
+
+    toggleAttackMode: () => set((s) => ({ attackMode: !s.attackMode })),
 
     requestEmotion: (def) =>
         set((s) => ({

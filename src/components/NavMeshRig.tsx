@@ -11,10 +11,12 @@ import { createNavMeshHelper, getPositionsAndIndices } from 'navcat/three'
 import { useBlenderStore, useNavRigStore } from '../b3/b3-runtime/src'
 import type { EmotionDef } from '../b3/b3-runtime/src/components/stores/navRigStore'
 import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
-import { loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
-import { createNpcEnemies, type NpcEnemies } from './npcEnemies'
+import { BASE_SET_KEY, loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
+import { createNpcEnemies, type NpcEnemies, type NpcTarget } from './npcEnemies'
 import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/components/AvatarSDK'
-import type { NpcWeapon } from './npcProps'
+import { ARMED_SET_KEY } from './armedClipSet'
+import { createPlayerCombat, type PlayerCombat } from './playerCombat'
+import { loadWeaponTemplate, type NpcWeapon } from './npcProps'
 import { avatarConfigSnapshot, useAvatarStore } from './avatar/useAvatarStore'
 import {
     ImmersiveControls,
@@ -34,6 +36,13 @@ function disposeMesh(mesh: THREE.Mesh) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     for (const m of mats) m?.dispose()
 }
+
+/**
+ * How near the pointer an enemy's chest has to project, in pixels, to count as
+ * being aimed at. Generous on purpose: it is also the touch slop for a tap, and
+ * a miss here reads as "the gun did not fire" rather than as a near miss.
+ */
+const PICK_RADIUS_PX = 40
 
 /** Dispose an entire Object3D subtree. */
 function disposeObject(root: THREE.Object3D) {
@@ -244,6 +253,18 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
         setPlayer(playerGroup)
 
+        // The player's half of the fight — its own droplet pool, its own gun,
+        // and its own copy of the weapon tuning (see `playerCombat` for why the
+        // last of those cannot be the `weapon` object above). `playerGroup` is
+        // the forward reference: the gun is calibrated to the character's
+        // forward, and `rig.scene` cannot serve because it carries the Z-up to
+        // Y-up correction, which points its own +Z at the sky.
+        const playerCombat: PlayerCombat = createPlayerCombat(scene, playerGroup)
+        // Resolved once and reused, so a gun can be attached synchronously the
+        // moment an avatar lands — awaiting the load inside `mountAvatar` would
+        // race a mode toggle and could attach twice.
+        let gunTemplate: THREE.Object3D | null = null
+
         const agentHelper = new THREE.Mesh(
             new THREE.CapsuleGeometry(settings.walkableRadius, settings.walkableHeight),
             new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true }),
@@ -262,9 +283,33 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             const old = avatarRig
             avatarRig = null
             if (!old) return
+            // Take the gun off **before** `disposeObject` walks the rig. The gun
+            // hangs off a bone inside `old.scene`, and `disposeObject` disposes
+            // `map` / `normalMap` / … on every material it finds — but a gun's
+            // material clone still shares its textures by reference with the
+            // module-cached template and every NPC's gun, so letting the rig's
+            // teardown reach it would strip the textures off the whole crowd.
+            playerCombat.detach()
             if (old.scene.parent === playerGroup) playerGroup.remove(old.scene)
             old.dispose()
             disposeObject(old.scene)
+        }
+
+        /**
+         * Put the whole rig into (or out of) attack mode.
+         *
+         * One function because the mode has to move three things together — the
+         * gun, the clip set, and the crowd's hostility — and applying them from
+         * separate call sites is how they end up disagreeing. The crowd reads
+         * its half straight off the store, so nothing is pushed to it here.
+         */
+        const applyAttackMode = (active: boolean) => {
+            playerCombat.setActive(active)
+            avatarRig?.setClipSet(active ? ARMED_SET_KEY : BASE_SET_KEY)
+            // Only meaningful while armed, and cheap; kept unconditional so the
+            // numbers are already right when the set becomes live.
+            const { settings } = useNavRigStore.getState()
+            playerCombat.setCadence(settings.playerArmedWalkTimescale, settings.playerArmedRunTimescale)
         }
 
         const mountAvatar = (config: AvatarConfig) => {
@@ -285,6 +330,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                     rig.setVisibility({ body: s.bodyVisible, face: s.faceVisible })
                     rig.setSpeed(s.speed)
                     rig.setPaused(!s.playing)
+                    // Synchronous, because the template was resolved ahead of
+                    // time (see `resolveGunTemplate`). A null template just
+                    // leaves the player unarmed until the load lands.
+                    playerCombat.attach(rig, gunTemplate)
+                    // A fresh rig always starts on the base set, so attack mode
+                    // has to be re-applied here — otherwise swapping body or face
+                    // while armed would silently drop the character back to the
+                    // unarmed pose with a gun still in hand. After `attach`, so
+                    // the armed cadence lands on the rig that just took the gun.
+                    applyAttackMode(useNavRigStore.getState().attackMode)
                 })
                 .catch((err) => {
                     console.warn('[NavMeshRig] Failed to load avatar:', err)
@@ -366,7 +421,37 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             const changed = weaponSpec !== '' && spec !== weaponSpec
             weapon.url = entry.url
             weapon.bone = entry.bone
+
+            // Mirror the same entry onto the player's own weapon object. Only the
+            // tuning is copied — its `enabled` is attack mode, not the manifest's
+            // draw flag — but copying it here is what keeps lil-gui edits to
+            // scale / offset / rotation live on the player's gun too.
+            if (playerCombat.setWeapon(entry)) {
+                // url or bone changed: a gun already in the hand cannot absorb
+                // either, so drop it and re-resolve against the new template.
+                playerCombat.detach()
+                resolveGunTemplate(entry.url)
+            }
             return changed
+        }
+
+        /**
+         * Resolve a weapon template ahead of any avatar needing it.
+         *
+         * Cached by url inside `npcProps`, so this is one download per weapon no
+         * matter how many crowds, respawns and rig rebuilds follow — and it means
+         * an attach can be synchronous, which is what keeps it race-free.
+         */
+        const resolveGunTemplate = (url: string) => {
+            const wanted = url
+            void loadWeaponTemplate(wanted).then((template) => {
+                if (disposed || wanted !== weapon.url) return
+                gunTemplate = template
+                // A rig built while the template was still in flight has no gun;
+                // give it one now. Guarded on `avatarRig` because a rebuild may
+                // have replaced it — the fresh rig attaches in `mountAvatar`.
+                if (avatarRig) playerCombat.attach(avatarRig, gunTemplate)
+            })
         }
 
         // ------------------------------------------------------------------
@@ -457,6 +542,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 navMesh,
                 count: settings.npcCount,
                 getPlayerPosition: () => playerGroup.position,
+                // Read per frame, so attack mode needs no seeding and cannot go
+                // stale across a respawn the way a pushed flag would.
+                getHostile: () => useNavRigStore.getState().attackMode,
                 // lil-gui mutates `settings` in place, so the crowd reads the
                 // live values every frame with no wiring.
                 tunables: settings,
@@ -505,6 +593,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const unsubWeapon = useAvatarStore.subscribe((s, prev) => {
             if (s.weapons === prev.weapons) return
             if (syncWeapon(s.weapons)) respawnNpcs()
+        })
+
+        // Attack mode is a nav-rig concern, so it rides its own subscription.
+        // Seeded from `getState()` for the same reason as the weapon above — a
+        // subscription only fires on changes, and the app starts peaceful.
+        applyAttackMode(useNavRigStore.getState().attackMode)
+        const unsubAttack = useNavRigStore.subscribe((s, prev) => {
+            if (s.attackMode === prev.attackMode) return
+            applyAttackMode(s.attackMode)
         })
 
         // Generate now; if the collider hasn't synced yet, retry for a while.
@@ -563,6 +660,19 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 case 'ShiftRight':
                     input.sprint = true
                     break
+                case 'KeyX': {
+                    // Ignore while typing into the lil-gui — a manifest name field
+                    // is a text input, and it would otherwise eat every "x".
+                    const el = event.target as HTMLElement | null
+                    const tag = el?.tagName ?? ''
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) {
+                        break
+                    }
+                    // One toggle per tap: `event.repeat` skips the OS auto-repeat,
+                    // which would otherwise flip the mode dozens of times a second.
+                    if (!event.repeat) useNavRigStore.getState().toggleAttackMode()
+                    break
+                }
                 case 'Space': {
                     // Ignore while typing into the lil-gui — don't swallow spaces.
                     const el = event.target as HTMLElement | null
@@ -667,6 +777,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // keeps a short `far` plane that would cull the collider at distance.
         const clickRaycaster = new THREE.Raycaster()
 
+        /** Scratch for the shared pointer-to-NDC conversion. */
+        const _pickNdc = new THREE.Vector2()
+        /** Scratch for projecting an NPC's chest to screen space. */
+        const _pickWorld = new THREE.Vector3()
+
         // Hold-to-move: while the mouse is held, the per-frame loop keeps re-aiming
         // the character at the current pointer position. A quick click sets it once.
         let pointerDown = false
@@ -675,21 +790,132 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // Throttles the (expensive) findPath recompute inside the frame loop.
         let followAccumulator = 0
 
+        /** Client coordinates to normalised device coordinates, in place. Shared
+         *  so the walk target and the shot target can never disagree about where
+         *  the pointer is. */
+        const pointerNdc = (clientX: number, clientY: number, out: THREE.Vector2) => {
+            const rect = gl.domElement.getBoundingClientRect()
+            return out.set(
+                ((clientX - rect.left) / rect.width) * 2 - 1,
+                -((clientY - rect.top) / rect.height) * 2 + 1,
+            )
+        }
+
+        /**
+         * Bring the camera's matrices up to date before projecting or casting.
+         *
+         * The frame loop writes the camera directly (position + lookAt), so
+         * `matrixWorld` lags here — `setFromCamera` would otherwise cast a ray
+         * that doesn't match the rendered view, and `project` would place a
+         * target somewhere other than where it is drawn.
+         */
+        const syncCameraMatrices = () => {
+            camera.updateMatrixWorld()
+            camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+        }
+
+        /** Where the pointer ray meets the walkable collider, or null. */
+        const groundPointFromPointer = (clientX: number, clientY: number): THREE.Vector3 | null => {
+            if (!navMesh && !generateNavMesh()) return null
+            syncCameraMatrices()
+            clickRaycaster.setFromCamera(pointerNdc(clientX, clientY, _pickNdc), camera)
+            refreshColliderObjects()
+            const hits = clickRaycaster.intersectObjects(colliderObjects, false)
+            return hits.length > 0 ? hits[0].point : null
+        }
+
+        /**
+         * The enemy nearest the pointer, within `PICK_RADIUS_PX`, or null.
+         *
+         * Screen-space projection rather than a raycast, for two reasons. The
+         * camera sits *behind* the player, so a ray into the scene strikes the
+         * player's own body before it reaches the crowd — and `SkinnedMesh`
+         * raycasting is per-vertex CPU skinning, which would mean tens of
+         * thousands of vertex transforms per click. Projecting six chest points
+         * is O(n) in the crowd size and answers the same question.
+         */
+        const pickEnemy = (clientX: number, clientY: number): NpcTarget | null => {
+            if (!npcs) return null
+            const rect = gl.domElement.getBoundingClientRect()
+            const px = clientX - rect.left
+            const py = clientY - rect.top
+            syncCameraMatrices()
+
+            let best: NpcTarget | null = null
+            let bestSq = PICK_RADIUS_PX * PICK_RADIUS_PX
+            for (const child of npcs.group.children) {
+                const target = npcs.targetFromObject(child)
+                if (!target) continue
+                const aim = target.aimPoint()
+                if (!aim) continue
+                // `project` mirrors a point through the origin once it is behind
+                // the camera, so without this an NPC at the player's back would
+                // score as a hit in front of them.
+                _pickWorld.copy(aim).project(camera)
+                if (_pickWorld.z > 1) continue
+                const sx = (_pickWorld.x * 0.5 + 0.5) * rect.width
+                const sy = (-_pickWorld.y * 0.5 + 0.5) * rect.height
+                const dsq = (sx - px) ** 2 + (sy - py) ** 2
+                if (dsq < bestSq) {
+                    bestSq = dsq
+                    best = target
+                }
+            }
+            return best
+        }
+
+        /** Turn the player to face a world point, on the same `atan2(x, z)`
+         *  convention the movement loop uses — so the gun, which is calibrated to
+         *  the group's forward, points at what was just shot at. The movement
+         *  loop only rewrites this while walking, so it holds while standing. */
+        const faceTowards = (point: THREE.Vector3) => {
+            const dx = point.x - playerGroup.position.x
+            const dz = point.z - playerGroup.position.z
+            if (dx * dx + dz * dz < 1e-6) return
+            playerGroup.rotation.y = Math.atan2(dx, dz)
+        }
+
+        /**
+         * Shoot at the enemy under the pointer. Returns true if there was one.
+         *
+         * The ball is locked onto the enemy's live chest rather than the point
+         * it was standing on when the trigger was pulled, so a moving target is
+         * still hit.
+         */
+        const fireAtPickedEnemy = (clientX: number, clientY: number): boolean => {
+            const target = pickEnemy(clientX, clientY)
+            if (!target) return false
+            const aim = target.aimPoint()
+            if (!aim) return false
+            faceTowards(aim)
+            playerCombat.fireAt(aim, target)
+            return true
+        }
+
+        /**
+         * The deliberate fire command — the right button.
+         *
+         * An enemy under the cursor is shot at; empty space is a free-aim shot
+         * that splashes where it lands. Distinct from the tap handler below,
+         * which only ever shoots enemies: a touch device has no right button, so
+         * it needs a way to shoot at all, and giving up "tap the ground to walk
+         * there" as well would strand it.
+         */
+        const handleFireCommand = (clientX: number, clientY: number) => {
+            if (!useNavRigStore.getState().attackMode) return
+            if (fireAtPickedEnemy(clientX, clientY)) return
+            const ground = groundPointFromPointer(clientX, clientY)
+            if (ground) {
+                faceTowards(ground)
+                playerCombat.fireAt(ground)
+            }
+        }
+
         const updateTargetFromPointer = () => {
             // Generate on demand if the collider synced after the rig mounted
             if (!navMesh && !generateNavMesh()) return
-            const rect = gl.domElement.getBoundingClientRect()
-            const ndc = new THREE.Vector2(
-                ((pointerX - rect.left) / rect.width) * 2 - 1,
-                -((pointerY - rect.top) / rect.height) * 2 + 1,
-            )
-
-            // The camera is written directly by the frame loop (position + lookAt),
-            // so matrixWorld lags here — setFromCamera would cast a ray that doesn't
-            // match the rendered view. Recompute the matrices from the live pose.
-            camera.updateMatrixWorld()
-            camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
-            clickRaycaster.setFromCamera(ndc, camera)
+            syncCameraMatrices()
+            clickRaycaster.setFromCamera(pointerNdc(pointerX, pointerY, _pickNdc), camera)
             refreshColliderObjects()
             const hits = clickRaycaster.intersectObjects(colliderObjects, false)
 
@@ -703,6 +929,15 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // guard a right-click on the collider sets a walk target, so the
             // character strolls off the moment the context menu is dismissed.
             if (event.button !== 0) return
+
+            // In attack mode a tap on an enemy shoots instead of walking to it.
+            // This is the only way a touch device can fire — it has no right
+            // button — so it has to pre-empt click-to-move, and only for an
+            // actual hit: a tap on bare ground still walks.
+            if (useNavRigStore.getState().attackMode && fireAtPickedEnemy(event.clientX, event.clientY)) {
+                return
+            }
+
             pointerDown = true
             pointerX = event.clientX
             pointerY = event.clientY
@@ -723,10 +958,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             pointerDown = false
         }
 
-        // Right-click has no meaning on the collider, so suppress the browser
-        // menu rather than let it surface over the scene. Scoped to the canvas,
-        // so right-click still behaves normally everywhere else on the page.
-        const suppressContextMenu = (event: MouseEvent) => event.preventDefault()
+        // Right-click never means "show the browser menu" over the scene, so it
+        // is suppressed in every mode — and in attack mode it is the fire
+        // command. Scoped to the canvas, so right-click still behaves normally
+        // everywhere else on the page.
+        const suppressContextMenu = (event: MouseEvent) => {
+            event.preventDefault()
+            handleFireCommand(event.clientX, event.clientY)
+        }
 
         gl.domElement.addEventListener('pointerdown', handlePointerDown)
         document.addEventListener('pointermove', handlePointerMove)
@@ -796,6 +1035,26 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         armedFolder.add(settings, 'npcArmedRunTimescale', 0.2, 6, 0.1).name('Armed Run Rate')
         armedFolder.close()
         npcFolder.add({ respawn: respawnNpcs }, 'respawn').name('Respawn NPCs')
+
+        const attackFolder = gui.addFolder('Player Attack')
+        // The range runs well past the crowd's, because the player's numbers are
+        // legitimately larger: the armed pack is authored around 0.61 m/s walking
+        // and 2.96 m/s running, so the multiplier is `movementSpeed / authored`
+        // — 2.2 / 4.5 gives the crowd ~3.6 / 1.5, but the player moves at 4 / 8.
+        // These are the values that stop the feet skating; if they are wrong they
+        // are wrong loudly, which is why they are live dials rather than
+        // constants.
+        const pushPlayerCadence = () =>
+            playerCombat.setCadence(settings.playerArmedWalkTimescale, settings.playerArmedRunTimescale)
+        attackFolder
+            .add(settings, 'playerArmedWalkTimescale', 0.2, 12, 0.1)
+            .name('Attack Walk Rate')
+            .onChange(pushPlayerCadence)
+        attackFolder
+            .add(settings, 'playerArmedRunTimescale', 0.2, 12, 0.1)
+            .name('Attack Run Rate')
+            .onChange(pushPlayerCadence)
+        attackFolder.close()
 
         // ------------------------------------------------------------------
         // Movement / animation / camera scratch state
@@ -1193,6 +1452,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
 
             // --- avatar + helpers ---
             avatarRig?.advance(clamped)
+
+            // --- player combat ---
+            // Strictly after `advance`, which is what poses the skeleton: the
+            // gun's aim is re-solved from the bones, so running it first would
+            // align the barrel against last frame's pose.
+            playerCombat.update(clamped)
+
             if (navMeshHelper?.object) {
                 navMeshHelper.object.visible = settings.showNavMeshHelper
             }
@@ -1245,6 +1511,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             targetMarker.material.dispose()
             unsubAvatar()
             unsubWeapon()
+            unsubAttack()
+            // Before the rig is torn down, for the reason in `disposeRig`: this
+            // detaches the gun and frees only what the gun owns, so
+            // `disposeObject` below cannot reach the textures it shares with the
+            // module-cached template and the crowd.
+            playerCombat.dispose()
             if (avatarRig) {
                 avatarRig.dispose()
                 disposeObject(avatarRig.scene)

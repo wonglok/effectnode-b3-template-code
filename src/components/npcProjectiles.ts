@@ -93,6 +93,11 @@ interface Droplet {
     life: number
     /** World y below which this droplet is recycled (see `FALL_LIMIT`). */
     floorY: number
+    /**
+     * Per-shot hit-test point, or null to fall back to the pool-wide
+     * `getTarget`. See `spawn`'s fourth argument.
+     */
+    hitPoint: (() => THREE.Vector3 | null) | null
 }
 
 interface Splash {
@@ -119,8 +124,20 @@ export interface NpcProjectiles {
      *
      * `toward` is a **destination, not a direction**: the droplet is launched
      * on the ballistic arc that lands there (see `spawn` for why that matters).
+     *
+     * `hitPoint` overrides where *this* droplet tests for a hit. Without it the
+     * droplet uses the pool-wide `getTarget`, which is read once per frame and
+     * shared by every droplet — fine for a crowd that all shoots at one player,
+     * wrong for a shooter that can re-aim between shots: the earlier ball would
+     * stop being able to hit what it was fired at. Callers who can retarget
+     * mid-volley pass a closure over their own target instead.
      */
-    spawn(from: THREE.Vector3, toward: THREE.Vector3, speed: number): void
+    spawn(
+        from: THREE.Vector3,
+        toward: THREE.Vector3,
+        speed: number,
+        hitPoint?: () => THREE.Vector3 | null,
+    ): void
     /** Advance every live droplet. Call once per frame. */
     update(delta: number): void
     /** Recycle everything and free the shared geometry + material. */
@@ -129,8 +146,24 @@ export interface NpcProjectiles {
 
 export interface NpcProjectilesOptions {
     scene: THREE.Scene
-    /** Live player position, or null before the player exists. */
+    /**
+     * The pool's default hit-test point, read once per frame.
+     *
+     * Every droplet that was spawned without its own `hitPoint` tests against
+     * this, so it models "one shooter aiming at one thing" — the NPC crowd
+     * shooting at the player. A shooter that can retarget passes a per-shot
+     * closure to `spawn` instead.
+     */
     getTarget: () => THREE.Vector3 | null
+    /**
+     * Root names for the two groups this pool adds to the scene.
+     *
+     * Defaults match the crowd's historical names. A second pool must override
+     * them, or `scene.getObjectByName` — and any scene dump, including the
+     * runtime-intelligence `/api/query/scene` route — becomes ambiguous between
+     * two identically-named siblings.
+     */
+    names?: { droplets: string; splashes: string }
 }
 
 /** Scratch — `update` runs per droplet per frame and must not allocate. */
@@ -142,10 +175,10 @@ const _splashU = new THREE.Vector3()
 const _splashW = new THREE.Vector3()
 
 export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectiles {
-    const { scene, getTarget } = opts
+    const { scene, getTarget, names } = opts
 
     const root = new THREE.Group()
-    root.name = 'npc-droplets'
+    root.name = names?.droplets ?? 'npc-droplets'
     scene.add(root)
 
     // One geometry and one material for the whole pool. The material is shared
@@ -169,14 +202,20 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
         // them by a stale bounding sphere would pop them out mid-flight.
         mesh.frustumCulled = false
         root.add(mesh)
-        droplets.push({ mesh, velocity: new THREE.Vector3(), life: 0, floorY: -Infinity })
+        droplets.push({
+            mesh,
+            velocity: new THREE.Vector3(),
+            life: 0,
+            floorY: -Infinity,
+            hitPoint: null,
+        })
     }
 
     // --- Splash pool ---------------------------------------------------
     // Its own group, so a teardown can pull the whole effect out in one call
     // and the names stay distinguishable in a scene dump.
     const splashRoot = new THREE.Group()
-    splashRoot.name = 'npc-splashes'
+    splashRoot.name = names?.splashes ?? 'npc-splashes'
     scene.add(splashRoot)
 
     // A *unit* sphere, scaled per frame, so every splash shares one geometry
@@ -286,7 +325,7 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
     }
 
     return {
-        spawn(from, toward, speed) {
+        spawn(from, toward, speed, hitPoint) {
             if (disposed) return
             // Round-robin from the cursor to find a free droplet. Scanning the
             // whole pool is what lets a burst exceed the free slots near the
@@ -305,7 +344,18 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
             slot.mesh.position.copy(from)
             slot.mesh.visible = true
             slot.life = LIFETIME
-            slot.floorY = from.y - FALL_LIMIT
+            // Measured from the *lower* of the launch point and the destination,
+            // not from the muzzle alone. A shot aimed below its own muzzle — at
+            // the ground, say — would otherwise cross its own floor on the way
+            // down and be recycled in mid-air a metre above what it was aimed
+            // at, which reads as the shot vanishing rather than landing. For a
+            // level shot the two heights are close and this is the same cut as
+            // before. A miss now falls that little bit further before being
+            // recycled, i.e. it reaches the ground instead of stopping above it.
+            slot.floorY = Math.min(from.y, toward.y) - FALL_LIMIT
+            // Latched per shot, so retargeting after this one is fired cannot
+            // steal the hit from the enemy it was actually aimed at.
+            slot.hitPoint = hitPoint ?? null
 
             // Solve the launch velocity that lands on `toward`.
             //
@@ -334,9 +384,19 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
 
         update(delta) {
             if (disposed) return
-            const target = getTarget()
+            // The pool-wide fallback, resolved once. Per-droplet overrides are
+            // resolved inside the loop instead, because two droplets in flight
+            // at the same moment can be tracking two different targets.
+            const sharedTarget = getTarget()
             for (const d of droplets) {
-                if (d.life <= 0) continue
+                if (d.life <= 0) {
+                    // A free droplet holds no target. Done here rather than at
+                    // each of the three recycle sites so the invariant cannot be
+                    // missed by a path added later — and so a spent shot stops
+                    // retaining a closure over an NPC.
+                    d.hitPoint = null
+                    continue
+                }
 
                 d.life -= delta
                 if (d.life <= 0) {
@@ -355,6 +415,9 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                     continue
                 }
 
+                // The shot's own target if it has one, else the pool's, else
+                // nothing — which parks the droplet on the miss path below.
+                const target = d.hitPoint ? d.hitPoint() : sharedTarget
                 if (target) {
                     _toTarget.copy(target).sub(d.mesh.position)
                     // Compare squared lengths — no sqrt per droplet per frame.

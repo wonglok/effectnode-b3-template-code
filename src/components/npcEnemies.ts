@@ -57,10 +57,10 @@ import { applyGunTuning, attachGun, calibrateGun, loadWeaponTemplate, type NpcGu
 import { createNpcProjectiles } from './npcProjectiles'
 import {
     makeDefaultManifest,
-    MOTION_SECTIONS,
     type Gender,
     type MotionClipDef,
 } from '../b3/b3-runtime/src/components/AvatarSDK'
+import { ARMED_FIRING_CLIP, ARMED_SET_KEY, armedClipSet } from './armedClipSet'
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -133,50 +133,12 @@ const AIM_HEIGHT = 0.8
  */
 const AIM_TOLERANCE_COS = Math.cos(THREE.MathUtils.degToRad(20))
 
-// ---------------------------------------------------------------------------
-// Armed clip set
-// ---------------------------------------------------------------------------
+// The armed clip set is shared with the player's attack mode — see
+// `armedClipSet.ts`, which owns the section lookups and the set key.
 
-/**
- * One clip from a named SDK motion section, so the paths live in the SDK's
- * registry (`MOTION_SECTIONS`) rather than being spelled out here. The def name
- * is prefixed because it also becomes the `AnimationClip`'s name and the
- * `loadMotionClips` result key — a set's names must be unique within that set.
- */
-function sectionClip(sectionId: string, name: string): MotionClipDef | null {
-    const section = MOTION_SECTIONS.find((s) => s.id === sectionId)
-    if (!section) return null
-    return { name: `armed-${name}`, url: `${section.baseUrl}/${name}.fbx` }
-}
-
-/**
- * The rifle-holding locomotion set an NPC switches to when it draws. Taken from
- * the user's chosen clips: `gun/idle-aiming`, `shooter/walking`,
- * `gun/run-forward`.
- *
- * The idle is the *aiming* variant rather than plain `gun/idle`: this pose is
- * what an armed NPC holds at the standoff ring, where it is pointing the gun at
- * the player, so the raised sights read as aiming.
- *
- * `jump` is deliberately omitted, so the set falls back to the base jump clip —
- * there is no armed jump in the pack, and the caller's launch frame stays valid.
- */
-function armedClipSet(): { clips: Partial<Record<LocomotionKey, MotionClipDef>> } | null {
-    const idle = sectionClip('rifle', 'idle-aiming')
-    const walk = sectionClip('shooter', 'walking')
-    const run = sectionClip('rifle', 'run-forward')
-    if (!idle || !walk || !run) {
-        console.warn('[NpcEnemies] armed clip set incomplete — NPCs will stay in peace')
-        return null
-    }
-    return { clips: { idle, walk, run } }
-}
 
 /** The firing one-shot, played through the rig's emotion path. */
-const FIRING_CLIP: MotionClipDef | null = sectionClip('shooter', 'firing-rifle')
-
-/** Key of the rifle-holding set, as handed to `loadAvatar` and `setClipSet`. */
-const ARMED_SET_KEY = 'armed'
+const FIRING_CLIP: MotionClipDef | null = ARMED_FIRING_CLIP
 
 /**
  * The rig's `ClipSetConfig` for the armed set, or undefined when the SDK's
@@ -224,6 +186,18 @@ export interface NpcTunables {
     npcArmedRunTimescale: number
 }
 
+/** An opaque handle on one NPC, for a shooter outside this module.
+ *  See {@link NpcEnemies.targetFromObject}. */
+export interface NpcTarget {
+    /**
+     * The NPC's chest in world space, or null once the crowd is disposed.
+     *
+     * A **shared scratch vector**, like the crowd's own `aimPoint`: read it and
+     * use it immediately, don't hold on to it across a frame.
+     */
+    aimPoint(): THREE.Vector3 | null
+}
+
 export interface NpcEnemiesOptions {
     scene: THREE.Scene
     navMesh: NavMesh
@@ -231,6 +205,16 @@ export interface NpcEnemiesOptions {
     count: number
     /** Live player position, or null before the player exists. */
     getPlayerPosition: () => THREE.Vector3 | null
+    /**
+     * Whether the crowd treats the player as a target at all. Read per frame, so
+     * flipping it takes effect on the next tick with nothing to re-seed — which
+     * is why this is a getter rather than a `setHostile` setter (a setter would
+     * need seeding on create *and* on every respawn, and would drift).
+     *
+     * False means the crowd ignores the player entirely: every NPC wanders,
+     * holsters its gun, and no already-airborne droplet can splash them.
+     */
+    getHostile: () => boolean
     /** Read per frame so GUI edits take effect immediately. */
     tunables: NpcTunables
     /**
@@ -248,6 +232,19 @@ export interface NpcEnemiesOptions {
 export interface NpcEnemies {
     /** Root holding every NPC — added to the scene by `createNpcEnemies`. */
     readonly group: THREE.Group
+    /**
+     * Resolve one of the crowd's scene objects to an opaque handle on the NPC
+     * that owns it, or null when the object belongs to no NPC.
+     *
+     * A handle rather than a point: the projectile pool re-reads its target
+     * every frame, so a snapshot would have the player's ball homing on where
+     * the enemy *was*. The aim height stays here, next to the crowd's own
+     * `AIM_HEIGHT`, so the two sides cannot drift.
+     *
+     * Accepts either an `npc-<index>` group or any descendant (a mesh, a bone),
+     * so it works whether the caller has a raycast hit or a projected group.
+     */
+    targetFromObject(object: THREE.Object3D | null): NpcTarget | null
     /**
      * Re-base onto a freshly generated navmesh, keeping the loaded avatars.
      * The rig replaces its `navMesh` wholesale when the collider changes, so a
@@ -365,7 +362,7 @@ function manifestFor(index: number) {
 // ---------------------------------------------------------------------------
 
 export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnemies> {
-    const { scene, getPlayerPosition, tunables, weapon } = opts
+    const { scene, getPlayerPosition, getHostile, tunables, weapon } = opts
     let navMesh = opts.navMesh
 
     let disposed = false
@@ -539,11 +536,30 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
      * is nothing to hold on to. It is also the point the hit test uses; aiming
      * at one height and testing against another would make every droplet sail
      * past the check (see `AIM_HEIGHT`).
+     *
+     * Gated on hostility so that a crowd turned peaceful mid-volley cannot still
+     * splash the player: with no target the hit test simply never fires, and the
+     * airborne droplets fall through to their floor recycle. Reaching a `fire()`
+     * call already requires an armed NPC, so this only ever removes shots that
+     * were in the air when the mode flipped.
      */
     const aimPoint = (): THREE.Vector3 | null => {
+        if (!getHostile()) return null
         const player = getPlayerPosition()
         return player ? _aimPoint.set(player.x, player.y + AIM_HEIGHT, player.z) : null
     }
+
+    /**
+     * The chest point of one NPC — the mirror of `aimPoint` for the player's
+     * fire control, which targets an NPC rather than the player.
+     *
+     * `group.position` is the agent's navmesh position, i.e. the feet, so the
+     * lift is the same `AIM_HEIGHT` the crowd aims at on the player. Same
+     * constant on both sides means a droplet that visibly reaches an NPC's chest
+     * is the one recycled by the hit test.
+     */
+    const npcAimPoint = (npc: Npc): THREE.Vector3 =>
+        _npcAimPoint.set(npc.group.position.x, npc.group.position.y + AIM_HEIGHT, npc.group.position.z)
 
     // Droplets outlive no NPC in particular, so they are owned here rather than
     // per avatar (see npcProjectiles for the pooling rationale).
@@ -704,6 +720,32 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             return root
         },
 
+        /**
+         * Walk up from `object` to the `npc-<index>` group the spawn loop named,
+         * then hand back a handle onto that NPC's live chest point.
+         *
+         * The name is the index the crowd already uses to line its scene graph
+         * up with `npcs[i]` (see `createNpcGroup`), so it is the one identifier
+         * that survives outside this module without exposing the array.
+         */
+        targetFromObject(object: THREE.Object3D | null): NpcTarget | null {
+            let node: THREE.Object3D | null = object
+            // Stop at `root`, so an object outside the crowd (or the root itself)
+            // resolves to null rather than matching something on the way up.
+            while (node && node !== root) {
+                const match = /^npc-(\d+)$/.exec(node.name)
+                if (match) {
+                    const npc = npcs[Number(match[1])]
+                    if (!npc) return null
+                    return {
+                        aimPoint: () => (disposed ? null : npcAimPoint(npc)),
+                    }
+                }
+                node = node.parent
+            }
+            return null
+        },
+
         setNavMesh(next: NavMesh) {
             if (disposed) return
             navMesh = next
@@ -724,6 +766,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         update(delta: number) {
             if (disposed || npcs.length === 0) return
             const playerPos = getPlayerPosition()
+            const hostile = getHostile()
             const aggro = tunables.npcAggroRadius || DEFAULT_AGGRO
             const scatterSeconds = tunables.npcScatterSeconds || DEFAULT_SCATTER_SECONDS
             // No gun refresh here any more: the rig hands us its weapon object
@@ -767,7 +810,13 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
 
                 let next: NpcMode = 'wander'
                 let distanceSq = Infinity
-                if (playerPos) {
+                // `hostile` is the player's attack mode, read per frame. A
+                // peaceful crowd never even measures against the player, so
+                // `next` stays `'wander'` — and everything else falls out of
+                // that one fact: `setArmed(npc, armedEnabled && next !== 'wander')`
+                // below holsters the gun, `agent.maxSpeed` stays at walk speed,
+                // and facing reverts to the direction of travel.
+                if (playerPos && hostile) {
                     const dx = agent.position[0] - playerPos.x
                     const dz = agent.position[2] - playerPos.z
                     distanceSq = dx * dx + dz * dz
@@ -946,6 +995,9 @@ const _forward = new THREE.Vector3()
 
 /** Aim point for the projectile pool's `getTarget` (see `aimPoint`). */
 const _aimPoint = new THREE.Vector3()
+
+/** The mirror of `_aimPoint` for the player shooting an NPC (see `npcAimPoint`). */
+const _npcAimPoint = new THREE.Vector3()
 
 /** Muzzle world position, read once per shot. */
 const _muzzleWorld = new THREE.Vector3()

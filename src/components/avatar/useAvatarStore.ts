@@ -59,7 +59,9 @@ import type {
     Vec3,
     WeaponEntry,
 } from '../../b3/b3-runtime/src/components/AvatarSDK'
-import type { AvatarConfig, LocomotionKey } from '../avatarLoader'
+import { ARMED_SET_KEY, armedClipSet } from '../armedClipSet'
+import type { AvatarConfig, ClipSetConfig, LocomotionKey } from '../avatarLoader'
+import { useNavRigStore } from '../../b3/b3-runtime/src/components/stores/navRigStore'
 
 /** One of the three tunable offset axes/groups (`position`|`rotation`|`scale`). */
 export type OffsetKey = keyof Offset3
@@ -825,12 +827,38 @@ export async function hydrateAvatarStore(): Promise<void> {
 
 /** Manifest + rig-clip snapshot the NavMeshRig consumes to build its avatar.
  * Heads are always seat-glued (`headMode: 'seat'`) for the walking rig — the
- * composed face rides rigidly on the live head bone instead of dual-driving. */
+ * composed face rides rigidly on the live head bone instead of dual-driving.
+ *
+ * The `armed` set is declared here alongside the base clips so the player can
+ * switch into a rifle-holding pose in attack mode, exactly as the crowd does.
+ * Its cadence comes from the nav-rig store rather than the crowd's tunables:
+ * the armed pack is authored far slower than either character actually moves,
+ * and the multiplier that fixes it is `movementSpeed / authoredSpeed` — the
+ * player walks at 4 and runs at 8, the crowd at 2.2 and 4.5, so the two need
+ * different numbers for the same clips. Omitted entirely when the SDK's motion
+ * registry cannot supply the clips, leaving the player in peace rather than
+ * building half a set. */
+function armedClipSets(): Record<string, ClipSetConfig> | undefined {
+    const defs = armedClipSet()
+    if (!defs) return undefined
+    const { settings } = useNavRigStore.getState()
+    return {
+        [ARMED_SET_KEY]: {
+            clips: defs.clips,
+            timeScale: {
+                walk: settings.playerArmedWalkTimescale,
+                run: settings.playerArmedRunTimescale,
+            },
+        },
+    }
+}
+
 export function avatarConfigSnapshot(): AvatarConfig {
     const state = useAvatarStore.getState()
     return {
         manifest: toManifest(state),
         clips: state.rigClips,
+        clipSets: armedClipSets(),
         headMode: 'seat',
     }
 }

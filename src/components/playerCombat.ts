@@ -1,0 +1,246 @@
+/**
+ * The player's half of the water fight: a gun in hand and a pool of droplets to
+ * fire from it.
+ *
+ * The crowd (`npcEnemies`) already owns all the machinery — the ballistic solve,
+ * the droplet and splash pools, the gun mount and its per-frame calibration. All
+ * of it is shooter-agnostic, so this module reuses it rather than growing a
+ * second implementation:
+ *
+ * - `npcProps` for the gun itself (`attachGun` / `calibrateGun` /
+ *   `applyGunTuning`), the same mount the NPCs hold.
+ * - `npcProjectiles` for the ammunition, as a **second pool** — the crowd's is
+ *   constructed inside its own closure and disposed with it, and more to the
+ *   point its default target is the player.
+ *
+ * ## Why the gun's visibility is not the crowd's `enabled` flag
+ *
+ * `applyGunTuning` sets `mount.visible = weapon.enabled`, and the rig keeps one
+ * shared `weapon` object that lil-gui flips for the crowd. Reusing that object
+ * would make the player's gun appear and vanish with the crowd's mood, so this
+ * module owns its **own** `NpcWeapon` — a copy of the manifest entry's tuning —
+ * and drives `enabled` from attack mode alone.
+ *
+ * ## Why every shot carries its own target
+ *
+ * `npcProjectiles.update` reads its target **once per frame** and hit-tests
+ * every live droplet against that single point, which is exactly right for a
+ * crowd that all shoots at one player. A player can re-aim between shots, so
+ * each droplet here is given its own hit-test point at spawn: the locked
+ * enemy's live chest, or the fixed point the shot was aimed at. The pool's own
+ * `getTarget` is therefore never used and returns null.
+ */
+
+import * as THREE from 'three'
+import type { AvatarRig } from './avatarLoader'
+import { ARMED_FIRING_CLIP, ARMED_SET_KEY } from './armedClipSet'
+import type { NpcTarget } from './npcEnemies'
+import { applyGunTuning, attachGun, calibrateGun, type NpcGun, type NpcWeapon } from './npcProps'
+import { createNpcProjectiles } from './npcProjectiles'
+
+/**
+ * Muzzle velocity for the player's shots, world units / second.
+ *
+ * Deliberately **not** the crowd's `npcProjectileSpeed` (8). The solve fixes the
+ * horizontal component at exactly this speed, so a droplet's reach is
+ * `speed × LIFETIME` — 12.8 m at 8, against the crowd's 14 m fire range — and
+ * its arc grows with the square of the flight time, which at 8 over 12 m is a
+ * 2.3 m apex. That is a mortar, and it reads correctly for an NPC lobbing at a
+ * player from a 5 m standoff. The player shoots across open ground at whatever
+ * they clicked, so this is fast enough that the arc is a squirt: 0.3 s and a
+ * ~5 cm apex over 6 m.
+ */
+const MUZZLE_SPEED = 20
+
+/** The tuning the player's gun carries. A structural subset of the manifest's
+ *  `WeaponEntry`, so the rig can hand its entry straight in. */
+export interface PlayerWeaponSpec {
+    /** GLB served from `/props/…`. Consumed at attach. */
+    url: string
+    /** Hand bone name. Consumed at attach. */
+    bone: string
+    scale: number
+    offset: [number, number, number]
+    rotation: [number, number, number]
+}
+
+export interface PlayerCombat {
+    /**
+     * Adopt the manifest's weapon entry. Returns true when `url` or `bone`
+     * changed, which is the one case a gun already in hand cannot absorb and the
+     * caller has to re-attach — the same contract as the rig's `syncWeapon`.
+     */
+    setWeapon(spec: PlayerWeaponSpec): boolean
+    /** Put the gun in the player's hand. Safe to call before the template has
+     *  resolved (it simply stays unarmed), and a no-op when one is already held. */
+    attach(rig: AvatarRig, template: THREE.Object3D | null): void
+    /** Take the gun off the rig it is on, freeing its geometry and material.
+     *  Idempotent. Must run before the rig that owns it is disposed — see
+     *  `detachGun` for why that ordering is load-bearing. */
+    detach(): void
+    /** Arm/disarm — attack mode. Visibility follows this, not the crowd's. */
+    setActive(active: boolean): void
+    /** Match the armed walk / run clip cadence to the player's movement speed
+     *  (the rig owns the clip sets; this just forwards the numbers). */
+    setCadence(walk: number, run: number): void
+    /** Re-aim the gun, keep its tuning live, and advance the droplets. Call once
+     *  per frame **after** the mixers have posed the skeleton. */
+    update(delta: number): void
+    /**
+     * Fire one droplet at `destination`, optionally locked onto `target`.
+     *
+     * With a target the droplet tracks that enemy's live chest, so a moving
+     * enemy is still hit; without one it splashes where it lands, which is the
+     * free-aim case.
+     */
+    fireAt(destination: THREE.Vector3, target?: NpcTarget | null): void
+    dispose(): void
+}
+
+export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object3D): PlayerCombat {
+    // The player's own weapon object — never the crowd's, and mutated in place
+    // like theirs so `applyGunTuning` reads the live placement off it.
+    const weapon: NpcWeapon = {
+        url: '',
+        bone: '',
+        // Driven by `setActive` (attack mode). Starts false: the app begins
+        // peaceful, so the player begins unarmed.
+        enabled: false,
+        scale: 1,
+        offset: [0, 0, 0],
+        rotation: [0, 0, 0],
+    }
+
+    // Its own names: a second `npc-droplets` sibling would make
+    // `scene.getObjectByName` — and every scene dump, including the
+    // runtime-intelligence one — ambiguous between the two pools.
+    const projectiles = createNpcProjectiles({
+        scene,
+        // Never used: every shot below carries its own `hitPoint`. Null rather
+        // than a throwaway so a droplet spawned without one simply has nothing
+        // to hit, instead of silently testing against the player.
+        getTarget: () => null,
+        names: { droplets: 'player-droplets', splashes: 'player-splashes' },
+    })
+
+    /** Scratch for the muzzle's world position — read once per shot. */
+    const _muzzleWorld = new THREE.Vector3()
+
+    let rig: AvatarRig | null = null
+    let gun: NpcGun | null = null
+    let disposed = false
+
+    /**
+     * Remove the gun and free what it owns.
+     *
+     * Removing the mount first is not tidiness — it is a bug fix. The mount
+     * hangs off a bone *inside* `rig.scene`, and the rig's own teardown
+     * (`NavMeshRig`'s `disposeObject`) disposes `map` / `normalMap` and friends
+     * on every material it walks over. A cloned material **shares its textures
+     * by reference** with the module-cached template and with every NPC's gun,
+     * so letting the rig's teardown reach the gun would turn the whole crowd
+     * untextured. Hence: take it out of the graph first, and free only the
+     * geometry and material this gun actually owns — never the maps.
+     */
+    const detachGun = () => {
+        if (!gun) return
+        gun.mount.removeFromParent()
+        gun.mount.traverse((obj) => {
+            const mesh = obj as THREE.Mesh
+            if (!mesh.isMesh) return
+            mesh.geometry?.dispose()
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+            for (const m of mats) m?.dispose()
+        })
+        gun = null
+    }
+
+    return {
+        setWeapon(spec) {
+            const changed = spec.url !== weapon.url || spec.bone !== weapon.bone
+            weapon.url = spec.url
+            weapon.bone = spec.bone
+            weapon.scale = spec.scale
+            weapon.offset[0] = spec.offset[0]
+            weapon.offset[1] = spec.offset[1]
+            weapon.offset[2] = spec.offset[2]
+            weapon.rotation[0] = spec.rotation[0]
+            weapon.rotation[1] = spec.rotation[1]
+            weapon.rotation[2] = spec.rotation[2]
+            return changed
+        },
+
+        attach(nextRig, template) {
+            if (disposed || gun) return
+            if (!nextRig || !template || !weapon.url || !weapon.bone) return
+            rig = nextRig
+            gun = attachGun(nextRig, forwardRoot, weapon, template)
+        },
+
+        detach() {
+            detachGun()
+            rig = null
+        },
+
+        setActive(active) {
+            weapon.enabled = active
+            // Hide immediately rather than waiting for the next frame's
+            // `applyGunTuning`, so a mode toggle never shows a stale frame of gun.
+            if (gun) gun.mount.visible = active
+        },
+
+        setCadence(walk, run) {
+            rig?.setClipSetTimeScale(ARMED_SET_KEY, { walk, run })
+        },
+
+        update(delta) {
+            if (disposed) return
+            if (gun) {
+                // Tuning is re-applied every frame so a lil-gui edit lands
+                // without a rebuild, exactly as the crowd does it.
+                applyGunTuning(gun, weapon)
+                // …and the aim is re-solved every frame because the mixers have
+                // just posed the skeleton. Aligning once at attach would leave
+                // the barrel pointing wherever the hand happened to be then.
+                if (weapon.enabled) calibrateGun(gun)
+            }
+            projectiles.update(delta)
+        },
+
+        fireAt(destination, target) {
+            if (disposed || !weapon.enabled || !gun) return
+
+            gun.muzzle.updateWorldMatrix(true, false)
+            gun.muzzle.getWorldPosition(_muzzleWorld)
+
+            if (target) {
+                // Re-read per frame by the pool, so the ball follows the enemy.
+                const locked = target
+                projectiles.spawn(_muzzleWorld, destination, MUZZLE_SPEED, () => locked.aimPoint())
+            } else {
+                // A free-aim shot still needs something to hit, or it would fly
+                // through its own landing point and only vanish on the fall
+                // limit. Its own destination is that something, so the water
+                // splashes where the player clicked.
+                //
+                // Copied per shot rather than read from a scratch: every droplet
+                // holds this for its whole flight, so a second click would
+                // otherwise drag a ball still in the air onto the new landing
+                // spot and burst the water in the wrong place.
+                const landing = destination.clone()
+                projectiles.spawn(_muzzleWorld, landing, MUZZLE_SPEED, () => landing)
+            }
+
+            // The recoil, through the same path the crowd uses. Spawned before
+            // the clip so a missing FBX still produces the water.
+            if (ARMED_FIRING_CLIP) rig?.playEmotionOnce(ARMED_FIRING_CLIP)
+        },
+
+        dispose() {
+            if (disposed) return
+            disposed = true
+            detachGun()
+            projectiles.dispose()
+        },
+    }
+}
