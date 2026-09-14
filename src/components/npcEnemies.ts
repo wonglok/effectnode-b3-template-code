@@ -123,6 +123,14 @@ const ARRIVED_THRESHOLD = 0.6
  */
 const DEATH_ANIM_GRACE = 3
 
+/**
+ * Hard ceiling on how long a respawn will sit and wait for the death clip to
+ * finish. Without it, an emotion that never reports itself over would strand the
+ * NPC out of the crowd permanently — a standing corpse is a much worse bug than
+ * a fall that gets cut short.
+ */
+const DEATH_ANIM_MAX_WAIT = 8
+
 /** Below this speed an NPC is treated as standing still and blends to idle. */
 const MOVING_SPEED = 0.04
 
@@ -691,8 +699,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     const respawnNpc = (npc: Npc) => {
         // Still falling. The death clips run longer than the respawn delay would
         // sometimes allow, and popping back up mid-collapse reads as a glitch, so
-        // the clip gets to finish before the NPC is moved anywhere.
-        if (npc.rig && npc.rig.isEmotionActive()) {
+        // the clip gets to finish before the NPC is moved anywhere. Bounded by
+        // `DEATH_ANIM_MAX_WAIT`: the clip is advanced every frame so it does end,
+        // but an NPC left standing in the scene forever is a worse failure than
+        // one that cuts its own fall short.
+        if (npc.rig && npc.rig.isEmotionActive() && npc.deathElapsed < DEATH_ANIM_MAX_WAIT) {
             npc.respawnTimer = 0.25
             return
         }
@@ -965,22 +976,30 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             for (const npc of npcs) {
                 if (!npc.dead) continue
                 npc.deathElapsed += delta
-                // The death clip is a one-shot, and the emotion path drops back
-                // to idle the instant it ends — so the body has to be removed
-                // when the clip finishes, or the NPC stands back up and waits
-                // out its timer on its feet. `isEmotionActive` is the only
-                // signal for "the clip is over".
-                //
-                // But it is false *before* the clip is running too, because
-                // `playEmotionOnce` resolves its FBX through a promise. Hiding on
-                // `!isEmotionActive()` alone therefore killed the body on the very
-                // next frame and played the whole fall on an invisible avatar.
-                // So: latch once the clip has been seen, and only then treat the
-                // flag going false as "finished". The elapsed-time backstop covers
-                // a clip that never arrives.
-                if (npc.rig && npc.rig.scene.visible) {
+                if (npc.rig) {
+                    // Drive the rig by hand. `animate` is the only other ticker
+                    // and it needs an agent to read a velocity from, so a dead NPC
+                    // — whose agent has been removed — would otherwise never reach
+                    // it. A frozen mixer holds the death clip on its first frame:
+                    // the fall is never drawn, `advanceEmotion` never counts to the
+                    // end of the clip, and `emotionActiveFlag` latches true forever.
+                    //
+                    // Advancing unconditionally, rather than only while the body is
+                    // visible, is deliberate: it is what guarantees that flag
+                    // eventually clears, which is what the respawn below waits on.
+                    npc.rig.advance(delta)
+
+                    // The emotion path drops back to idle the instant a one-shot
+                    // ends, so the body is removed when the clip finishes rather
+                    // than left to stand back up. But `isEmotionActive` is also
+                    // false *before* the clip is running — `playEmotionOnce`
+                    // resolves its FBX through a promise — so hiding on
+                    // `!isEmotionActive()` alone killed the body on the very next
+                    // frame and drew the whole fall on an invisible avatar. Hence
+                    // the latch: only a true→false transition counts as "finished".
+                    // The elapsed-time backstop covers a clip that never arrives.
                     if (npc.rig.isEmotionActive()) npc.deathClipSeen = true
-                    else if (npc.deathClipSeen || npc.deathElapsed >= DEATH_ANIM_GRACE) {
+                    else if (npc.rig.scene.visible && (npc.deathClipSeen || npc.deathElapsed >= DEATH_ANIM_GRACE)) {
                         npc.rig.scene.visible = false
                     }
                 }
