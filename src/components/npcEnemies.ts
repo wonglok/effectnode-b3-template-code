@@ -110,6 +110,19 @@ const SPAWN_FALLBACK_DISTANCE = 8
 /** Considered "arrived" within this distance of the wander target. */
 const ARRIVED_THRESHOLD = 0.6
 
+/**
+ * Seconds to wait for a death clip to *start* before giving up and removing the
+ * body anyway.
+ *
+ * The emotion path resolves its FBX through a promise (`avatarLoader.ts:782`),
+ * so `isEmotionActive()` reads false for a frame or two after
+ * `playEmotionOnce()` — long enough for a naive "hide when the clip is over"
+ * check to hide the body before the fall was ever drawn on screen. This is the
+ * backstop for the other failure: a clip that never loads at all, which would
+ * otherwise leave the corpse standing there for the whole respawn delay.
+ */
+const DEATH_ANIM_GRACE = 3
+
 /** Below this speed an NPC is treated as standing still and blends to idle. */
 const MOVING_SPEED = 0.04
 
@@ -320,6 +333,11 @@ interface Npc {
     dead: boolean
     /** Seconds left before a downed NPC gets back up. */
     respawnTimer: number
+    /** Set once the death clip has actually been *seen* running. Latches, and is
+     *  what licenses hiding the body — see `DEATH_ANIM_GRACE`. */
+    deathClipSeen: boolean
+    /** Seconds since the killing blow, for the give-up-on-a-stuck-clip backstop. */
+    deathElapsed: number
     /** The floating bar above this NPC's head. */
     bar: HealthBar
 }
@@ -519,6 +537,8 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             hp: barMax,
             dead: false,
             respawnTimer: 0,
+            deathClipSeen: false,
+            deathElapsed: 0,
             bar,
         })
     }
@@ -638,6 +658,8 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         npc.dead = true
         npc.hp = 0
         npc.respawnTimer = Math.max(0, tunables.npcRespawnSeconds)
+        npc.deathClipSeen = false
+        npc.deathElapsed = 0
         npc.bar.setFraction(0, 0, tunables.maxHp)
         npc.bar.setVisible(false)
 
@@ -667,6 +689,13 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
      * is nothing left to restore into.
      */
     const respawnNpc = (npc: Npc) => {
+        // Still falling. The death clips run longer than the respawn delay would
+        // sometimes allow, and popping back up mid-collapse reads as a glitch, so
+        // the clip gets to finish before the NPC is moved anywhere.
+        if (npc.rig && npc.rig.isEmotionActive()) {
+            npc.respawnTimer = 0.25
+            return
+        }
         const spawn = spawnOnNavMesh()
         if (!spawn) {
             // Nowhere to put it. Keep it down and try again next frame rather
@@ -677,6 +706,8 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         npc.dead = false
         npc.hp = tunables.maxHp
         npc.respawnTimer = 0
+        npc.deathClipSeen = false
+        npc.deathElapsed = 0
         npc.wanderAge = Infinity
         npc.chaseAge = 0
         npc.shotTimer = 0
@@ -933,13 +964,25 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             // to land before the passes below look for one.
             for (const npc of npcs) {
                 if (!npc.dead) continue
+                npc.deathElapsed += delta
                 // The death clip is a one-shot, and the emotion path drops back
                 // to idle the instant it ends — so the body has to be removed
                 // when the clip finishes, or the NPC stands back up and waits
                 // out its timer on its feet. `isEmotionActive` is the only
                 // signal for "the clip is over".
-                if (npc.rig && npc.rig.scene.visible && !npc.rig.isEmotionActive()) {
-                    npc.rig.scene.visible = false
+                //
+                // But it is false *before* the clip is running too, because
+                // `playEmotionOnce` resolves its FBX through a promise. Hiding on
+                // `!isEmotionActive()` alone therefore killed the body on the very
+                // next frame and played the whole fall on an invisible avatar.
+                // So: latch once the clip has been seen, and only then treat the
+                // flag going false as "finished". The elapsed-time backstop covers
+                // a clip that never arrives.
+                if (npc.rig && npc.rig.scene.visible) {
+                    if (npc.rig.isEmotionActive()) npc.deathClipSeen = true
+                    else if (npc.deathClipSeen || npc.deathElapsed >= DEATH_ANIM_GRACE) {
+                        npc.rig.scene.visible = false
+                    }
                 }
                 npc.respawnTimer -= delta
                 if (npc.respawnTimer <= 0) respawnNpc(npc)
