@@ -31,6 +31,55 @@ export type ObjectCost = {
     triangleCount: number
 }
 
+/** The `NavigatorUAData` fields that can be read synchronously. */
+type UserAgentDataLike = {
+    brands?: { brand: string; version: string }[]
+    mobile?: boolean
+    platform?: string
+}
+
+/**
+ * Browser and OS identity for the tab that answered.
+ *
+ * Frame timings only mean something alongside the machine that produced them —
+ * 16.7 ms is comfortable on an integrated GPU and near the limit on a discrete
+ * one — so the environment rides with the measurement rather than being a
+ * separate request whose answer could come from a different editor tab.
+ */
+export type RuntimeEnvironment = {
+    /** `navigator.userAgent`, verbatim. Always present. */
+    userAgent: string | null
+    /**
+     * `navigator.userAgentData` (User-Agent Client Hints), reduced to its
+     * low-entropy fields. Chromium-only — `null` in Firefox and Safari. The
+     * high-entropy hints (`architecture`, `platformVersion`, `fullVersionList`)
+     * are async and deliberately not read here.
+     */
+    userAgentData: {
+        brands: { brand: string; version: string }[]
+        mobile: boolean | null
+        platform: string | null
+    } | null
+}
+
+function readEnvironment(): RuntimeEnvironment {
+    // Guarded so the collector stays callable outside a browser context.
+    const nav = typeof navigator === 'undefined' ? null : navigator
+    const uaData = (nav as unknown as { userAgentData?: UserAgentDataLike } | null)?.userAgentData
+    return {
+        userAgent: nav?.userAgent ?? null,
+        userAgentData: uaData
+            ? {
+                  // Copied field-by-field: `brands` is a FrozenArray of brand
+                  // objects, and the reply crosses a socket as plain data.
+                  brands: (uaData.brands ?? []).map((b) => ({ brand: b.brand, version: b.version })),
+                  mobile: uaData.mobile ?? null,
+                  platform: uaData.platform ?? null,
+              }
+            : null,
+    }
+}
+
 /** Aggregate render-load numbers for the whole scene. */
 export type ScenePerformance = {
     totals: {
@@ -68,8 +117,9 @@ export type ScenePerformance = {
      */
     slowObjects: ObjectCost[]
     /** Live-frame measurements (fps, frame budget, effect cost) — empty/zero when
-     *  no RuntimePerf monitor is mounted on this page. */
-    runtime: RuntimePerfSnapshot
+     *  no RuntimePerf monitor is mounted on this page. `environment` describes the
+     *  browser those numbers came from. */
+    runtime: RuntimePerfSnapshot & { environment: RuntimeEnvironment }
 }
 
 const MAX_OBJECTS = 8
@@ -123,7 +173,7 @@ export function collectScenePerformance(root: Object3D): ScenePerformance {
         },
         geometries,
         slowObjects,
-        runtime: useRuntimePerf.getState().snapshot(),
+        runtime: { ...useRuntimePerf.getState().snapshot(), environment: readEnvironment() },
     }
 }
 

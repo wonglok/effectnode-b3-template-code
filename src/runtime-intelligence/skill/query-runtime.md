@@ -111,6 +111,11 @@ GET /api/query/performance
   "slowObjects": [ { "name": "Terrain", "instances": 1, "triangleCount": 12000 } ],
   "runtime": {
     "sampling": true, "frames": 900,
+    "environment": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) …",
+      "userAgentData": { "brands": [ { "brand": "Chromium", "version": "140" } ],
+                         "mobile": false, "platform": "macOS" }
+    },
     "framerate": { "fps": 58.2, "frameMs": 17.2, "p95FrameMs": 24.1, "minFps": 31.0, "slowFrames": 4 },
     "budgetTargets": [ { "target": 60, "budgetMs": 16.67, "headroomPct": -3.2, "overBudget": true } ],
     "load": {
@@ -141,6 +146,11 @@ Read it like this:
   `/api/query/memory`). The reverse means geometry-bound (decimate).
 - `slowObjects` ranks *static* primitive cost, not frame time. `runtime` is the
   only place real milliseconds appear.
+- **`runtime.environment`** records which browser produced those numbers — frame
+  timings only compare across machines when you know the machine. `userAgentData`
+  is Chromium-only, so `null` means Firefox or Safari; it carries the low-entropy
+  hints only (brands, `mobile`, `platform`), not `architecture` or
+  `platformVersion`, which are async.
 
 ## Memory — registry, leaks, instancing candidates
 
