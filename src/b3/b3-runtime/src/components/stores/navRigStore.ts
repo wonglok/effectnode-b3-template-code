@@ -76,7 +76,25 @@ interface NavRigSettings {
     npcRespawnSeconds: number
     /** How long the player stays down before reviving. */
     playerRespawnSeconds: number
+
+    /** How many health crates stand on the floor. Live: the pool is sized to
+     *  `CRATE_POOL_SIZE` and this only decides how many are shown. */
+    crateCount: number
+    /** Fraction of `maxHp` one crate restores. 1 = a full restore. A fraction
+     *  rather than an absolute amount so it cannot drift out of step when
+     *  `maxHp` is changed — an absolute would silently stop being "full". */
+    crateHealFraction: number
+    /** How close the player has to get to a crate for it to trigger, in world
+     *  units. Measured on the ground plane, ignoring height. */
+    cratePickupRadius: number
+    /** How long a taken crate stays gone before reappearing somewhere else. */
+    crateRespawnSeconds: number
 }
+
+/** How many crate meshes are pooled. The `crateCount` slider's maximum — the
+ *  pool is built once at this size and shown/hidden, so a live slider change
+ *  never allocates or disposes geometry. */
+export const CRATE_POOL_SIZE = 8
 
 interface NavRigState {
     settings: NavRigSettings
@@ -126,6 +144,9 @@ interface NavRigState {
 
     /** Take one droplet's damage. Clamped at 0. */
     damagePlayer: (amount: number) => void
+
+    /** Restore health — the health-crate pickup. Clamped at `settings.maxHp`. */
+    healPlayer: (amount: number) => void
 
     /** Back to full health — the revive after being downed. */
     resetPlayerHp: () => void
@@ -208,6 +229,10 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         dropletDamage: 10,
         npcRespawnSeconds: 4,
         playerRespawnSeconds: 4,
+        crateCount: 4,
+        crateHealFraction: 1,
+        cratePickupRadius: 0.5,
+        crateRespawnSeconds: 8,
     },
 
     zoomRadius: 0,
@@ -231,6 +256,15 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     // re-trigger it on every hit landed on an already-downed player.
     damagePlayer: (amount) =>
         set((s) => ({ playerHp: Math.max(0, s.playerHp - amount) })),
+
+    // The outer `max` earns its keep: a bare `min(maxHp, hp + amount)` would
+    // *lower* the player's health if it ever sat above `maxHp` — which is what
+    // a heal would do the moment anyone drops `maxHp` below the current HP.
+    // Healing must never be able to hurt.
+    healPlayer: (amount) =>
+        set((s) => ({
+            playerHp: Math.max(s.playerHp, Math.min(s.settings.maxHp, s.playerHp + amount)),
+        })),
 
     resetPlayerHp: () => set({ playerHp: get().settings.maxHp }),
 

@@ -8,7 +8,7 @@ import type { Vec3 } from 'mathcat'
 import { createFindNearestPolyResult, DEFAULT_QUERY_FILTER, findNearestPoly, findPath, moveAlongSurface } from 'navcat'
 import { generateSoloNavMesh, type SoloNavMeshInput, type SoloNavMeshOptions } from 'navcat/blocks'
 import { createNavMeshHelper, getPositionsAndIndices } from 'navcat/three'
-import { useBlenderStore, useNavRigStore } from '../b3/b3-runtime/src'
+import { CRATE_POOL_SIZE, useBlenderStore, useNavRigStore } from '../b3/b3-runtime/src'
 import type { EmotionDef } from '../b3/b3-runtime/src/components/stores/navRigStore'
 import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
 import { BASE_SET_KEY, loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
@@ -17,6 +17,7 @@ import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/comp
 import { ARMED_SET_KEY } from './armedClipSet'
 import { DEATH_CLIPS } from './deathClip'
 import { BAR_HEIGHT_ABOVE, createHealthBar } from './healthBar'
+import { createHealthCrates, type HealthCrates } from './healthCrates'
 import { createPlayerCombat, type PlayerCombat } from './playerCombat'
 import { loadWeaponTemplate, type NpcWeapon } from './npcProps'
 import { avatarConfigSnapshot, useAvatarStore } from './avatar/useAvatarStore'
@@ -231,6 +232,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // one would be steering agents on a mesh with no relation to the
             // scene. Avatars are kept; only the crowd is re-based.
             ensureNpcs()
+            // Same reason, same site: a crate seated on the old mesh is now
+            // floating over whatever the new one does not cover.
+            ensureCrates()
 
             navMeshHelper = createNavMeshHelper(navMesh)
             navMeshHelper.object.position.y += 0.15
@@ -580,10 +584,44 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // lazy on-demand path inside `updateTargetFromPointer` runs long after
         // this line, so the binding is always initialised by then.
         let npcs: NpcEnemies | null = null
+        let crates: HealthCrates | null = null
         let npcsLoading = false
         // Bumped whenever the crowd is torn down, so an avatar load that was
         // already in flight can tell it has been superseded.
         let npcsGeneration = 0
+
+        /**
+         * The crates, on the same contract as the crowd: built once, re-based
+         * whenever the navmesh is rebuilt. No generation counter and no loading
+         * flag — nothing here is asynchronous, so there is no window in which a
+         * second call could land on a half-built result.
+         */
+        const ensureCrates = () => {
+            if (!navMesh) return
+            if (crates) {
+                crates.setNavMesh(navMesh)
+                return
+            }
+            crates = createHealthCrates({
+                scene,
+                navMesh,
+                poolSize: CRATE_POOL_SIZE,
+                // lil-gui mutates `settings` in place, so the pool reads the
+                // live crate tunables every frame with no wiring.
+                tunables: settings,
+                getPlayerPosition: () => playerGroup.position,
+                // A crate is only taken by a player who can use it: up on their
+                // feet, and actually missing health. The downed case matters —
+                // at 0 HP `hp < maxHp` is true, so without the `playerDowned`
+                // gate a player shot dead on top of a crate would burn it to
+                // heal a corpse, and the HUD would flip back to "Health" while
+                // the avatar still lay on the floor. The down beat belongs to
+                // `playerRespawnTimer`; a crate does not revive.
+                canCollect: () =>
+                    !playerDowned && useNavRigStore.getState().playerHp < settings.maxHp,
+                onCollect: (heal) => useNavRigStore.getState().healPlayer(heal),
+            })
+        }
 
         const ensureNpcs = () => {
             if (!navMesh) return
@@ -1141,6 +1179,18 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             .onChange(pushPlayerCadence)
         attackFolder.close()
 
+        // Health crates. No `onChange` handlers anywhere: the crate pool reads
+        // `settings` live on every frame, so a slider takes effect immediately —
+        // including the count, which only decides how many pooled meshes are
+        // shown. The slider's maximum *is* `CRATE_POOL_SIZE`, so it can never
+        // ask for a crate the pool does not have.
+        const crateFolder = gui.addFolder('Health Crates')
+        crateFolder.add(settings, 'crateCount', 0, CRATE_POOL_SIZE, 1).name('Count')
+        crateFolder.add(settings, 'crateHealFraction', 0.1, 1, 0.1).name('Heal Fraction')
+        crateFolder.add(settings, 'cratePickupRadius', 0.2, 2, 0.05).name('Pickup Radius')
+        crateFolder.add(settings, 'crateRespawnSeconds', 1, 30, 1).name('Respawn Seconds')
+        crateFolder.close()
+
         // ------------------------------------------------------------------
         // Movement / animation / camera scratch state
         // ------------------------------------------------------------------
@@ -1564,6 +1614,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // aims at where the player actually is rather than last frame's
             // position.
             npcs?.update(clamped)
+
+            // --- Health crates ---
+            // After the player has moved, so a crate triggers on where they
+            // actually are. The pickup test is horizontal, so the jump lift
+            // re-applied above is irrelevant to it either way.
+            crates?.update(clamped)
         }
 
         frameRef.current = { frame }
@@ -1600,6 +1656,11 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // loading will tear its partial result down instead of attaching.
             npcs?.dispose()
             npcs = null
+            // Removes its own group from the scene (the rig does not sweep it)
+            // and releases the one geometry / material / texture the whole pool
+            // shares.
+            crates?.dispose()
+            crates = null
             scene.remove(playerGroup)
             scene.remove(targetMarker)
             targetMarker.geometry.dispose()

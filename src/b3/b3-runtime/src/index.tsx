@@ -19,6 +19,7 @@ import { useBlenderStore } from "./components/stores/blenderStore";
 import { useBlenderSyncStore } from "./components/stores/blenderSyncStore";
 import { useSettingsStore } from "./components/stores/settingsStore";
 import {
+  CRATE_POOL_SIZE,
   MAX_CAMERA_DISTANCE,
   MIN_CAMERA_DISTANCE,
   useNavRigStore,
@@ -34,6 +35,7 @@ export {
   useNavRigStore,
   MIN_CAMERA_DISTANCE,
   MAX_CAMERA_DISTANCE,
+  CRATE_POOL_SIZE,
 };
 
 // components

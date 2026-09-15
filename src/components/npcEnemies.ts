@@ -47,11 +47,11 @@ import {
     createFindNearestPolyResult,
     DEFAULT_QUERY_FILTER,
     findNearestPoly,
-    findRandomPoint,
     type FindNearestPolyResult,
     type NavMesh,
 } from 'navcat'
 import { crowd } from 'navcat/blocks'
+import { randomNavMeshPoint } from './navmeshPoints'
 import { BASE_SET_KEY, loadAvatar, type AvatarRig, type ClipSetConfig, type LocomotionKey } from './avatarLoader'
 import { applyGunTuning, attachGun, calibrateGun, loadWeaponTemplate, type NpcGun, type NpcWeapon } from './npcProps'
 import { createNpcProjectiles } from './npcProjectiles'
@@ -460,29 +460,6 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     const npcs: Npc[] = []
 
     /**
-     * A random walkable point, with retries — because `findRandomPoint` reports
-     * failure on a point it actually found.
-     *
-     * It picks a polygon by area-weighted reservoir sampling, then rejects its
-     * own result with `if (!selectedPoly || !selectedPolyRef)`. Node refs are
-     * 1-based everywhere except the **first polygon of a tile, whose ref is
-     * literally 0** — so every time the sampling happens to keep that polygon,
-     * a perfectly good point is thrown away as `success: false`. Measured at
-     * 6.4% on a 7-polygon mesh (it is just the odds that polygon 0 survives,
-     * so it varies with that polygon's area share — higher on coarser meshes).
-     *
-     * One attempt per NPC would therefore under-spawn the crowd for no reason.
-     * Eight is ample: 0.064^8 is about 3e-10.
-     */
-    const randomPoint = () => {
-        for (let attempt = 0; attempt < 8; attempt++) {
-            const random = findRandomPoint(navMesh, DEFAULT_QUERY_FILTER, Math.random)
-            if (random.success) return random
-        }
-        return null
-    }
-
-    /**
      * Where to drop a new NPC.
      *
      * The fallback is unreachable in practice (see `randomPoint`) but must not
@@ -491,7 +468,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
      * broken. Put it at arm's length in a random direction instead.
      */
     const spawnOnNavMesh = (): Vec3 | null => {
-        const random = randomPoint()
+        const random = randomNavMeshPoint(navMesh)
         if (random) return random.position
         const player = getPlayerPosition()
         if (!player) return null
@@ -877,7 +854,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     /** Give an NPC a fresh wander target somewhere else on the navmesh. */
     const scatter = (npc: Npc) => {
         if (!npc.agentId) return
-        const random = randomPoint()
+        const random = randomNavMeshPoint(navMesh)
         // Still nothing after the retries: leave `wanderAge` alone so the next
         // tick tries again rather than resetting the timer on a failed pick.
         if (!random) return
