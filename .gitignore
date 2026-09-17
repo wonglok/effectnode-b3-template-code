@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+src/runtime-intelligence/docs
+
+src/runtime-intelligence/a-video
