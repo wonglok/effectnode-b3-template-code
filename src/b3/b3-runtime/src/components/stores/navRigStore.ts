@@ -309,7 +309,7 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         runningSpeed: 8,
         offsetAbove: 15,
         offsetBehind: 10,
-        npcCount: 250,
+        npcCount: 100,
         npcAggroRadius: 12,
         npcScatterSeconds: 6,
         npcStandoffDistance: 5,
