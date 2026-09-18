@@ -110,6 +110,33 @@ interface NavRigSettings {
      *  exactly this long. Applied live. */
     forceFieldStunSeconds: number
 
+    /** Master switch for the crowd's own jump defence. Off leaves the crowd
+     *  exactly as it was before the skill existed: no dodging, and the player's
+     *  water can never be turned back on them. Applied live. */
+    npcJumpDefenceEnabled: boolean
+    /** How close one of the *player's* inbound droplets has to come before an
+     *  NPC jumps out of its way, in world units, on the ground plane. Applied
+     *  live — the cue for the next jump, and the reach of the jump itself is
+     *  `npcJumpFieldRadius`. Larger means the crowd reacts earlier and the dodge
+     *  reads as a flinch; smaller means it reacts late and reads as a snap.
+     *
+     *  There is a ceiling, and it is not the player's range. The sweep lasts
+     *  `FORCE_FIELD_SWEEP_SECONDS` and the water closes at `MUZZLE_SPEED`, so a
+     *  jump only intercepts while `threatRadius − 20 × 1 ≤ npcJumpFieldRadius` —
+     *  past that, the shot arrives after the wave has already expired and the NPC
+     *  has jumped for nothing. Measured by the harness: a 4 m field catches a
+     *  reaction range of 24 and misses 26; the default 6 intercepts 0.23 s into
+     *  the sweep, with the whole second to spare. */
+    npcJumpThreatRadius: number
+    /** How far an NPC's own jump field reaches, in world units. The mirror of
+     *  `forceFieldRadius`, and the radius the water is turned at as the wave
+     *  arrives. Applied to the next NPC jump. */
+    npcJumpFieldRadius: number
+    /** Seconds one NPC must wait between defensive jumps, so a crowd under
+     *  sustained fire dodges in ones and twos rather than hopping in unison.
+     *  Per NPC, not per crowd. Applied live. */
+    npcJumpCooldown: number
+
     /** Health every character starts with. Ten droplets at `dropletDamage`. */
     maxHp: number
     /** Damage one water droplet does on contact. */
@@ -272,6 +299,10 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         forceFieldRadius: 5,
         forceFieldPush: 3,
         forceFieldStunSeconds: 1,
+        npcJumpDefenceEnabled: true,
+        npcJumpThreatRadius: 6,
+        npcJumpFieldRadius: 4,
+        npcJumpCooldown: 3,
         maxHp: DEFAULT_MAX_HP,
         dropletDamage: 10,
         npcRespawnSeconds: 4,

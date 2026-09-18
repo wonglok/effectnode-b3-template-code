@@ -133,6 +133,32 @@ export interface PlayerCombatOptions {
      * with the movement loop. A second copy here would drift from it.
      */
     onAim?: (aim: THREE.Vector3) => void
+    /**
+     * What one of the player's **turned** droplets may hit, given where the water
+     * is now — and what that costs. See `NpcProjectilesOptions.getBouncePoint`.
+     *
+     * The mirror of the crowd's own bounce resolver. There, water blown back at
+     * the player's jump flies into the crowd it came from; here, water blown back
+     * at an NPC's jump flies into **the player**. Both halves are injected because
+     * neither pool can name the other's shooter: this one would have to reach into
+     * the store for the player's health, and into the rig for where the player's
+     * chest is.
+     *
+     * With no resolver the player's turned water is inert — it flies off and
+     * recycles without ever hitting anything, which is the pre-skill behaviour.
+     *
+     * **Its range is finite, and measured.** A turned droplet is sent out flat
+     * and falls from there (`deflect` zeroes the vertical), so it is dropping
+     * below chest height before it has crossed the room: the harness finds the
+     * returned water still landing on a player up to about **7.5 m** away. The
+     * crowd fires from its 5 m standoff, so the skill bites exactly where the
+     * fight happens — and sniping a crowd from across the map is not punished by
+     * water arriving back that could not physically get there. Raise
+     * `MUZZLE_SPEED` and this range grows with it.
+     */
+    getBouncePoint?: (position: THREE.Vector3) => THREE.Vector3 | null
+    /** Damage whatever `getBouncePoint` found — the player themself, here. */
+    onBounceHit?: (position: THREE.Vector3) => void
 }
 
 export interface PlayerCombat {
@@ -206,6 +232,22 @@ export interface PlayerCombat {
      * the free-aim case: there is no one at the landing spot to hurt.
      */
     fireAt(destination: THREE.Vector3, target?: NpcTarget | null): void
+    /**
+     * Is one of the player's own droplets inbound toward `point`, inside `radius`?
+     * The read the crowd's jump defence is triggered by — see
+     * `NpcProjectiles.inboundThreat`.
+     */
+    inboundThreat(point: THREE.Vector3, radius: number): boolean
+    /**
+     * Turn every inbound droplet inside `radius` of `origin` back the way it came
+     * — an NPC's jump field, seen from the receiving end. Returns how many were
+     * turned.
+     *
+     * What the turned water can then hit is `getBouncePoint`'s business, and for
+     * this pool that is the player: shot water that comes back can hurt whoever
+     * fired it, exactly as the crowd's blown-back water can hurt the crowd.
+     */
+    deflect(origin: THREE.Vector3, radius: number): number
     dispose(): void
 }
 
@@ -237,6 +279,11 @@ export function createPlayerCombat(
         // to hit, instead of silently testing against the player.
         getTarget: () => null,
         names: { droplets: 'player-droplets', splashes: 'player-splashes' },
+        // The receiving end of an NPC's jump defence: water turned by one of
+        // their fields is re-armed to whatever these resolve — the player — so the
+        // shot the player fired is the thing that can come back and hit them.
+        getBouncePoint: options.getBouncePoint,
+        onBounceHit: options.onBounceHit,
     })
 
     /** Scratch for the muzzle's world position — read once per shot. */
@@ -465,6 +512,20 @@ export function createPlayerCombat(
         fireAt(destination, target) {
             if (disposed || !weapon.enabled || !gun) return
             shoot(destination, target)
+        },
+
+        // Both are the pool's own methods, forwarded rather than reimplemented:
+        // the crowd asks its two questions about the player's water, and the pool
+        // is where the water is. Deliberately unguarded on `weapon.enabled` —
+        // these are asked *about* droplets already in flight, and a player who
+        // leaves attack mode mid-volley still has water in the air that an NPC is
+        // entitled to dodge or turn.
+        inboundThreat(point, radius) {
+            return disposed ? false : projectiles.inboundThreat(point, radius)
+        },
+
+        deflect(origin, radius) {
+            return disposed ? 0 : projectiles.deflect(origin, radius)
         },
 
         dispose() {

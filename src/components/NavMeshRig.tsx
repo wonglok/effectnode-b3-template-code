@@ -284,6 +284,23 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // which point everything below has been built.
             canEngage: (aim) => inEngageRange(aim) && hasLineOfSight(aim),
             onAim: (aim) => faceTowards(aim),
+            // The receiving end of the crowd's jump defence. Water the player fired
+            // that an NPC's field turns comes back at the player's own chest, and
+            // costs a droplet's damage — the exact mirror of the crowd's bounce
+            // pair, which turns the player's field's water into a threat to the
+            // crowd.
+            //
+            // Its own scratch, and not `_losOrigin`: both are read "immediately" by
+            // their callers, but they are read at different points in the frame, so
+            // sharing one would have the line of sight for the next shot testing a
+            // point the pool left behind.
+            getBouncePoint: () =>
+                _playerChest.set(
+                    playerGroup.position.x,
+                    playerGroup.position.y + AIM_HEIGHT,
+                    playerGroup.position.z,
+                ),
+            onBounceHit: () => useNavRigStore.getState().damagePlayer(settings.dropletDamage),
         })
         // Resolved once and reused, so a gun can be attached synchronously the
         // moment an avatar lands — awaiting the load inside `mountAvatar` would
@@ -679,6 +696,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 // means something.
                 onPlayerHit: () =>
                     useNavRigStore.getState().damagePlayer(settings.dropletDamage),
+                // The player's water, so the crowd can see a shot coming and turn
+                // it back — the read half and the deflect half both come from the
+                // pool that owns it (see `PlayerDroplets`). `playerCombat` is built
+                // above this same effect, so the reference is settled; it is handed
+                // over as a getter to match `getHostile` and `getPlayerPosition`.
+                getPlayerDroplets: () => playerCombat,
                 // lil-gui mutates `settings` in place, so the crowd reads the
                 // live values every frame with no wiring.
                 tunables: settings,
@@ -933,6 +956,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         /** Scratch for the line-of-sight ray — its origin and unit direction. */
         const _losOrigin = new THREE.Vector3()
         const _losDirection = new THREE.Vector3()
+        /** Scratch for the player's chest as a bounce target — where the player's
+         *  own water may land once an NPC's field has turned it. Kept separate
+         *  from `_losOrigin` even though the two hold the same point: the pool
+         *  reads this on its own schedule, and the line-of-sight ray is read by
+         *  whichever shot comes next. */
+        const _playerChest = new THREE.Vector3()
 
         // Hold-to-move: while the mouse is held, the per-frame loop keeps re-aiming
         // the character at the current pointer position. A quick click sets it once.
@@ -1298,6 +1327,18 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         jumpFolder.add(settings, 'forceFieldPush', 0, 10, 0.25).name('Shove Distance')
         jumpFolder.add(settings, 'forceFieldStunSeconds', 0, 5, 0.05).name('Stun (s)')
         jumpFolder.close()
+
+        // The crowd's answer to that, and the only place it can be dialled. An NPC
+        // that sees one of the player's droplets closing jumps out of its way, and
+        // its own field turns the water back at the player on the way past — no
+        // shove and no stun, so `Field Radius` here is the whole of its reach.
+        // Read live, like everything else.
+        const npcJumpFolder = gui.addFolder('NPC Jump Defence')
+        npcJumpFolder.add(settings, 'npcJumpDefenceEnabled').name('Enabled')
+        npcJumpFolder.add(settings, 'npcJumpThreatRadius', 1, 20, 0.5).name('Reaction Range')
+        npcJumpFolder.add(settings, 'npcJumpFieldRadius', 1, 20, 0.5).name('Field Radius')
+        npcJumpFolder.add(settings, 'npcJumpCooldown', 0, 10, 0.25).name('Cooldown (s)')
+        npcJumpFolder.close()
 
         // Health crates. No `onChange` handlers anywhere: the crate pool reads
         // `settings` live on every frame, so a slider takes effect immediately —

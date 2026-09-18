@@ -188,6 +188,18 @@ export interface NpcProjectiles {
      * and redirecting it is motion for nothing.
      */
     deflect(origin: THREE.Vector3, radius: number): number
+    /**
+     * Is any live droplet **inbound** toward `point` and within `radius` of it
+     * (XZ only)? The read-only half of `deflect` — the same distance test and the
+     * same inbound test, with nothing mutated.
+     *
+     * It exists so a defender can decide to raise a field *before* the water
+     * arrives. `deflect` only turns what is already inside its radius, which is
+     * too late for the defender that wants to be airborne by the time the shot
+     * gets there: this answers "is something coming at me?", which is the
+     * question a dodge has to be triggered by.
+     */
+    inboundThreat(point: THREE.Vector3, radius: number): boolean
     /** Recycle everything and free the shared geometry + material. */
     dispose(): void
 }
@@ -671,6 +683,27 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                 turned++
             }
             return turned
+        },
+
+        inboundThreat(point, radius) {
+            if (disposed || radius <= 0) return false
+            const radiusSq = radius * radius
+            for (const d of droplets) {
+                if (d.life <= 0) continue
+
+                // Toward the point, not away from it — the sign convention is the
+                // mirror of `deflect`'s outward vector, because the question here
+                // is "is this coming at me" rather than "is this inside me".
+                const dx = point.x - d.mesh.position.x
+                const dz = point.z - d.mesh.position.z
+                if (dx * dx + dz * dz > radiusSq) continue
+
+                // Inbound only, exactly as `deflect` requires before it turns
+                // anything: water already flying away from this point cannot hit
+                // it, so it must not trigger a dodge either.
+                if (d.velocity.x * dx + d.velocity.z * dz > 0) return true
+            }
+            return false
         },
 
         dispose() {
