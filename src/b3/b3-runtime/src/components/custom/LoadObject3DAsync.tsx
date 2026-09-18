@@ -1,3 +1,4 @@
+import { GrassComponent } from './GrassComponent'
 import { LoadCollider } from './LoadCollider'
 import { LoadCurve } from './LoadCurve'
 import { LoadEdge } from './LoadEdge'
@@ -9,6 +10,11 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <LoadCollider texData={texData} objects={objects}></LoadCollider>
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
+
+            {/* Instanced grass field (TSL port of three's grass-shader example).
+                Flatten and hide its ground to lay it over terrain the scene
+                already provides: terrainAmplitude={0} showGround={false}. */}
+            <GrassComponent />
 
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water'} objects={objects}></SceneWaterObject>
