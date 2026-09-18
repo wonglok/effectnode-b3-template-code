@@ -16,9 +16,14 @@
 //
 // The deformation is driven entirely by per-instance geometry attributes that
 // `GrassComponent` generates on the CPU — see `buildGrassAttributes` there.
+//
+// One thing here is not in the reference at all: the blade shortens as it
+// approaches the player's cull radius. See the "Radius culling" block in the
+// vertex nodes — it is the shader half of a split described in grassCuller.ts,
+// and the two only make sense together.
 // ---------------------------------------------------------------------------
 
-import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace } from 'three/webgpu'
+import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace, Vector3 } from 'three/webgpu'
 import type { Node, Texture } from 'three/webgpu'
 import {
     Fn,
@@ -37,6 +42,8 @@ import {
     saturate,
     select,
     sin,
+    smoothstep,
+    sqrt,
     texture,
     time,
     uniform,
@@ -131,6 +138,16 @@ export interface GrassMaterialOptions {
     windSpeed: number
     /** Peak bend, in radians, of the per-blade gust. */
     windStrength: number
+    /**
+     * Distance from the player at which a blade is scaled away entirely.
+     *
+     * Must agree with the radius `GrassComponent` hands the culler: past this
+     * distance the blade is not in the draw at all, and inside it this is what
+     * decides how much of it survives.
+     */
+    cullRadius: number
+    /** Width of the shrink-out band just inside `cullRadius`. */
+    fadeWidth: number
 }
 
 export interface GrassMaterial {
@@ -140,6 +157,12 @@ export interface GrassMaterial {
         bladeHeight: { value: number }
         windSpeed: { value: number }
         windStrength: { value: number }
+        /**
+         * Where the shrink-out is centred. Written every frame by
+         * `GrassComponent`, which is what lets the fade move smoothly while the
+         * drawn set only changes in steps.
+         */
+        playerPosition: { value: Vector3 }
     }
 }
 
@@ -171,6 +194,13 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     const windSpeed = uniform(options.windSpeed)
     const windStrength = uniform(options.windStrength)
 
+    // Starts at the origin and is moved to the player every frame. The initial
+    // value only has to be finite: until the first frame writes it, every blade
+    // sits at some distance from (0, 0, 0) and the field draws at whatever scale
+    // that implies — which is why `GrassComponent` draws the full field until the
+    // player group exists, rather than relying on this default being meaningful.
+    const playerPosition = uniform(new Vector3(0, 0, 0), 'vec3')
+
     // Colours arrive as sRGB hex and are converted exactly once. The reference
     // builds them with `new THREE.Color(r, g, b).convertSRGBToLinear()`, but a
     // Color constructed from raw components is *already* in the working
@@ -199,12 +229,36 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // which is what produces a smooth arc rather than a hinge at the root.
     const direction = slerp(rootDirection, orientation, rootToTip)
 
+    // ---- Radius culling ---------------------------------------------------
+    // Which blades are drawn is decided on the CPU (grassCuller.ts) and expressed
+    // as the instance count, so by the time a vertex gets here its blade is
+    // already known to be in range. What that cannot express is the *edge*: the
+    // set changes in whole steps, so a blade in range one update and out the next
+    // would switch on at full height.
+    //
+    // So the radius here is a length, not a filter — the blade shortens to nothing
+    // as it approaches `cullRadius` and sinks into the ground. Scaling the height
+    // rather than fading the opacity is deliberate: this material is opaque and
+    // alpha-tested, and the reference's `alphaTest` cutout means an opacity fade
+    // would not be gradual at all — the blade would hold its full silhouette and
+    // then vanish the moment the product crossed the threshold.
+    //
+    // Measured from the per-instance root, so the whole blade shares one scale and
+    // the arc of the bend is preserved as it shortens.
+    const toPlayer = offset.sub(playerPosition)
+    const distanceToPlayer = sqrt(dot(toPlayer, toPlayer))
+    const heightScale = smoothstep(
+        options.cullRadius - options.fadeWidth,
+        options.cullRadius,
+        distanceToPlayer,
+    ).oneMinus()
+
     // Per-blade height variation. The reference does not scale the whole blade
     // uniformly — it only stretches the Y component, which is why taller blades
     // are also slightly thinner in silhouette.
     const stretched = vec3(
         positionLocal.x,
-        positionLocal.y.add(positionLocal.y.mul(stretch)),
+        positionLocal.y.add(positionLocal.y.mul(stretch)).mul(heightScale),
         positionLocal.z,
     )
 
@@ -258,6 +312,7 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
             bladeHeight: bladeHeight as unknown as { value: number },
             windSpeed: windSpeed as unknown as { value: number },
             windStrength: windStrength as unknown as { value: number },
+            playerPosition: playerPosition as unknown as { value: Vector3 },
         },
     }
 }

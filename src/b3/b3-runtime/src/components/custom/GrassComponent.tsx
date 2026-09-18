@@ -15,6 +15,12 @@
 // follows the real terrain instead of an invented height field — and each blade
 // is aligned to the sampled surface normal, so it grows out of a slope rather
 // than standing plumb with the world and sinking into it.
+//
+// Drawing is radius-culled around the player. Every blade stays resident in the
+// instance buffers; only the ones near the player sit inside
+// `geometry.instanceCount`, and the rest cost nothing to draw. `grassCuller.ts`
+// owns that rearrangement, and its header explains why it is done by permuting
+// the buffers rather than by duplicating or filtering them.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react'
@@ -34,8 +40,10 @@ import {
 import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 import type { Texture } from 'three'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
+import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import type { BlenderObject } from '../types/blenderTypes'
+import { createGrassCuller } from './grassCuller'
 import { createGrassMaterial } from './grassTSLMaterial'
 
 // ---------------------------------------------------------------------------
@@ -382,16 +390,43 @@ export interface GrassComponentProps {
     windSpeed?: number
     /** Peak gust bend, in radians. */
     windStrength?: number
+    /**
+     * How far from the player blades are drawn, in world units.
+     *
+     * A blade beyond this is not in the draw at all. Nothing prunes it from the
+     * buffers — it stays resident and simply falls outside `instanceCount` — so
+     * this trades draw cost, not memory.
+     */
+    cullRadius?: number
+    /**
+     * Width of the band just inside `cullRadius` over which a blade shortens to
+     * nothing, so the edge of the field is walked into rather than popped at.
+     *
+     * Also the ceiling on `updateDistance`: a blade has to be admitted while it
+     * is still in this band, or it would be seen switching on at full height.
+     */
+    fadeWidth?: number
+    /**
+     * Query again only once the player has moved this far.
+     *
+     * Clamped to `fadeWidth` for the reason above. Raising it costs smoothness,
+     * not correctness: the query is a BVH descent, so the throttle is about how
+     * often the instance buffers are rewritten, not about the search.
+     */
+    updateDistance?: number
 }
 
 export function GrassComponent({
     objects = [],
-    instances = 120000 * 8,
+    instances = 120000 * 12.5,
     placement = 'collider',
     width = 60,
-    // 5x smaller than the reference's 0.12 x 1 blades.
+    // The reference's blades are 0.12 x 1. These are 5x narrower and, since the
+    // 1.5x height increase, 3.33x shorter — a finer lawn rather than its meadow.
+    // Only the aspect differs from a uniform shrink, so the blades are noticeably
+    // taller than they are wide.
     bladeWidth = 0.024,
-    bladeHeight = 0.2,
+    bladeHeight = 0.3,
     joints = 5,
     terrainAmplitude = 1,
     showGround = false,
@@ -401,8 +436,17 @@ export function GrassComponent({
     groundColor = '#000f00',
     windSpeed = 0.25,
     windStrength = 0.15,
+    cullRadius = 5,
+    fadeWidth = 2,
+    updateDistance = 1,
 }: GrassComponentProps) {
     const scene = useThree((r) => r.scene)
+
+    // The character rig's group, published by NavMeshRig once its navmesh is
+    // built. Read live inside useFrame rather than subscribed to: it is a single
+    // long-lived object whose *position* changes every frame, so a subscription
+    // would re-render this component 60 times a second to learn nothing.
+    const playerGroup = useGameGlobal((r) => r.playerGroup) as { position: Vector3 } | null
 
     const [collider, setCollider] = useState<Mesh | null>(null)
 
@@ -466,23 +510,52 @@ export function GrassComponent({
         grassGeometry.setAttribute('position', bladeTemplate.attributes.position)
         grassGeometry.setAttribute('uv', bladeTemplate.attributes.uv)
 
-        grassGeometry.setAttribute('offset', new InstancedBufferAttribute(attributes.offsets, 3))
-        grassGeometry.setAttribute('rootDirection', new InstancedBufferAttribute(attributes.rootDirection, 4))
-        grassGeometry.setAttribute('orientation', new InstancedBufferAttribute(attributes.orientations, 4))
-        grassGeometry.setAttribute('stretch', new InstancedBufferAttribute(attributes.stretches, 1))
+        // Held by name rather than passed inline: the culler permutes these
+        // arrays in place, and the per-frame upload has to name each one to
+        // narrow its update range to the slots that actually moved.
+        const gpuAttributes = {
+            offset: new InstancedBufferAttribute(attributes.offsets, 3),
+            rootDirection: new InstancedBufferAttribute(attributes.rootDirection, 4),
+            orientation: new InstancedBufferAttribute(attributes.orientations, 4),
+            stretch: new InstancedBufferAttribute(attributes.stretches, 1),
+        }
+
+        grassGeometry.setAttribute('offset', gpuAttributes.offset)
+        grassGeometry.setAttribute('rootDirection', gpuAttributes.rootDirection)
+        grassGeometry.setAttribute('orientation', gpuAttributes.orientation)
+        grassGeometry.setAttribute('stretch', gpuAttributes.stretch)
 
         // Required, and not optional. InstancedBufferGeometry defaults this to
         // Infinity, and three's WebGPU path reads it *directly* as the draw's
         // instanceCount (RenderObject.getDrawParameters) — an instanced draw of
         // Infinity is a validation error, not a full draw.
+        //
+        // It is also the whole culling mechanism: the culler keeps the drawn
+        // blades in a prefix of these buffers and this is narrowed to match, so
+        // the blades outside it are never submitted.
         grassGeometry.instanceCount = instances
 
         // The geometry's own bounds cover a single blade at the origin, so three
         // would cull the entire field the moment the origin left the frustum.
         // Measured from the samples so it is right for either placement mode.
+        //
+        // Deliberately left spanning the whole field rather than narrowed to the
+        // drawn prefix: the player is always inside the field, so this can never
+        // cull anything the prefix would have drawn, whereas a stale or too-small
+        // sphere here would blank the grass entirely.
         grassGeometry.boundingSphere = computeFieldBounds(attributes.offsets, bladeHeight)
 
-        const { material } = createGrassMaterial({
+        const culler = createGrassCuller(
+            {
+                offset: attributes.offsets,
+                rootDirection: attributes.rootDirection,
+                orientation: attributes.orientations,
+                stretch: attributes.stretches,
+            },
+            { cullRadius, fadeWidth, updateDistance },
+        )
+
+        const { material, uniforms } = createGrassMaterial({
             map: bladeDiffuse,
             alphaMap: bladeAlpha,
             bladeHeight,
@@ -490,6 +563,8 @@ export function GrassComponent({
             bottomColor,
             windSpeed,
             windStrength,
+            cullRadius,
+            fadeWidth,
         })
 
         const grassMesh = new Mesh(grassGeometry, material)
@@ -531,7 +606,16 @@ export function GrassComponent({
             groundMesh.receiveShadow = true
         }
 
-        return { grassMesh, material, groundMesh, groundMaterial }
+        return {
+            grassMesh,
+            grassGeometry,
+            material,
+            uniforms,
+            gpuAttributes,
+            culler,
+            groundMesh,
+            groundMaterial,
+        }
     }, [
         collider,
         colliderVersion,
@@ -548,7 +632,54 @@ export function GrassComponent({
         groundColor,
         windSpeed,
         windStrength,
+        cullRadius,
+        fadeWidth,
+        updateDistance,
     ])
+
+    // -----------------------------------------------------------------------
+    // Per-frame culling
+    // -----------------------------------------------------------------------
+    // `built` is captured by the closure and refreshed every render, so this
+    // reads the culler of whatever field is current — including across a collider
+    // re-sync, where the new culler starts with the whole field drawn and
+    // compacts on its first update.
+    useFrame(() => {
+        // Before NavMeshRig publishes the player there is nothing to cull around,
+        // and the field draws in full. That is the honest fallback — the culler
+        // starts with every blade in the drawn prefix for the same reason.
+        if (!playerGroup) return
+
+        const { x, y, z } = playerGroup.position
+
+        // Every frame, not only when the set changes. This is what moves the fade
+        // out to meet the player, and it is also why a set that is a moment stale
+        // is never seen: a blade dropped from the set is beyond `cullRadius` by
+        // the time it goes, so the shader has already scaled it to nothing.
+        built.uniforms.playerPosition.value.copy(playerGroup.position)
+
+        if (!built.culler.update(x, y, z)) return
+
+        built.grassGeometry.instanceCount = built.culler.visibleCount
+
+        // Only the slots that moved are re-uploaded. The backend walks
+        // `updateRanges` and clears it after the copy, so an empty range would
+        // mean the whole buffer — which is the thing this avoids.
+        const start = built.culler.dirtyStart
+        const span = built.culler.dirtyEnd - start
+
+        const ranges: Array<[InstancedBufferAttribute, number]> = [
+            [built.gpuAttributes.offset, 3],
+            [built.gpuAttributes.rootDirection, 4],
+            [built.gpuAttributes.orientation, 4],
+            [built.gpuAttributes.stretch, 1],
+        ]
+
+        for (const [attribute, itemSize] of ranges) {
+            attribute.addUpdateRange(start * itemSize, span * itemSize)
+            attribute.needsUpdate = true
+        }
+    })
 
     useEffect(() => {
         return () => {
