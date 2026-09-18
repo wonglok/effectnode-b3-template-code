@@ -1109,28 +1109,37 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         /**
          * The deliberate fire command — the right button.
          *
-         * An enemy under the cursor is locked onto and held under fire; empty
-         * space is a free-aim shot that splashes where it lands. Distinct from the
-         * tap handler below, which only ever shoots enemies: a touch device has no
-         * right button, so it needs a way to shoot at all, and giving up "tap the
-         * ground to walk there" as well would strand it.
+         * An enemy under the cursor is locked onto and held under fire. Bare
+         * ground is not a single shot: it holds fire **at that spot**, and keeps
+         * holding until the player fires somewhere else, clicks to stop, or walks
+         * off. That is a standing order rather than a trigger held down, which is
+         * why the release conditions are the player's other commands and not the
+         * button coming back up.
+         *
+         * Distinct from the tap handler below, which only ever shoots enemies: a
+         * touch device has no right button, so it needs a way to shoot at all,
+         * and giving up "tap the ground to walk there" as well would strand it.
          */
         const handleFireCommand = (clientX: number, clientY: number) => {
             if (!useNavRigStore.getState().attackMode) return
             if (lockOntoPickedEnemy(clientX, clientY)) return
 
-            // Aimed at the ground, so there is nothing to hold fire on. Cleared
-            // before the ground test rather than after, so a right-click at the
-            // sky — no ground hit at all — still releases whoever was locked: the
-            // command was "shoot over there", and the answer is not to keep
-            // firing at the enemy already being shot.
-            playerCombat.lockOn(null)
-
             const ground = groundPointFromPointer(clientX, clientY)
             if (ground) {
+                // Face it before the hold starts, rather than waiting for the
+                // first shot's `onAim` next frame, so the right-click reads as
+                // "turn and open up".
                 faceTowards(ground)
-                playerCombat.fireAt(ground)
+                // Replaces whichever hold was running, enemy lock included — the
+                // right-click is a new order, not an addition to the last one.
+                playerCombat.holdFireAt(ground)
+                return
             }
+
+            // No ground hit at all — the sky. Still a release: the command was
+            // "shoot over there" and there is no "there", so the answer is not to
+            // carry on firing at what the last command picked out.
+            playerCombat.lockOn(null)
         }
 
         const updateTargetFromPointer = () => {
@@ -1159,8 +1168,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             if (useNavRigStore.getState().attackMode) {
                 if (lockOntoPickedEnemy(event.clientX, event.clientY)) return
                 // Bare ground in attack mode is a walk command, so it is also the
-                // signal to stop shooting: walking away from a locked enemy would
-                // otherwise leave the gun firing behind the player.
+                // signal to stop shooting — the lock and a held spray alike:
+                // walking away from a locked enemy would otherwise leave the gun
+                // firing behind the player.
                 playerCombat.lockOn(null)
             }
 
@@ -1802,6 +1812,25 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // the fire-interval slider has to land on the next shot with no
             // rebuild and no stale copy to go out of step.
             playerCombat.setFireInterval(settings.playerFireInterval)
+            // Setting off on foot ends a held spray. Two reasons, and either
+            // would do on its own: a right-click at a spot on the ground is a
+            // standing order to shoot *there*, which is not a thing you do while
+            // walking away from it — and the movement block above rewrites the
+            // facing from `movement.vector` every frame, so the walk and the hold
+            // would fight over which way the character points and the shots would
+            // come out of a body sliding sideways.
+            //
+            // It ends a **point** hold only. An enemy lock has to survive this:
+            // advancing while shooting an NPC is intended, and is what the
+            // `canMove` comment above is protecting. `holdFireAt(null)` draws
+            // that distinction; `lockOn(null)` is the one that stops everything.
+            //
+            // A jump is not a walk, and does not reach here: `speed` is read off
+            // the steering vector, which a jump never touches, so the trigger
+            // stays down through the whole arc. Same threshold the reflex-cancel
+            // above uses to mean "actually moving", rather than the exact zero
+            // the idle blend needs.
+            if (speed > 0.01) playerCombat.holdFireAt(null)
             // Whatever else the character is doing owns the body: the recoil clip
             // is held back while airborne and while walking, because the next shot
             // — at most a tenth of a second later — would otherwise take the mixers

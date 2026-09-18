@@ -731,7 +731,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const clothMaterial: TransmissionTSLMaterial = new TransmissionTSLMaterial({
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
-        thickness: 1.1,
+        thickness: 0.95,
         roughness: 0.0,
         ior: 1.35,
         transmission: 1,
@@ -742,10 +742,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
         ...options.material,
     })
 
-    clothMaterial.sheenNode = color(new Color('#ffffff'))
-    clothMaterial.colorNode = color(new Color('#ffffff'))
-    clothMaterial.iridescence = 0.5
-    clothMaterial.iridescenceIOR = 2
+    // clothMaterial.sheenNode = color(new Color('#ffffff'))
+    // clothMaterial.colorNode = color(new Color('#ffffff'))
+    clothMaterial.iridescence = 0.1
+    clothMaterial.iridescenceIOR = 1.0
 
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which
@@ -781,7 +781,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // `material` off it reads `builder.material` — the material being built —
         // and the assignment lands on this material. There is no other channel
         // from a position node back to its own material.
-        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying()
+        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().abs()
 
         return v0.add(v1).add(v2).add(v3).mul(0.25)
     })()

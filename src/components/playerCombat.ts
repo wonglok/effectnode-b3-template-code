@@ -30,19 +30,27 @@
  * enemy's live chest, or the fixed point the shot was aimed at. The pool's own
  * `getTarget` is therefore never used and returns null.
  *
- * ## Two ways to shoot
+ * ## Two ways to hold fire
  *
- * `fireAt` is one droplet, aimed once — the free-aim ground shot, and the
- * deliberate single tap. `lockOn` is the sustained version: hold fire on an
- * enemy until it is gone, one droplet every `fireInterval`.
+ * Both are sustained — the trigger goes down and stays down, one droplet every
+ * `fireInterval` — and they differ only in what the shots are aimed at:
  *
- * They share one shot body (`shoot`), so a locked shot and a tapped shot cannot
- * drift apart. What differs is only who decides when to pull the trigger.
+ * - `lockOn` holds fire on an **enemy**, re-reading its live chest every shot.
+ * - `holdFireAt` holds fire on a **point in the world**, aimed once when it is
+ *   set. This is the right-click spray: fire at where the player pointed, until
+ *   they point somewhere else, click to stop, or walk off.
  *
- * The lock releases on its own from the target's side. `NpcTarget.aimPoint` goes
- * null once the NPC is down or the crowd is disposed — that null *is* "the target
- * is gone", so nothing here needs to know what death looks like. A target that
- * respawns gets no re-engagement: the lock is already gone.
+ * They share one shot body (`shoot`), so an enemy-locked shot and a point-held
+ * shot cannot drift apart. What differs is only who decides when to pull the
+ * trigger, and where the barrel points when it does.
+ *
+ * The two release differently, and deliberately so. An enemy lock also releases
+ * from the target's side: `NpcTarget.aimPoint` goes null once the NPC is down or
+ * the crowd is disposed — that null *is* "the target is gone", so nothing here
+ * needs to know what death looks like. A target that respawns gets no
+ * re-engagement: the lock is already gone. A held point has no such side — it
+ * does not move and cannot die — so it is released **only** by a command. See
+ * `holdFireAt` for why re-checking it shot by shot would be a mistake.
  */
 
 import * as THREE from 'three'
@@ -111,7 +119,7 @@ const DEFAULT_FIRE_INTERVAL = 0.15
  */
 export interface PlayerCombatOptions {
     /**
-     * Whether a locked target may be shot at right now — in range, and with
+     * Whether a locked **enemy** may be shot at right now — in range, and with
      * terrain that does not come between.
      *
      * Asked **once per shot**, not per frame. The answer only has to be right at
@@ -121,6 +129,10 @@ export interface PlayerCombatOptions {
      * False **drops the lock** rather than pausing it: a target that has walked
      * out of range or behind a hill is no longer being engaged, so the shot that
      * would have gone its way is skipped, not queued.
+     *
+     * Asked about an enemy lock only. A held point never reaches this — it does
+     * not move, so there is nothing for the answer to change with; see
+     * `holdFireAt`.
      */
     canEngage?: (aim: THREE.Vector3) => boolean
     /**
@@ -152,13 +164,17 @@ export interface PlayerCombat {
     /** Arm/disarm — attack mode. Visibility follows this, not the crowd's. */
     setActive(active: boolean): void
     /**
-     * Hold fire on `target` until it is gone, or clear the lock with `null`.
+     * Hold fire on `target` until it is gone, or stop firing with `null`.
      *
      * Fires immediately, then once every `fireInterval`, for as long as the
      * target keeps returning an aim point. Released by `setActive(false)`, by the
-     * target going down, by the crowd being disposed, and by `canEngage` saying
-     * no. All four are one-way: re-acquiring is a fresh `lockOn`, so a respawned
-     * NPC is not re-engaged.
+     * target going down, by the crowd being disposed, by `canEngage` saying no,
+     * and by `holdFireAt`. All of them are one-way: re-acquiring is a fresh
+     * `lockOn`, so a respawned NPC is not re-engaged.
+     *
+     * `null` is the stop-everything command: it ends a held point too, so the
+     * rig can halt all fire without knowing which kind was running. The reverse
+     * is not true — see `holdFireAt`.
      *
      * Safe to call while unarmed — the lock is simply dropped on the next frame,
      * which is what keeps a click during the disarm frame from arming anything.
@@ -197,15 +213,35 @@ export interface PlayerCombat {
      *  per frame **after** the mixers have posed the skeleton. */
     update(delta: number): void
     /**
-     * Fire one droplet at `destination`, optionally locked onto `target`.
+     * Hold fire on a fixed point in the world — one droplet every
+     * `fireInterval`, aimed once at `point` when it is set. The right-click
+     * spray: fire at where the player pointed and keep firing.
      *
-     * With a target the droplet tracks that enemy's live chest, so a moving
-     * enemy is still hit, and landing it costs the enemy a droplet's damage —
-     * applied by the crowd, through the same handle that supplied the aim point.
-     * Without a target it splashes where it lands and damages nothing, which is
-     * the free-aim case: there is no one at the landing spot to hurt.
+     * Aimed at nothing, so it damages nothing: a droplet that splashes on the
+     * ground has no one at the landing spot to hurt (the same reason `shoot`
+     * gives a free-aim shot its own landing point). It is still a threat the
+     * crowd reacts to — the dodge reads the pool, not the shooter's intent — so
+     * a spray across an enemy's feet makes it dodge without ever scoring.
+     *
+     * Released by `lockOn` (both the lock it starts and its `null`), by
+     * `holdFireAt(null)` — which is how the rig cancels the spray when the
+     * character sets off walking — by `setActive(false)`, and by disposal.
+     * Deliberately **not** by `canEngage`: an enemy lock re-asks that every
+     * shot because the enemy moves and a moment later may be behind a hill,
+     * whereas a point does not move, so the answer could only change because
+     * the player moved — and the two ways they can move, walking off and
+     * re-aiming, are commands that release the hold themselves. Re-asking would
+     * buy nothing and cost a way for the spray to lapse on its own: a jump
+     * lengthens the shot, so a hold set at the range limit would drop mid-air,
+     * and firing *through* a jump is the whole point of holding rather than
+     * tapping.
+     *
+     * `point` is copied, so the caller keeps whatever scratch it read the point
+     * out of. `null` ends a **point** hold and leaves an enemy lock alone — the
+     * rig cancels a spray on the first step of a walk, and walking while
+     * shooting an NPC is something the player is allowed to do.
      */
-    fireAt(destination: THREE.Vector3, target?: NpcTarget | null): void
+    holdFireAt(point: THREE.Vector3 | null): void
     /**
      * Is one of the player's own droplets inbound toward `point`, inside `radius`?
      * The read the crowd's dodge is triggered by — see
@@ -214,6 +250,18 @@ export interface PlayerCombat {
     inboundThreat(point: THREE.Vector3, radius: number): boolean
     dispose(): void
 }
+
+/**
+ * What the trigger is held on.
+ *
+ * Two kinds rather than one because they answer "where is the next shot going?"
+ * differently — an enemy is re-read every shot and can end the hold by going
+ * down, a point is fixed and can only be released by a command — and only the
+ * enemy kind is worth damage.
+ */
+type HeldFire =
+    | { kind: 'target'; target: NpcTarget }
+    | { kind: 'point'; point: THREE.Vector3 }
 
 export function createPlayerCombat(
     scene: THREE.Scene,
@@ -252,8 +300,11 @@ export function createPlayerCombat(
     let gun: NpcGun | null = null
     let disposed = false
 
-    /** The enemy being held under fire, or null. See `lockOn`. */
-    let lockedTarget: NpcTarget | null = null
+    /** What the trigger is held on, or null for no fire. See `lockOn` and
+     *  `holdFireAt` — the two kinds are the same sustained loop aimed
+     *  differently, so one variable holds either and setting one clears the
+     *  other. */
+    let heldFire: HeldFire | null = null
     /** Seconds until the next locked shot. Negative means owed. */
     let fireCountdown = 0
     let fireInterval = DEFAULT_FIRE_INTERVAL
@@ -288,9 +339,10 @@ export function createPlayerCombat(
     /**
      * Put one droplet in the air and play the recoil.
      *
-     * The single body behind both `fireAt` and the sustained-fire loop, so the
-     * two cannot drift: a locked shot is exactly a clicked shot, fired again.
-     * The caller has already established that the gun is armed and held.
+     * The single body behind both ways of holding fire, so the two cannot
+     * drift: an enemy-locked shot and a point-held shot are the same shot, only
+     * aimed differently. The caller has already established that the gun is
+     * armed and held.
      *
      * `destination` is where the droplet is *aimed* at spawn — the enemy's chest
      * for a locked shot, the clicked point for a free-aim one. With a `target`
@@ -367,11 +419,12 @@ export function createPlayerCombat(
 
         setActive(active) {
             weapon.enabled = active
-            // A lock cannot outlive the mode that armed it. Dropping it here, on
-            // the one path that disarms, means leaving attack mode ends the fight
-            // rather than pausing it — re-entering starts peaceful instead of
-            // silently resuming fire on whoever was last clicked.
-            if (!active) lockedTarget = null
+            // No hold can outlive the mode that armed it, enemy lock or held
+            // point alike. Dropping it here, on the one path that disarms, means
+            // leaving attack mode ends the fight rather than pausing it —
+            // re-entering starts peaceful instead of silently resuming fire on
+            // whoever, or whatever, was last pointed at.
+            if (!active) heldFire = null
             // Hide immediately rather than waiting for the next frame's
             // `applyGunTuning`, so a mode toggle never shows a stale frame of gun.
             if (gun) gun.mount.visible = active
@@ -380,9 +433,29 @@ export function createPlayerCombat(
         lockOn(target) {
             // Always fires on the next frame rather than after a full interval:
             // the click that set the lock should read as a shot, not as a fifth
-            // of a second of nothing happening.
+            // of a second of nothing happening. The assignment replaces whatever
+            // was held, so locking on also takes the trigger off a held point —
+            // the character holds fire on one thing at a time.
             fireCountdown = 0
-            lockedTarget = target
+            heldFire = target ? { kind: 'target', target } : null
+        },
+
+        holdFireAt(point) {
+            // Ending a spray is deliberately not the same as `lockOn(null)`: the
+            // rig calls it on every frame the character is walking, and an enemy
+            // lock has to survive that or the player could no longer advance
+            // while shooting at an NPC. Only a point hold is ended here.
+            if (!point) {
+                if (heldFire?.kind === 'point') heldFire = null
+                return
+            }
+            // Fires on the next frame, like `lockOn`. The point is copied rather
+            // than held by reference, for the same reason a free-aim shot copies
+            // its landing spot: the caller reads it from a shared scratch, and a
+            // later click would otherwise drag a still-running spray onto the new
+            // spot mid-flight.
+            fireCountdown = 0
+            heldFire = { kind: 'point', point: point.clone() }
         },
 
         setFireInterval(seconds) {
@@ -405,35 +478,52 @@ export function createPlayerCombat(
             // target *before* the gun is calibrated, or every shot is aimed at
             // where the enemy was a frame ago.
 
-            // 1. Resolve the lock, and decide whether this frame shoots.
+            // 1. Resolve what is held, and decide whether this frame shoots.
             let aim: THREE.Vector3 | null = null
             let target: NpcTarget | null = null
 
-            if (lockedTarget) {
+            // Read into a local: the branches below can clear `heldFire`, and the
+            // aim has to come from the hold this frame actually started with.
+            const held = heldFire
+
+            if (held) {
                 if (!gun || !weapon.enabled) {
                     // Disarmed, or the gun is gone. `setActive` already clears on
-                    // the way out of attack mode; this covers the other way a lock
+                    // the way out of attack mode; this covers the other way a hold
                     // can be left holding nothing.
-                    lockedTarget = null
+                    heldFire = null
                 } else {
                     fireCountdown -= delta
 
                     if (fireCountdown <= 0) {
-                        const chest = lockedTarget.aimPoint()
+                        if (held.kind === 'target') {
+                            const chest = held.target.aimPoint()
 
-                        // Null means the NPC is down, or the crowd is gone. That
-                        // null is the whole release rule — see NpcTarget.aimPoint.
-                        if (!chest) {
-                            lockedTarget = null
-                        } else if (options.canEngage && !options.canEngage(chest)) {
-                            // Out of range, or the terrain is in the way.
-                            lockedTarget = null
+                            // Null means the NPC is down, or the crowd is gone.
+                            // That null is the whole release rule — see
+                            // NpcTarget.aimPoint.
+                            if (!chest) {
+                                heldFire = null
+                            } else if (options.canEngage && !options.canEngage(chest)) {
+                                // Out of range, or the terrain is in the way.
+                                heldFire = null
+                            } else {
+                                // `chest` is the crowd's shared scratch — read it
+                                // and use it this frame, which is exactly how long
+                                // it lives.
+                                aim = chest
+                                target = held.target
+                                options.onAim?.(chest)
+                            }
                         } else {
-                            // `chest` is the crowd's shared scratch — read it and
-                            // use it this frame, which is exactly how long it lives.
-                            aim = chest
-                            target = lockedTarget
-                            options.onAim?.(chest)
+                            // A held point, which is fired at as-is: no aim point
+                            // to re-read, no `canEngage` to ask and no damage to
+                            // deal. The point is our own copy, so it is safe to
+                            // hand to the shot — the shot copies it again into the
+                            // droplet's landing spot, so the drop of the hold
+                            // never touches water already in the air.
+                            aim = held.point
+                            options.onAim?.(held.point)
                         }
                     }
                 }
@@ -453,8 +543,9 @@ export function createPlayerCombat(
             }
 
             // 3. The shot, now that the barrel points where this frame's facing
-            //    put it.
-            if (aim && target) {
+            //    put it. `target` is null for a held point, which `shoot` reads as
+            //    the free-aim case.
+            if (aim) {
                 shoot(aim, target)
                 // Added rather than assigned, so the debt carries: an interval
                 // that is not a whole number of frames keeps its average rate
@@ -466,11 +557,6 @@ export function createPlayerCombat(
 
             // 4. The droplets.
             projectiles.update(delta)
-        },
-
-        fireAt(destination, target) {
-            if (disposed || !weapon.enabled || !gun) return
-            shoot(destination, target)
         },
 
         // The pool's own method, forwarded rather than reimplemented: the crowd
@@ -485,7 +571,7 @@ export function createPlayerCombat(
         dispose() {
             if (disposed) return
             disposed = true
-            lockedTarget = null
+            heldFire = null
             detachGun()
             projectiles.dispose()
         },
