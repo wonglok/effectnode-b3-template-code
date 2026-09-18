@@ -159,7 +159,22 @@ function terrainHeight(x: number, z: number, amplitude: number): number {
  */
 const SQRT1_2 = Math.SQRT1_2
 const PERLIN_GRADIENTS = new Float32Array([
-    1, 0, -1, 0, 0, 1, 0, -1, SQRT1_2, SQRT1_2, -SQRT1_2, SQRT1_2, SQRT1_2, -SQRT1_2, -SQRT1_2, -SQRT1_2,
+    1,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    -1,
+    SQRT1_2,
+    SQRT1_2,
+    -SQRT1_2,
+    SQRT1_2,
+    SQRT1_2,
+    -SQRT1_2,
+    -SQRT1_2,
+    -SQRT1_2,
 ])
 
 /** Perlin's fade `6t⁵ - 15t⁴ + 10t³` — zero first *and* second derivative at 0 and 1. */
@@ -630,7 +645,7 @@ export interface GrassComponentProps {
 
 export function GrassComponent({
     objects = [],
-    instances = 120000 * 5,
+    instances = 100000 * 3,
     placement = 'collider',
     width = 60,
     // The reference's blades are 0.12 x 1. These are 5x narrower and, since the
@@ -638,15 +653,15 @@ export function GrassComponent({
     // Only the aspect differs from a uniform shrink, so the blades are noticeably
     // taller than they are wide.
     bladeWidth = 0.0524,
-    bladeHeight = 0.4,
-    joints = 3,
+    bladeHeight = 0.5,
+    joints = 5,
     terrainAmplitude = 1,
     showGround = false,
     // sRGB equivalents of the reference's (0, 0.6, 0) / (0, 0.1, 0).
     tipColor = '#009900',
     bottomColor = '#001a00',
     groundColor = '#000f00',
-    windSpeed = 0.25,
+    windSpeed = 0.35,
     windStrength = 0.15,
     // ~8 m patches: wide enough to read as clumping at the scale the camera moves
     // over the field, small enough that the field as a whole still looks planted
