@@ -647,14 +647,14 @@ export function GrassComponent({
     objects = [],
     instances = 100000 * 3,
     placement = 'collider',
-    width = 60,
+    width = 160,
     // The reference's blades are 0.12 x 1. These are 5x narrower and, since the
     // 1.5x height increase, 3.33x shorter — a finer lawn rather than its meadow.
     // Only the aspect differs from a uniform shrink, so the blades are noticeably
     // taller than they are wide.
-    bladeWidth = 0.0524,
-    bladeHeight = 0.5,
-    joints = 5,
+    bladeWidth = 0.05,
+    bladeHeight = 0.35,
+    joints = 3,
     terrainAmplitude = 1,
     showGround = false,
     // sRGB equivalents of the reference's (0, 0.6, 0) / (0, 0.1, 0).
@@ -662,11 +662,11 @@ export function GrassComponent({
     bottomColor = '#001a00',
     groundColor = '#000f00',
     windSpeed = 0.35,
-    windStrength = 0.15,
+    windStrength = 0.1,
     // ~8 m patches: wide enough to read as clumping at the scale the camera moves
     // over the field, small enough that the field as a whole still looks planted
     // rather than split into two halves.
-    clumpScale = 8,
+    clumpScale = 10,
     clumpStrength = 1,
 }: GrassComponentProps) {
     const scene = useThree((r) => r.scene)
