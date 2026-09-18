@@ -240,10 +240,13 @@ export interface NpcTunables {
     /** How far a dodging NPC slides sideways, in world units. Must clear the
      *  pool's capture radius (0.407 m) to be a dodge rather than a weave. */
     npcDodgeDistance: number
-    /** Seconds a dodge commits an NPC: held still, not firing, weave playing. */
-    npcDodgeSeconds: number
-    /** Seconds one NPC must wait after a dodge before dodging again. Per NPC. */
-    npcDodgeCooldown: number
+    /** Seconds between one NPC's dodges — the pace of the whole skill. Held
+     *  still, not firing, for this long after each one. */
+    npcDodgeRecovery: number
+    /** How many dodges an NPC has before it must cool off. */
+    npcDodgeCharges: number
+    /** Seconds to restore the whole pool once it is spent. */
+    npcDodgeRecharge: number
     /** Health every NPC starts with, and the value a respawn restores. */
     maxHp: number
     /** Damage one droplet does. Read by the crowd so `NpcTarget.damage` needs no
@@ -433,21 +436,29 @@ interface Npc {
      */
     stunTimer: number
     /**
-     * Seconds left of a dodge, or 0 when not dodging.
+     * Seconds left of the current dodge's recovery, or 0 when ready again.
      *
-     * A dodge commits the NPC for its whole duration: it is held still, it does
-     * not fire, and its weave plays out — see the branch at the top of step 1.
-     * Like the stun, it is *not* a form of death: the NPC keeps its `agentId`,
-     * stays in the crowd, and stays a valid target, which is what lets a dodging
-     * NPC be shot at and missed rather than shot at and deleted.
+     * While it runs the NPC is held still and does not fire — see the branch at
+     * the top of step 1. Like the stun, it is *not* a form of death: the NPC keeps
+     * its `agentId`, stays in the crowd, and stays a valid target, which is what
+     * lets a dodging NPC be shot at and missed rather than shot at and deleted.
      */
     dodgeTimer: number
     /**
-     * Seconds until this NPC may dodge again. Per NPC, and it exists so a crowd
-     * under sustained fire dodges in ones and twos — without it, one shot fired
-     * across six NPCs makes all six sidestep on the same frame.
+     * Dodges left before the cool-off — the pool `npcDodgeCharges` fills and every
+     * dodge spends one.
+     *
+     * The reason this is a pool rather than a cooldown: a cooldown paces a *skill*,
+     * while a pool budgets a *burst*. The player's cadence (0.15 s) puts five shots
+     * in the air inside 0.75 s, so what an NPC needs is not a rest between dodges
+     * but a limited number of them — after which it is genuinely hittable for
+     * `npcDodgeRecharge` seconds, and that window is the thing worth firing into.
      */
-    dodgeCooldown: number
+    dodgeCharges: number
+    /** Countdown to the pool being restored, once spent. Ignored while any charge
+     *  is left, which is what makes the cool-off start on the *last* dodge rather
+     *  than after every one. */
+    dodgeRecharge: number
     /**
      * Has the player shot this NPC? Latches, and keeps the grudge for the rest of
      * this life — the only thing that clears it is the respawn.
@@ -644,11 +655,14 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             shotTimer: 0,
             stunTimer: 0,
             dodgeTimer: 0,
-            // Staggered by index rather than all starting at zero: a freshly
-            // spawned crowd all reaching "ready" on the same frame is the same
-            // unison problem the cooldown exists to prevent, and it would show up
-            // on the very first volley rather than only under sustained fire.
-            dodgeCooldown: npcs.length * 0.4,
+            // A full pool at spawn: a fresh NPC meets the player at its most
+            // evasive, and the pool's own staggering falls out of the dodges
+            // themselves — each NPC spends its charges on the shots aimed at it,
+            // so a crowd under fire goes dry one member at a time rather than in
+            // unison. A spawn-wide stagger would just make the first volley unfair
+            // to whichever NPCs were left cooling down.
+            dodgeCharges: tunables.npcDodgeCharges,
+            dodgeRecharge: 0,
             hp: barMax,
             dead: false,
             respawnTimer: 0,
@@ -786,6 +800,8 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         // the corpse's mode loop skipped — and, worse, keep the *respawned* NPC
         // out of step 1 for the remainder, since nothing else clears it.
         npc.dodgeTimer = 0
+        npc.dodgeCharges = 0
+        npc.dodgeRecharge = 0
         // Holstered, and `armed` cleared so the disarm survives whatever the mode
         // computation decides next; a corpse must not count toward the crowd's
         // armed tally either.
@@ -845,10 +861,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         // would walk the fresh NPC straight back into a freeze.
         npc.stunTimer = 0
         // The dodge's own state, for the same reason: a fresh NPC must not walk
-        // back into the fight still committed to a dead one's weave, nor owe a
-        // cooldown for a dodge it never took.
+        // back into the fight still recovering from a dead one's weave, nor meet
+        // the player with a pool that life had already spent.
         npc.dodgeTimer = 0
-        npc.dodgeCooldown = 0
+        npc.dodgeCharges = tunables.npcDodgeCharges
+        npc.dodgeRecharge = 0
         npc.group.position.fromArray(spawn)
         npc.agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
         if (npc.rig) npc.rig.scene.visible = true
@@ -1217,10 +1234,14 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         const dz = npc.group.position.z - playerPos.z
         const bearing = Math.hypot(dx, dz)
 
-        // Which way to step: either side clears the shot, so the choice is free —
-        // and alternating by index means a crowd under fire scatters instead of
-        // all leaning the same way. Standing on the player there is no bearing to
-        // step off, so fall back to the NPC's own +X.
+        // Which way to step: either side clears the shot, so the choice is free.
+        // Fixed per NPC by index parity — *not* alternated per dodge. Successive
+        // dodges go the same way on purpose: a burst's impulses then add up into
+        // one continuous slide out of the line, where alternating them cancels the
+        // sidestep and leaves the NPC oscillating in place while the water arrives.
+        // Parity is also what makes a crowd scatter rather than all lean one way.
+        // Standing on the player there is no bearing to step off, so fall back to
+        // the NPC's own +X.
         const side = indexOf(npc) % 2 === 0 ? 1 : -1
         const px = bearing > 1e-4 ? (-dz / bearing) * side : side
         const pz = bearing > 1e-4 ? (dx / bearing) * side : 0
@@ -1230,13 +1251,28 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         agent.velocity[1] = 0
         agent.velocity[2] = pz * speed
 
-        npc.dodgeTimer = tunables.npcDodgeSeconds
-        npc.dodgeCooldown = tunables.npcDodgeCooldown
+        npc.dodgeTimer = tunables.npcDodgeRecovery
+
+        // One charge per dodge, and the cool-off starts on the *last* one — so a
+        // burst is free until it is exhausted, then costs the full recharge.
+        npc.dodgeCharges -= 1
+        if (npc.dodgeCharges <= 0) npc.dodgeRecharge = tunables.npcDodgeRecharge
 
         // Last, so a clip that fails to load cannot cost the dodge: the sidestep
         // is the mechanic and the weave is how it reads. A dodge with no clip is
         // still a dodge — see DODGE_CLIP.
-        if (DODGE_CLIP) npc.rig?.playEmotionOnce(DODGE_CLIP)
+        //
+        // Triggered once per *sequence*, not once per sidestep, and never cut. The
+        // weave is 1.633 s while a dodging NPC sidesteps every
+        // `npcDodgeRecovery` (0.15 s by default), so re-triggering it per dodge
+        // would restart it ten times inside one burst — ten fragments of a weave,
+        // none of them finishing. Letting the first one run covers the whole
+        // burst, and reads as one continuous evasion rather than as a twitch.
+        // `getEmotionId` is what says one is already playing; it also lets a fresh
+        // burst start a fresh weave once the last one has ended on its own.
+        if (DODGE_CLIP && npc.rig && npc.rig.getEmotionId() !== DODGE_CLIP.id) {
+            npc.rig.playEmotionOnce(DODGE_CLIP)
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1413,6 +1449,15 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
 
+                // The dodge pool refilling. Above every branch that can `continue`
+                // past it — the stun's and the dodge's own — so the cool-off is
+                // exactly as long as the tunable says rather than "the tunable plus
+                // whatever those branches skipped".
+                if (npc.dodgeCharges <= 0) {
+                    npc.dodgeRecharge -= delta
+                    if (npc.dodgeRecharge <= 0) npc.dodgeCharges = tunables.npcDodgeCharges
+                }
+
                 // Stunned by the jump's force field. Handled ahead of the mode
                 // decision because everything the stun has to suppress is
                 // downstream of this branch: `continue` is what keeps the
@@ -1458,14 +1503,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 if (npc.dodgeTimer > 0) {
                     npc.dodgeTimer -= delta
                     agent.maxSpeed = 0
-                    // Cut on the crossing frame, guarded on the id — the stun
-                    // branch's rule, and it earns its keep the same way: the death
-                    // clip can supersede the weave, and cancelling *that* would
-                    // leave a corpse standing. At the default window this fires on
-                    // the clip's own last frames and is invisible.
-                    if (npc.dodgeTimer <= 0 && DODGE_CLIP && npc.rig?.getEmotionId() === DODGE_CLIP.id) {
-                        npc.rig.cancelEmotion()
-                    }
+                    // No clip is cancelled here, unlike the stun's branch. The
+                    // stun cuts its reaction because that clip outlives the freeze
+                    // and the NPC must walk away from it; here the weave is *meant*
+                    // to outlive the recovery — it is what covers the rest of the
+                    // burst — and it hands the body back on its own when it ends.
                     continue
                 }
 
@@ -1473,13 +1515,6 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // Ahead of the mode decision, and deliberately so: stepping out of
                 // the way is not a change of intent, so the NPC decides where it
                 // is going on the same frame it leaves the line of fire.
-                //
-                // The cooldown ticks here rather than at the top of the loop,
-                // which means it does not tick during a stun *or* during the dodge
-                // itself — both of those `continue` past this line. For the stun
-                // that is a courtesy; for the dodge it is the point, since the
-                // cooldown is meant to start when the weave ends.
-                npc.dodgeCooldown -= delta
                 if (
                     tunables.npcDodgeEnabled &&
                     // Attack mode. The player can only fire while hostile, so this
@@ -1488,7 +1523,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                     // ended, and it makes the switch mean the same thing here as it
                     // does everywhere else in this module.
                     hostile &&
-                    npc.dodgeCooldown <= 0 &&
+                    // Ready to go again, and not out of dodges. Both terms are
+                    // needed: the recovery paces the sidesteps, the pool bounds
+                    // them.
+                    npc.dodgeTimer <= 0 &&
+                    npc.dodgeCharges > 0 &&
                     // The bearing to step off is measured from the shooter, so a
                     // dodge with no known shooter has no direction to take. It
                     // would also mean nothing: `hostile` and the player's position

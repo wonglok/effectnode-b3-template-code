@@ -134,19 +134,35 @@ interface NavRigSettings {
      *  the NPC back to its position afterwards, so a huge number is a visible
      *  snap-back rather than a dodge. */
     npcDodgeDistance: number
-    /** Seconds a dodge commits an NPC: while it runs, the NPC is held in place
+    /** Seconds between one NPC's dodges: while it runs the NPC is held in place
      *  (the sidestep's impulse spends itself and stops) and cannot dodge again.
      *
-     *  Defaults to the clip's own length (1.633 s), so the weave plays out in
-     *  full — the clip is cut past this point, and cutting a dodge mid-weave is
-     *  exactly the snap-to-idle that makes it look broken. Shorten it only with
-     *  that in mind. */
-    npcDodgeSeconds: number
-    /** Seconds one NPC must wait after a dodge before dodging again — so a crowd
-     *  under sustained fire dodges in ones and twos rather than in unison, and so
-     *  the skill cannot be spammed against a held trigger. Per NPC. Applied live
-     *  — and read when the *next* dodge starts, so a raise lands immediately. */
-    npcDodgeCooldown: number
+     *  This is the pace of the whole skill. It defaults to the player's own
+     *  cadence (`playerFireInterval`, 0.15 s) so that **one incoming droplet costs
+     *  one dodge** — which is what makes the pool legible: five shots, five
+     *  dodges, then the cool-off. Raise it and a single sidestep starts covering
+     *  the shots behind it, so the crowd evades more per charge than it was given.
+     *
+     *  Measured against a five-shot burst, at 5 charges and a 2 s cool-off: at
+     *  0.15 the NPC spends all five charges and takes none of the five; at 0.3 it
+     *  spends three and still takes none (the sidesteps overlap, and it is still
+     *  sliding when the later shots arrive); at 1.6 — the weave's own length — it
+     *  dodges once and wears three. */
+    npcDodgeRecovery: number
+    /** How many dodges an NPC has before it must cool off — the size of the
+     *  pool, restored all at once by `npcDodgeRecharge`. Each dodge spends one,
+     *  and a dodge costs a *reaction*, not a bullet: one sidestep often carries
+     *  the NPC out of the path of the shot behind it. */
+    npcDodgeCharges: number
+    /** Seconds an NPC with an empty dodge pool must wait before all
+     *  `npcDodgeCharges` come back. This is the window the player is actually
+     *  shooting for — the crowd is briefly unable to evade anything, so it is the
+     *  pause that makes a sustained burst worth firing. Per NPC.
+     *
+     *  Measured: ten shots at a five-charge crowd — the first five are all dodged,
+     *  and four of the second five land inside this window. Sustained fire over
+     *  twenty shots lands about half, which is the steady state to tune against. */
+    npcDodgeRecharge: number
 
     /** Health every character starts with. Ten droplets at `dropletDamage`. */
     maxHp: number
@@ -313,8 +329,9 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         npcDodgeEnabled: true,
         npcDodgeReactionRange: 6,
         npcDodgeDistance: 1.2,
-        npcDodgeSeconds: 1.6,
-        npcDodgeCooldown: 3,
+        npcDodgeRecovery: 0.15,
+        npcDodgeCharges: 5,
+        npcDodgeRecharge: 2,
         maxHp: DEFAULT_MAX_HP,
         dropletDamage: 10,
         npcRespawnSeconds: 4,

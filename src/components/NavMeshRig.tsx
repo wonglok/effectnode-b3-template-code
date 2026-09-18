@@ -1308,13 +1308,18 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // The crowd's answer to that, and the only place it can be dialled. An NPC
         // that sees one of the player's droplets closing steps out of its path and
         // weaves — no deflect and no shove, so the sidestep is the whole of it.
-        // Read live, like everything else.
+        //
+        // `Dodges (burst)` and `Cool-off (s)` are a pair, and are the two that
+        // matter: an NPC can sidestep up to that many times back to back, and then
+        // is genuinely hittable for that many seconds. Read live, like everything
+        // else.
         const npcDodgeFolder = gui.addFolder('NPC Dodge')
         npcDodgeFolder.add(settings, 'npcDodgeEnabled').name('Enabled')
         npcDodgeFolder.add(settings, 'npcDodgeReactionRange', 1, 20, 0.5).name('Reaction Range')
         npcDodgeFolder.add(settings, 'npcDodgeDistance', 0, 5, 0.1).name('Step Distance')
-        npcDodgeFolder.add(settings, 'npcDodgeSeconds', 0.2, 4, 0.1).name('Weave (s)')
-        npcDodgeFolder.add(settings, 'npcDodgeCooldown', 0, 10, 0.25).name('Cooldown (s)')
+        npcDodgeFolder.add(settings, 'npcDodgeRecovery', 0.05, 2, 0.05).name('Recovery (s)')
+        npcDodgeFolder.add(settings, 'npcDodgeCharges', 0, 20, 1).name('Dodges (burst)')
+        npcDodgeFolder.add(settings, 'npcDodgeRecharge', 0, 10, 0.25).name('Cool-off (s)')
         npcDodgeFolder.close()
 
         // Health crates. No `onChange` handlers anywhere: the crate pool reads
