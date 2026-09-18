@@ -246,6 +246,7 @@ export const EMOTION_GROUPS: EmotionGroup[] = [
   ] },
   { folder: "more", title: "More", items: [
     make("more", "gun-got-hit", 0, false),
+    make("more", "dodging", 0, false),
   ] },
 ];
 

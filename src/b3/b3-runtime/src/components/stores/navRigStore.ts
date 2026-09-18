@@ -110,32 +110,43 @@ interface NavRigSettings {
      *  exactly this long. Applied live. */
     forceFieldStunSeconds: number
 
-    /** Master switch for the crowd's own jump defence. Off leaves the crowd
-     *  exactly as it was before the skill existed: no dodging, and the player's
-     *  water can never be turned back on them. Applied live. */
-    npcJumpDefenceEnabled: boolean
-    /** How close one of the *player's* inbound droplets has to come before an
-     *  NPC jumps out of its way, in world units, on the ground plane. Applied
-     *  live — the cue for the next jump, and the reach of the jump itself is
-     *  `npcJumpFieldRadius`. Larger means the crowd reacts earlier and the dodge
-     *  reads as a flinch; smaller means it reacts late and reads as a snap.
+    /** Master switch for the crowd's dodge. Off leaves the crowd exactly as it
+     *  was before the skill existed: it never evades, and every shot the player
+     *  aims at an NPC lands. Applied live, so it doubles as the A/B switch for
+     *  tuning the rest. */
+    npcDodgeEnabled: boolean
+    /** How close one of the *player's* inbound droplets has to come before an NPC
+     *  dodges it, in world units on the ground plane. Applied live.
      *
-     *  There is a ceiling, and it is not the player's range. The sweep lasts
-     *  `FORCE_FIELD_SWEEP_SECONDS` and the water closes at `MUZZLE_SPEED`, so a
-     *  jump only intercepts while `threatRadius − 20 × 1 ≤ npcJumpFieldRadius` —
-     *  past that, the shot arrives after the wave has already expired and the NPC
-     *  has jumped for nothing. Measured by the harness: a 4 m field catches a
-     *  reaction range of 24 and misses 26; the default 6 intercepts 0.23 s into
-     *  the sweep, with the whole second to spare. */
-    npcJumpThreatRadius: number
-    /** How far an NPC's own jump field reaches, in world units. The mirror of
-     *  `forceFieldRadius`, and the radius the water is turned at as the wave
-     *  arrives. Applied to the next NPC jump. */
-    npcJumpFieldRadius: number
-    /** Seconds one NPC must wait between defensive jumps, so a crowd under
-     *  sustained fire dodges in ones and twos rather than hopping in unison.
-     *  Per NPC, not per crowd. Applied live. */
-    npcJumpCooldown: number
+     *  This is reaction *time*, not reach: the water closes at `MUZZLE_SPEED`
+     *  (20), so 6 m is ~0.3 s of warning — enough for the sidestep below to clear
+     *  the shot, but only just, and it is the whole reason the dodge is triggered
+     *  by something already in the air rather than by the shot being fired. Lower
+     *  it and the crowd reacts too late to get out of the way; raise it and they
+     *  twitch at shots that were never going to hit. */
+    npcDodgeReactionRange: number
+    /** How far a dodging NPC slides sideways, in world units — the distance that
+     *  actually breaks the shot, since the clip itself stays put.
+     *
+     *  Must clear the pool's capture radius (0.407 m) by a comfortable margin, or
+     *  the "dodge" is a weave the water still connects with; ~1 m and up reads as
+     *  a real evasion. Far is not better, though — the crowd's own steering pulls
+     *  the NPC back to its position afterwards, so a huge number is a visible
+     *  snap-back rather than a dodge. */
+    npcDodgeDistance: number
+    /** Seconds a dodge commits an NPC: while it runs, the NPC is held in place
+     *  (the sidestep's impulse spends itself and stops) and cannot dodge again.
+     *
+     *  Defaults to the clip's own length (1.633 s), so the weave plays out in
+     *  full — the clip is cut past this point, and cutting a dodge mid-weave is
+     *  exactly the snap-to-idle that makes it look broken. Shorten it only with
+     *  that in mind. */
+    npcDodgeSeconds: number
+    /** Seconds one NPC must wait after a dodge before dodging again — so a crowd
+     *  under sustained fire dodges in ones and twos rather than in unison, and so
+     *  the skill cannot be spammed against a held trigger. Per NPC. Applied live
+     *  — and read when the *next* dodge starts, so a raise lands immediately. */
+    npcDodgeCooldown: number
 
     /** Health every character starts with. Ten droplets at `dropletDamage`. */
     maxHp: number
@@ -299,10 +310,11 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         forceFieldRadius: 5,
         forceFieldPush: 3,
         forceFieldStunSeconds: 1,
-        npcJumpDefenceEnabled: true,
-        npcJumpThreatRadius: 6,
-        npcJumpFieldRadius: 4,
-        npcJumpCooldown: 3,
+        npcDodgeEnabled: true,
+        npcDodgeReactionRange: 6,
+        npcDodgeDistance: 1.2,
+        npcDodgeSeconds: 1.6,
+        npcDodgeCooldown: 3,
         maxHp: DEFAULT_MAX_HP,
         dropletDamage: 10,
         npcRespawnSeconds: 4,

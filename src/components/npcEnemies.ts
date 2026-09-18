@@ -70,6 +70,7 @@ import {
 import { ARMED_FIRING_CLIP, ARMED_SET_KEY, armedClipSet } from './armedClipSet'
 import { deathClipFor } from './deathClip'
 import { FORCE_FIELD_SWEEP_SECONDS, ringJustCrossed, shoveImpulse, sweepReach } from './forceField'
+import { DODGE_CLIP } from './dodgeClip'
 import { BAR_HEIGHT_ABOVE, createHealthBar, type HealthBar } from './healthBar'
 import { STUN_CLIP } from './stunClip'
 
@@ -142,30 +143,6 @@ const DEATH_ANIM_MAX_WAIT = 8
 
 /** Below this speed an NPC is treated as standing still and blends to idle. */
 const MOVING_SPEED = 0.04
-
-/**
- * The crowd's defensive jump, expressed with the player's own numbers so the two
- * arcs are the same shape: `NavMeshRig`'s `JUMP_SPEED` (6.9) and `JUMP_GRAVITY`
- * (20) give ~1.2 m of apex and ~0.7 s of air, which is long enough for the jump's
- * field to sweep past the incoming water but short enough to read as a dodge
- * rather than a hover.
- *
- * Duplicated rather than imported: those two live inside the rig's frame-loop
- * closure, and the crowd owns its own movement constants (`NPC_WALK_SPEED`) for
- * the same reason. Change one and the other wants the change too.
- */
-const NPC_JUMP_SPEED = 6.9
-const NPC_JUMP_GRAVITY = 20
-
-/**
- * Where the jump clip is restarted from on takeoff — mid-clip, skipping the
- * authored anticipation crouch, so the pose matches a body that is already
- * leaving the ground. The player's `JUMP_CLIP_START`.
- */
-const NPC_JUMP_CLIP_START = 0.45
-
-/** No field running. A field's elapsed time counts up from 0; see `advanceNpcField`. */
-const NO_FIELD = -1
 
 /**
  * Height above the player's origin that the NPCs shoot at — roughly the chest of
@@ -253,18 +230,20 @@ export interface NpcTunables {
     forceFieldPush: number
     /** How long the field leaves an NPC stunned, in seconds. */
     forceFieldStunSeconds: number
-    /** Master switch for the crowd's own jump defence — the mirror of the
-     *  player's field, built from `jump` / `advanceNpcField`. Off restores the
-     *  pre-skill crowd exactly, and is what makes the feature A/B-able live
-     *  without a rebuild. */
-    npcJumpDefenceEnabled: boolean
+    /** Master switch for the crowd's dodge — the sidestep below. Off restores
+     *  the pre-skill crowd exactly, which is what makes it A/B-able live. */
+    npcDodgeEnabled: boolean
     /** How close one of the player's inbound droplets must come before an NPC
-     *  jumps, in world units on the ground plane. The cue, not the reach. */
-    npcJumpThreatRadius: number
-    /** How far an NPC's own jump field reaches, in world units. */
-    npcJumpFieldRadius: number
-    /** Seconds one NPC must wait between defensive jumps. Per NPC. */
-    npcJumpCooldown: number
+     *  dodges it, in world units on the ground plane — reaction *time*, since the
+     *  water closes at `MUZZLE_SPEED`. */
+    npcDodgeReactionRange: number
+    /** How far a dodging NPC slides sideways, in world units. Must clear the
+     *  pool's capture radius (0.407 m) to be a dodge rather than a weave. */
+    npcDodgeDistance: number
+    /** Seconds a dodge commits an NPC: held still, not firing, weave playing. */
+    npcDodgeSeconds: number
+    /** Seconds one NPC must wait after a dodge before dodging again. Per NPC. */
+    npcDodgeCooldown: number
     /** Health every NPC starts with, and the value a respawn restores. */
     maxHp: number
     /** Damage one droplet does. Read by the crowd so `NpcTarget.damage` needs no
@@ -297,17 +276,17 @@ export interface NpcTarget {
 }
 
 /**
- * The player's water, as far as the crowd's jump defence needs it: two questions
- * and no ownership.
+ * The player's water, as far as the crowd's dodge needs it: one question, read
+ * only, and no ownership.
  *
  * Structural rather than imported so `npcEnemies` and `playerCombat` stay
- * unaware of each other — the rig, which holds both, is what connects them.
+ * unaware of each other — the rig, which holds both, is what connects them. The
+ * crowd is deliberately given no way to *change* the player's water: an NPC
+ * dodges shots, it does not turn them back.
  */
 export interface PlayerDroplets {
     /** Is a droplet of the player's inbound toward `point`, within `radius`? */
     inboundThreat(point: THREE.Vector3, radius: number): boolean
-    /** Turn the player's inbound water inside `radius` of `origin` back out. */
-    deflect(origin: THREE.Vector3, radius: number): number
 }
 
 export interface NpcEnemiesOptions {
@@ -336,9 +315,9 @@ export interface NpcEnemiesOptions {
      */
     onPlayerHit: () => void
     /**
-     * The player's own droplet pool, or null before it exists — the crowd's jump
-     * defence has to see the water coming at it, and water in flight belongs to
-     * the pool that fired it.
+     * The player's own droplet pool, or null before it exists — the crowd's dodge
+     * has to see the water coming at it, and water in flight belongs to the pool
+     * that fired it.
      *
      * A getter, like `getPlayerPosition`: the pool is built once and lives as long
      * as the player, so this could equally be a plain reference — but reading it
@@ -346,8 +325,8 @@ export interface NpcEnemiesOptions {
      * null, which is the same trap `getHostile` avoids.
      *
      * The interface is structural — `PlayerCombat` satisfies it — so neither
-     * module has to import the other's type, and the crowd only ever gets the two
-     * questions it actually asks about the player's water.
+     * module has to import the other's type, and the crowd only ever gets the one
+     * question it actually asks about the player's water.
      */
     getPlayerDroplets?: () => PlayerDroplets | null
     /** Read per frame so GUI edits take effect immediately. */
@@ -454,44 +433,21 @@ interface Npc {
      */
     stunTimer: number
     /**
-     * The defensive jump's ballistic state: `jumpOffset` is the lift above the
-     * navmesh surface and `jumpVelocity` its rate of change. Both zero means
-     * grounded, which is the only state a jump may start from (and what
-     * `animate` reads for its jump weight).
+     * Seconds left of a dodge, or 0 when not dodging.
      *
-     * Applied to `group.position.y` in step 3 and nowhere else, exactly like the
-     * player's own arc is applied to `playerGroup`: the agent's position is the
-     * ground truth, and the lift is a render-time addition to it.
+     * A dodge commits the NPC for its whole duration: it is held still, it does
+     * not fire, and its weave plays out — see the branch at the top of step 1.
+     * Like the stun, it is *not* a form of death: the NPC keeps its `agentId`,
+     * stays in the crowd, and stays a valid target, which is what lets a dodging
+     * NPC be shot at and missed rather than shot at and deleted.
      */
-    jumpOffset: number
-    jumpVelocity: number
+    dodgeTimer: number
     /**
-     * Seconds until this NPC may jump again. Per NPC, and it exists so a crowd
-     * under sustained fire dodges as individuals — without it, one shot fired
-     * across six NPCs makes all six hop on the same frame.
+     * Seconds until this NPC may dodge again. Per NPC, and it exists so a crowd
+     * under sustained fire dodges in ones and twos — without it, one shot fired
+     * across six NPCs makes all six sidestep on the same frame.
      */
-    jumpCooldown: number
-    /** How far this NPC's own jump field has swept, in seconds — `NO_FIELD` when
-     *  it has none running. Each NPC owns its own sweep, because two of them can
-     *  be airborne at once. */
-    fieldElapsed: number
-    /**
-     * How far that field reaches, snapshotted at takeoff from
-     * `tunables.npcJumpFieldRadius` — the same reason the player's field
-     * snapshots its own numbers: a lil-gui drag mid-sweep would otherwise have
-     * one wave growing while another shrank, which is not a state anyone could
-     * reason about.
-     */
-    fieldRadius: number
-    /**
-     * Where this NPC's field is centred: copied at takeoff, because the wave must
-     * not travel with a body that is still walking.
-     *
-     * Allocated per NPC rather than shared as a scratch, since a live field is
-     * read on frames long after the jump that opened it — a shared vector would
-     * have every NPC's field anchored to whichever one jumped last.
-     */
-    fieldOrigin: THREE.Vector3
+    dodgeCooldown: number
     /**
      * Has the player shot this NPC? Latches, and keeps the grudge for the rest of
      * this life — the only thing that clears it is the respawn.
@@ -687,16 +643,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             armedClips: false,
             shotTimer: 0,
             stunTimer: 0,
-            jumpOffset: 0,
-            jumpVelocity: 0,
+            dodgeTimer: 0,
             // Staggered by index rather than all starting at zero: a freshly
             // spawned crowd all reaching "ready" on the same frame is the same
             // unison problem the cooldown exists to prevent, and it would show up
             // on the very first volley rather than only under sustained fire.
-            jumpCooldown: npcs.length * 0.4,
-            fieldElapsed: NO_FIELD,
-            fieldRadius: 0,
-            fieldOrigin: new THREE.Vector3(),
+            dodgeCooldown: npcs.length * 0.4,
             hp: barMax,
             dead: false,
             respawnTimer: 0,
@@ -830,14 +782,10 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             crowd.removeAgent(state, npc.agentId)
             npc.agentId = null
         }
-        // Shot down mid-jump: the body drops rather than hanging where the arc
-        // left it, and its field goes with it. Step 3 skips a corpse (there is no
-        // agent to place it from), so the lift would otherwise never be taken back
-        // off — and the wave would keep turning the player's water after the NPC
-        // that raised it was gone.
-        npc.jumpOffset = 0
-        npc.jumpVelocity = 0
-        npc.fieldElapsed = NO_FIELD
+        // Shot mid-dodge: the weave ends with the life. Left set, it would keep
+        // the corpse's mode loop skipped — and, worse, keep the *respawned* NPC
+        // out of step 1 for the remainder, since nothing else clears it.
+        npc.dodgeTimer = 0
         // Holstered, and `armed` cleared so the disarm survives whatever the mode
         // computation decides next; a corpse must not count toward the crowd's
         // armed tally either.
@@ -896,14 +844,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         // stun timer sits at whatever it had left. A respawn that inherited it
         // would walk the fresh NPC straight back into a freeze.
         npc.stunTimer = 0
-        // The jump's own state, for the same reason and with one more: a corpse
-        // keeps whatever lift it died with (step 3 never reaches it), so a
-        // respawn that inherited it would drop the fresh NPC back onto the
-        // navmesh from mid-air.
-        npc.jumpOffset = 0
-        npc.jumpVelocity = 0
-        npc.jumpCooldown = 0
-        npc.fieldElapsed = NO_FIELD
+        // The dodge's own state, for the same reason: a fresh NPC must not walk
+        // back into the fight still committed to a dead one's weave, nor owe a
+        // cooldown for a dodge it never took.
+        npc.dodgeTimer = 0
+        npc.dodgeCooldown = 0
         npc.group.position.fromArray(spawn)
         npc.agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
         if (npc.rig) npc.rig.scene.visible = true
@@ -1101,19 +1046,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         const moving = speed > MOVING_SPEED
         const running = moving && npc.mode === 'chase'
         const alpha = Math.min(1, _lerpFactor(delta) * 5)
-        // The jump clip for the whole airborne arc, over whatever the legs were
-        // doing — the same policy the player's rig applies, and the reason the
-        // walk/run weights are zeroed here rather than left to blend underneath.
-        // A dodging NPC is still *moving* (its agent never leaves the navmesh:
-        // the lift is a render-time offset), so without this the jump would show
-        // as a walk that happens to hover.
-        const inAir = airborne(npc)
         rig.blend(
             {
-                idle: inAir || moving ? 0 : 1,
-                walk: !inAir && moving && !running ? 1 : 0,
-                run: !inAir && running ? 1 : 0,
-                jump: inAir ? 1 : 0,
+                idle: moving ? 0 : 1,
+                walk: moving && !running ? 1 : 0,
+                run: running ? 1 : 0,
+                jump: 0,
             },
             alpha,
         )
@@ -1246,86 +1184,59 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     }
 
     // ------------------------------------------------------------------
-    // The crowd's jump defence
+    // The crowd's dodge
     // ------------------------------------------------------------------
-    // The mirror of the player's field, and deliberately only half of it. An NPC
-    // that jumps turns the player's inbound water back at the player — but it
-    // throws and stuns nobody: the player is not a crowd agent, and taking their
-    // movement away is a different kind of change than taking an NPC's.
+    // An NPC that sees the player's water closing on it steps out of the way and
+    // weaves. It does not touch the water: dodging is evasion, not deflection, so
+    // nothing here can change the shot's course or hurt whoever fired it.
     //
-    // So there is no sweep state shared here as there is above: each NPC owns its
-    // own `fieldElapsed`/`fieldOrigin`, because two of a crowd of six can be
-    // airborne at once and a single pair of variables would have the second jump
-    // move the first one's wave.
-
-    /** In the air: the arc has started and has not landed. */
-    const airborne = (npc: Npc) => npc.jumpOffset > 0 || npc.jumpVelocity > 0
-
-    /**
-     * Jump one NPC: launch the arc, and open its field where it stood.
-     *
-     * Only ever called from the ground (the trigger gates on it), so the arc
-     * starts from a known-zero lift.
-     */
-    const jump = (npc: Npc) => {
-        npc.jumpOffset = 0
-        npc.jumpVelocity = NPC_JUMP_SPEED
-        npc.jumpCooldown = tunables.npcJumpCooldown
-
-        // Anchored where the NPC is standing and copied, not followed: the wave
-        // does not travel with a body that walks on underneath it. Only the XZ
-        // matters — `deflect` measures on the ground plane, like every other
-        // distance in this module.
-        npc.fieldOrigin.copy(npc.group.position)
-        npc.fieldRadius = tunables.npcJumpFieldRadius
-        npc.fieldElapsed = 0
-
-        // Restart the clip past its anticipation crouch, exactly as the player's
-        // jump does, so the pose matches a body already leaving the ground. The
-        // crowd's armed clip set carries no jump of its own and falls back to the
-        // base one (see `armedClipSet`).
-        npc.rig?.startJumpAt(NPC_JUMP_CLIP_START)
-    }
+    // The displacement is what does the dodging. The clip (`more/dodging`)
+    // measures 1.633 s and is a weave *in place* — every bone returns to where it
+    // started — so on its own it would still be hit: the pool captures a droplet
+    // within 0.407 m of the chest, and the clip's own head travel is ~20 cm. What
+    // makes the shot miss is the sidestep below, and the clip is what makes the
+    // sidestep read as a dodge rather than a slide.
 
     /**
-     * Sweep one NPC's field, turning the player's water as the edge reaches it.
+     * Dodge one incoming shot: step sideways out of its path, and play the weave.
      *
-     * The same sweep the player's field runs, run per NPC and against the
-     * player's pool rather than the crowd's own. No `ringJustCrossed` slice is
-     * needed, unlike the player's sweep: this only ever calls `deflect`, which
-     * acts on **inbound** water alone, and water it has already turned is
-     * travelling away — so a reach that only grows cannot catch anything twice.
+     * The step is a velocity **impulse**, exactly like the force field's shove
+     * and for the same reason — the crowd's integrator carries it from here, so
+     * the NPC slides out and settles instead of teleporting. `shoveImpulse` gives
+     * the speed that covers `npcDodgeDistance` before the NPC's own deceleration
+     * (or the speed cap the dodge branch holds at zero) brings it to a stop.
+     *
+     * The direction is the perpendicular to the shooter's bearing. It is the
+     * **player's** position that supplies it rather than the droplet's, because
+     * the water comes from the player's gun and the two bearings agree to within
+     * the hand's width — and because the caller has the player's position and
+     * would otherwise have to reach into the pool for a second point.
      */
-    const advanceNpcField = (npc: Npc, delta: number, droplets: PlayerDroplets | null) => {
-        if (npc.fieldElapsed === NO_FIELD) return
-        npc.fieldElapsed += delta
-        droplets?.deflect(npc.fieldOrigin, sweepReach(npc.fieldRadius, npc.fieldElapsed))
-        if (npc.fieldElapsed >= FORCE_FIELD_SWEEP_SECONDS) npc.fieldElapsed = NO_FIELD
-    }
+    const dodge = (npc: Npc, agent: crowd.Agent, playerPos: THREE.Vector3) => {
+        const dx = npc.group.position.x - playerPos.x
+        const dz = npc.group.position.z - playerPos.z
+        const bearing = Math.hypot(dx, dz)
 
-    /**
-     * Integrate one NPC's jump arc and write the lift onto its group.
-     *
-     * Called from the pose pass immediately after the group has been placed on
-     * the navmesh, so the lift is added to *this* frame's surface position — the
-     * group's `y` is overwritten from the agent every frame, which is what keeps
-     * the arc from accumulating drift of its own.
-     *
-     * The lift rides `npc.group.position`, and every point that reads an NPC's
-     * body reads that group (`npcAimPoint` included), so a jumping NPC genuinely
-     * lifts its chest out of the way of a shot as well as turning it.
-     */
-    const advanceJump = (npc: Npc, delta: number) => {
-        if (!airborne(npc)) return
-        npc.jumpVelocity -= NPC_JUMP_GRAVITY * delta
-        npc.jumpOffset += npc.jumpVelocity * delta
-        // Landed. Both zero, which is the whole of "grounded" and what lets the
-        // next jump start from a clean arc.
-        if (npc.jumpOffset <= 0) {
-            npc.jumpOffset = 0
-            npc.jumpVelocity = 0
-        }
-        npc.group.position.y += npc.jumpOffset
+        // Which way to step: either side clears the shot, so the choice is free —
+        // and alternating by index means a crowd under fire scatters instead of
+        // all leaning the same way. Standing on the player there is no bearing to
+        // step off, so fall back to the NPC's own +X.
+        const side = indexOf(npc) % 2 === 0 ? 1 : -1
+        const px = bearing > 1e-4 ? (-dz / bearing) * side : side
+        const pz = bearing > 1e-4 ? (dx / bearing) * side : 0
+
+        const speed = shoveImpulse(agent.maxAcceleration, tunables.npcDodgeDistance)
+        agent.velocity[0] = px * speed
+        agent.velocity[1] = 0
+        agent.velocity[2] = pz * speed
+
+        npc.dodgeTimer = tunables.npcDodgeSeconds
+        npc.dodgeCooldown = tunables.npcDodgeCooldown
+
+        // Last, so a clip that fails to load cannot cost the dodge: the sidestep
+        // is the mechanic and the weave is how it reads. A dodge with no clip is
+        // still a dodge — see DODGE_CLIP.
+        if (DODGE_CLIP) npc.rig?.playEmotionOnce(DODGE_CLIP)
     }
 
     // ------------------------------------------------------------------
@@ -1415,25 +1326,14 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             if (disposed || npcs.length === 0) return
             const playerPos = getPlayerPosition()
             const hostile = getHostile()
-            // Resolved once per frame, not per NPC, and used for both halves of
-            // the jump defence: what is coming at them (the trigger) and what
-            // their own fields turn (the sweep).
+            // Resolved once per frame, not per NPC: what is coming at them is the
+            // whole input to the dodge.
             const droplets = getPlayerDroplets?.() ?? null
 
             // --- The jump's force field -------------------------------------
             // Ahead of the crowd's own step, so a throw applied here is integrated
             // on this frame rather than the next.
             sweepField(delta)
-
-            // --- The crowd's own fields -------------------------------------
-            // Every NPC's sweep, in the same pass and for the same reason: an
-            // impulse or a turn applied here is carried by this frame's step.
-            // These turn the *player's* water, so the reversal is integrated by
-            // `playerCombat.update` on its own next call rather than here — one
-            // frame late for a droplet that was already at the NPC it was aimed
-            // at, which is a frame the field has, since the water has to survive
-            // the turn before anything else can happen to it.
-            for (const npc of npcs) advanceNpcField(npc, delta, droplets)
 
             // --- 0. The dead -----------------------------------------------
             // Ahead of everything else, because a downed NPC is a hole in the
@@ -1542,33 +1442,64 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                     continue
                 }
 
-                // --- The jump defence -------------------------------------
-                // Ahead of the mode decision, and deliberately so: jumping out of
-                // the way of a shot is not a change of intent, so the NPC decides
-                // where it is going on the same frame it leaves the ground.
+                // Dodging a shot. Like the stun above this pre-empts the mode
+                // loop, but for a different reason: here the cap *is* the dodge's
+                // deceleration. The sidestep was applied as a velocity impulse, and
+                // holding the cap at zero is what lets that impulse spend itself as
+                // a slide that stops, rather than the steering driving the NPC
+                // straight back into the line of fire it just left.
+                //
+                // It also keeps the legs still. The weave owns the mixers outright
+                // while it plays (`animate`'s targets are ignored), so a walking NPC
+                // under the clip would be a dodge drawn on top of a walk.
+                //
+                // Not a form of death: the NPC keeps its agent, its mode and its
+                // target, so this is a pause in the fight, not a removal from it.
+                if (npc.dodgeTimer > 0) {
+                    npc.dodgeTimer -= delta
+                    agent.maxSpeed = 0
+                    // Cut on the crossing frame, guarded on the id — the stun
+                    // branch's rule, and it earns its keep the same way: the death
+                    // clip can supersede the weave, and cancelling *that* would
+                    // leave a corpse standing. At the default window this fires on
+                    // the clip's own last frames and is invisible.
+                    if (npc.dodgeTimer <= 0 && DODGE_CLIP && npc.rig?.getEmotionId() === DODGE_CLIP.id) {
+                        npc.rig.cancelEmotion()
+                    }
+                    continue
+                }
+
+                // --- The dodge --------------------------------------------
+                // Ahead of the mode decision, and deliberately so: stepping out of
+                // the way is not a change of intent, so the NPC decides where it
+                // is going on the same frame it leaves the line of fire.
                 //
                 // The cooldown ticks here rather than at the top of the loop,
-                // which means it does not tick during a stun. That is the right
-                // trade: a stunned NPC could not have jumped anyway, and returning
-                // to the fight with a jump already owed is what makes the freeze
-                // read as the field's doing rather than as a reset.
-                npc.jumpCooldown -= delta
+                // which means it does not tick during a stun *or* during the dodge
+                // itself — both of those `continue` past this line. For the stun
+                // that is a courtesy; for the dodge it is the point, since the
+                // cooldown is meant to start when the weave ends.
+                npc.dodgeCooldown -= delta
                 if (
-                    tunables.npcJumpDefenceEnabled &&
+                    tunables.npcDodgeEnabled &&
                     // Attack mode. The player can only fire while hostile, so this
                     // is mostly belt-and-braces — but it is what stops a crowd
                     // reacting to water still in the air from a fight that just
                     // ended, and it makes the switch mean the same thing here as it
                     // does everywhere else in this module.
                     hostile &&
-                    npc.jumpCooldown <= 0 &&
-                    !airborne(npc) &&
+                    npc.dodgeCooldown <= 0 &&
+                    // The bearing to step off is measured from the shooter, so a
+                    // dodge with no known shooter has no direction to take. It
+                    // would also mean nothing: `hostile` and the player's position
+                    // go null together.
+                    playerPos &&
                     // The question the whole skill is triggered by: is one of the
-                    // player's droplets closing on me? Read against the group's
-                    // own position, which is where the water is aimed.
-                    droplets?.inboundThreat(npc.group.position, tunables.npcJumpThreatRadius)
+                    // player's droplets closing on me? Read against the group's own
+                    // position, which is where the water is aimed.
+                    droplets?.inboundThreat(npc.group.position, tunables.npcDodgeReactionRange)
                 ) {
-                    jump(npc)
+                    dodge(npc, agent, playerPos)
                 }
 
                 let next: NpcMode = 'wander'
@@ -1658,9 +1589,6 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
                 npc.group.position.fromArray(agent.position)
-                // After the placement, never before: the agent's position is the
-                // surface and the arc is a lift above it.
-                advanceJump(npc, delta)
                 // Armed NPCs keep the player at gunpoint with their whole body —
                 // this is the aim the shot below is gated on. It replaces (does
                 // not compose with) the travel facing, because the two disagree:
@@ -1713,7 +1641,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // skips the mode write rather than faking one), so an NPC stunned
                 // mid-`hold` would otherwise sail straight through the `mode ===
                 // 'hold'` test below and keep firing while dizzy.
-                if (npc.armed && npc.gun && playerPos && npc.stunTimer <= 0) {
+                if (npc.armed && npc.gun && playerPos && npc.stunTimer <= 0 && npc.dodgeTimer <= 0) {
                     const dx = playerPos.x - npc.group.position.x
                     const dz = playerPos.z - npc.group.position.z
                     const inRange = dx * dx + dz * dz <= fireRangeSq
