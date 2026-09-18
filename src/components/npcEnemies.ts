@@ -13,6 +13,13 @@
  * walking into the player, and drops back to wandering once the player is out
  * of range.
  *
+ * **Being shot also aggros it, from any distance.** The radius test alone left a
+ * hole: the player's reach is `playerFireRange` (30) and the crowd's aggro radius
+ * is 12, so everything between those two numbers could be shot with impunity —
+ * the NPC never noticed. A hit now latches `Npc.provoked`, and the latch is a
+ * grudge rather than a timer: it holds until the NPC is down, and the respawn is
+ * what ends it.
+ *
  * An armed NPC tracks the player with its **whole body** and will not shoot
  * until the muzzle is on them (`facePlayer` / `aimedAtPlayer`) — the gun is
  * calibrated to the group's forward, so facing the player *is* aiming at them.
@@ -339,6 +346,15 @@ interface Npc {
     armedClips: boolean
     /** Countdown to the next shot, in seconds. Only ticks while armed and holding. */
     shotTimer: number
+    /**
+     * Has the player shot this NPC? Latches, and keeps the grudge for the rest of
+     * this life — the only thing that clears it is the respawn.
+     *
+     * It exists because the aggro radius alone cannot see a shot from outside it:
+     * the player outranges the crowd (30 against 12), so a hit has to be able to
+     * start a chase the distance test would never have started.
+     */
+    provoked: boolean
     /** Health, 0..`tunables.maxHp`. At 0 the NPC goes down. */
     hp: number
     /** Downed: out of the crowd, not shooting, not a valid target. */
@@ -520,6 +536,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             mode: 'wander',
             wanderAge: Infinity,
             chaseAge: 0,
+            provoked: false,
             armed: false,
             armedClips: false,
             shotTimer: 0,
@@ -703,6 +720,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         npc.wanderAge = Infinity
         npc.chaseAge = 0
         npc.shotTimer = 0
+        // The grudge ends with the life that held it. Cleared here rather than in
+        // `killNpc` because this is where the NPC actually becomes a fresh one —
+        // and a dead NPC is out of the simulation anyway (`agentId` is null, which
+        // step 1 skips on), so a flag left set on a corpse is never read.
+        npc.provoked = false
         npc.group.position.fromArray(spawn)
         npc.agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
         if (npc.rig) npc.rig.scene.visible = true
@@ -718,6 +740,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
      */
     const damageNpc = (npc: Npc): boolean => {
         if (npc.dead) return false
+        // The one place the crowd learns it is under attack. This is reachable
+        // only through `NpcTarget.damage`, which only the player's droplet pool
+        // calls — the crowd's own pool shoots at the player, not at each other —
+        // so a hit here is unambiguously the player's doing, and no faction check
+        // is needed to know whose it was.
+        npc.provoked = true
         npc.hp = Math.max(0, npc.hp - tunables.dropletDamage)
         refreshBar(npc)
         if (npc.hp > 0) return false
@@ -1040,7 +1068,13 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                     const dx = agent.position[0] - playerPos.x
                     const dz = agent.position[2] - playerPos.z
                     distanceSq = dx * dx + dz * dz
-                    if (distanceSq < aggroSq) {
+                    // Within the radius, or already shot. The `provoked` half is
+                    // what lets a hit from outside the radius start a chase — and
+                    // it has to be here rather than at the distance test above,
+                    // because `distanceSq` is still needed for the hold ring: a
+                    // provoked NPC already standing at the standoff distance
+                    // should be holding and firing, not walking into the player.
+                    if (distanceSq < aggroSq || npc.provoked) {
                         next = distanceSq > holdSq ? 'chase' : 'hold'
                     }
                 }
