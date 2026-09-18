@@ -592,9 +592,15 @@ export interface GrassComponentProps {
     /**
      * Number of blades.
      *
-     * 120k over the default 60-unit field is ~33 blades per unit². The reference
-     * uses 50000 over 100 units (5 per unit²), so this is a finer, denser lawn
-     * rather than the reference's taller meadow.
+     * The reference uses 50,000 over 100 units. This default is three times
+     * that — a finer, denser lawn rather than the reference's taller meadow —
+     * but a blade is 8 triangles and nothing culls individual ones, so the
+     * default draws ~1.2 M triangles every frame, whatever the camera is
+     * looking at. A caller that cares more about frame time than density
+     * lowers it (`LoadObject3DAsync` ships 50,000, a third of the cost).
+     *
+     * Density otherwise doesn't move with `clumpStrength`, only the layout —
+     * see the note there.
      */
     instances?: number
     /** Where to put the blades. 'collider' falls back to 'terrain' if absent. */

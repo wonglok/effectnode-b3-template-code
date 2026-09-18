@@ -132,7 +132,16 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         }
         return reflector({
             target: playerGroup,
-            bounces: true,
+            // `bounces: false` — a reflector with `bounces: true` renders *other*
+            // reflector nodes inside its own pass, and this scene has three (two
+            // water, this one). Each nesting is another whole
+            // `renderer.render(scene, virtualCamera)`. Off, three sets
+            // `updateBeforeType` to `FRAME` instead of `RENDER`, so this one
+            // updates once per frame and — `ReflectorNode.updateBefore` — skips
+            // itself entirely while another reflector's pass is in flight. The
+            // visible consequence is only that this reflection no longer appears
+            // *inside* the water's, which is the whole trade.
+            bounces: false,
             resolutionScale: 0.5,
         })
     }, [playerGroup])

@@ -575,7 +575,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         sphere: true,
         wind: options.wind ?? 1.0,
         stiffness: 0.2,
-        dampening: 0.985,
+        dampening: 0.97,
         sphereFollowSpeed: options.sphereFollowSpeed ?? DEFAULT_SPHERE_FOLLOW_SPEED,
     }
 
@@ -742,10 +742,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
         ...options.material,
     })
 
-    clothMaterial.sheenNode = color(new Color('#0000ff').offsetHSL(0, -0.15, -0.15))
-    clothMaterial.colorNode = color(new Color('#0000ff'))
-    clothMaterial.iridescence = 1.0
-    clothMaterial.iridescenceIOR = 1.5
+    clothMaterial.sheenNode = color(new Color('#ffffff'))
+    clothMaterial.colorNode = color(new Color('#ffffff'))
+    clothMaterial.iridescence = 0.5
+    clothMaterial.iridescenceIOR = 2
 
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which

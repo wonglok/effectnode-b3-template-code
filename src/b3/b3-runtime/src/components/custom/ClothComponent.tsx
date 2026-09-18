@@ -93,7 +93,7 @@ const CAPE_LENGTH = 0.9
 /** Cells per side. Denser than the demo cloth's 30 per metre in neither
  *  direction — the cape is a smaller sheet, so 24 cells is ~3 cm — and the
  *  pinned edge is a whole row here, so its resolution is the cape's silhouette. */
-const CAPE_SEGMENTS = 24
+const CAPE_SEGMENTS = 50
 
 // --- the line, resolved and reused -------------------------------------------
 // Module-level scratch, as the cloth's contract allows: `getPinLine`'s result is
