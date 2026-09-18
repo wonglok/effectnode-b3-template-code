@@ -18,7 +18,7 @@
 // `GrassComponent` generates on the CPU — see `buildGrassAttributes` there.
 // ---------------------------------------------------------------------------
 
-import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace } from 'three/webgpu'
+import { Color, DoubleSide, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SRGBColorSpace } from 'three/webgpu'
 import type { Node, Texture } from 'three/webgpu'
 import {
     Fn,
@@ -138,7 +138,7 @@ export interface GrassMaterialOptions {
 }
 
 export interface GrassMaterial {
-    material: MeshBasicNodeMaterial
+    material: MeshStandardNodeMaterial
     /** Live-tweakable values — mutate `.value` to re-tune without a rebuild. */
     uniforms: {
         bladeHeight: { value: number }
@@ -184,7 +184,7 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     const tipRgb = new Color().setStyle(tipColor, SRGBColorSpace)
     const bottomRgb = new Color().setStyle(bottomColor, SRGBColorSpace)
 
-    const material = new MeshBasicNodeMaterial()
+    const material = new MeshStandardNodeMaterial()
 
     // ---- Vertex -----------------------------------------------------------
 
@@ -206,11 +206,7 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // Per-blade height variation. The reference does not scale the whole blade
     // uniformly — it only stretches the Y component, which is why taller blades
     // are also slightly thinner in silhouette.
-    const stretched = vec3(
-        positionLocal.x,
-        positionLocal.y.add(positionLocal.y.mul(stretch)),
-        positionLocal.z,
-    )
+    const stretched = vec3(positionLocal.x, positionLocal.y.add(positionLocal.y.mul(stretch)), positionLocal.z)
 
     const bent = rotateByQuaternion(stretched, direction)
 
@@ -251,6 +247,8 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     material.alphaTest = 0.15
 
     material.side = DoubleSide
+
+    material.emissiveNode = bladeColor.mul(0.2)
 
     return {
         material,
