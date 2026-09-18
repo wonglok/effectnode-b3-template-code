@@ -645,16 +645,16 @@ export interface GrassComponentProps {
 
 export function GrassComponent({
     objects = [],
-    instances = 100000 * 3,
+    instances = 100000 * 1.5,
     placement = 'collider',
     width = 160,
     // The reference's blades are 0.12 x 1. These are 5x narrower and, since the
     // 1.5x height increase, 3.33x shorter — a finer lawn rather than its meadow.
     // Only the aspect differs from a uniform shrink, so the blades are noticeably
     // taller than they are wide.
-    bladeWidth = 0.05,
-    bladeHeight = 0.35,
-    joints = 3,
+    bladeWidth = 0.025,
+    bladeHeight = 0.25,
+    joints = 4,
     terrainAmplitude = 1,
     showGround = false,
     // sRGB equivalents of the reference's (0, 0.6, 0) / (0, 0.1, 0).
