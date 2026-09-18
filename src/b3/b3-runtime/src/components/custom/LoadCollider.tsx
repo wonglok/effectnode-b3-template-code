@@ -237,11 +237,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(1.0), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale).mul(0.5)) as Node<'float'>
-            // const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
+            const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
-            // const reflectionColor = texture(reflection, uv())
+            const reflectionColor = texture(reflection, uv().mul(texScale))
 
             //
             const normalVec4 = texture(normalMap, uv().mul(texScale))
