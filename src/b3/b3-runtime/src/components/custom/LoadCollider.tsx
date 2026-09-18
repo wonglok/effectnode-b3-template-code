@@ -28,7 +28,7 @@ import { positionWorld, distance, smoothstep } from 'three/tsl'
 // import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
 
-const circlePulse: (
+export const circlePulse: (
     characterPos: Node<'vec3'>,
     maxRadius: Node<'float'>,
     thickness: Node<'float'>,
@@ -91,23 +91,23 @@ const getNoiseValue = Fn(([scale = float(1), speed = float(0.75)]: [scale: Node<
     return noiseVal
 })
 
-const loader = new TextureLoader()
-const colorMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Color.jpg`, (d) => {
-    d.repeat.set(1, 1)
-    d.needsUpdate = true
-    d.colorSpace = SRGBColorSpace
-    d.wrapS = d.wrapT = RepeatWrapping
-})
-const roughnessMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Roughness.jpg`, (d) => {
-    d.repeat.set(1, 1)
-    d.needsUpdate = true
-    d.wrapS = d.wrapT = RepeatWrapping
-})
-const normalMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_NormalGL.jpg`, (d) => {
-    d.repeat.set(1, 1)
-    d.needsUpdate = true
-    d.wrapS = d.wrapT = RepeatWrapping
-})
+// const loader = new TextureLoader()
+// const colorMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Color.jpg`, (d) => {
+//     d.repeat.set(1, 1)
+//     d.needsUpdate = true
+//     d.colorSpace = SRGBColorSpace
+//     d.wrapS = d.wrapT = RepeatWrapping
+// })
+// const roughnessMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_Roughness.jpg`, (d) => {
+//     d.repeat.set(1, 1)
+//     d.needsUpdate = true
+//     d.wrapS = d.wrapT = RepeatWrapping
+// })
+// const normalMap: Texture = loader.load(`/texture/grass/Grass007_4K-JPG_NormalGL.jpg`, (d) => {
+//     d.repeat.set(1, 1)
+//     d.needsUpdate = true
+//     d.wrapS = d.wrapT = RepeatWrapping
+// })
 
 export function LoadCollider({ texData = new Map(), objects = [] }) {
     const scene = useThree((r) => r.scene)
@@ -125,10 +125,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     // Blender version of the 'collider' object. A stable primitive so the attach
     // effect below only re-runs when Blender actually changes the collider —
     // not on every unrelated objects-array push.
-    const colliderVersion = useMemo(() => {
-        const found = (objects as any[]).find((r: any) => r?.name === 'collider')
-        return found ? (found.version as string) : null
-    }, [objects])
+    // const colliderVersion = useMemo(() => {
+    //     const found = (objects as any[]).find((r: any) => r?.name === 'collider')
+    //     return found ? (found.version as string) : null
+    // }, [objects])
 
     // Stable uniforms — mutated every frame / tweened by gsap. The shader nodes
     // in `attach` below capture these same object instances, so animating them
@@ -212,7 +212,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     }, [jumpRequest?.nonce])
 
     useEffect(() => {
-        const rm = roughnessMap
+        // const rm = roughnessMap
         // if (!rm) return
         // if (!colliderVersion) return
         // if (!normalMap) {
@@ -244,14 +244,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             const reflectionColor = texture(reflection, uv().mul(texScale))
 
             //
-            const normalVec4 = texture(normalMap, uv().mul(texScale))
-            const roughnessVec4 = texture(rm, uv().mul(texScale))
-            const colorValue = texture(colorMap, uv().mul(texScale))
+            // const normalVec4 = texture(normalMap, uv().mul(texScale))
+            // const roughnessVec4 = texture(rm, uv().mul(texScale))
+            // const colorValue = texture(colorMap, uv().mul(texScale))
 
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
-            mat.roughnessNode = roughnessVec4.r.oneMinus()
-            mat.metalnessNode = roughnessVec4.r
-            mat.normalNode = normalVec4.rgb.normalize().mul(1.0)
+            // mat.roughnessNode = roughnessVec4.r.oneMinus()
+            // mat.metalnessNode = roughnessVec4.r
+            // mat.normalNode = normalVec4.rgb.normalize().mul(1.0)
             mat.transparent = true
 
             mat.emissiveNode = Fn(() => {
@@ -278,7 +278,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         // colorValue.rgb,
                         0.0,
                     ),
-                    colorValue.a,
+                    1.0,
                 )
             })()
 
@@ -325,7 +325,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [scene, normalMap, roughnessMap, placeOfPlayer])
+    }, [scene, placeOfPlayer])
 
     return <></>
 }

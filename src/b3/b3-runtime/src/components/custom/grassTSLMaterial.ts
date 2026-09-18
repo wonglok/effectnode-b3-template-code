@@ -18,14 +18,17 @@
 // `GrassComponent` generates on the CPU — see `buildGrassAttributes` there.
 //
 // One thing here is not in the reference at all: the blade shortens as it
-// approaches the player's cull radius. See the "Radius culling" block in the
-// vertex nodes — it is the shader half of a split described in grassCuller.ts,
-// and the two only make sense together.
+// approaches the player's cull radius, and is discarded once it is short enough
+// to be a speck. See the "Radius culling" block in the vertex nodes — it is the
+// shader half of a split described in grassCuller.ts, and the two only make
+// sense together. The discard and the shrink read the *same* number, which is
+// why it crosses the two stages as a varying.
 // ---------------------------------------------------------------------------
 
 import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace, Vector3 } from 'three/webgpu'
 import type { Node, Texture } from 'three/webgpu'
 import {
+    Discard,
     Fn,
     abs,
     acos,
@@ -48,6 +51,7 @@ import {
     time,
     uniform,
     uv,
+    varying,
     vec2,
     vec3,
     vec4,
@@ -79,7 +83,9 @@ const floatAttribute = (name: string) => attribute(name, 'float') as unknown as 
  * one the reference uses; it is cheaper than building a matrix per vertex).
  */
 const rotateByQuaternion = Fn(([v, q]: [Node<'vec3'>, Node<'vec4'>]) => {
-    return cross(q.xyz, cross(q.xyz, v).add(q.w.mul(v))).mul(2).add(v)
+    return cross(q.xyz, cross(q.xyz, v).add(q.w.mul(v)))
+        .mul(2)
+        .add(v)
 })
 
 /**
@@ -165,6 +171,19 @@ export interface GrassMaterial {
         playerPosition: { value: Vector3 }
     }
 }
+
+/**
+ * Height fraction at or below which the shrink-out has taken enough of a blade
+ * that it is discarded outright rather than drawn as a sliver.
+ *
+ * This is not a spatial threshold — the shrink is a `smoothstep` over the fade
+ * band, so a fraction maps to a distance through it. At `cullRadius` 5 with
+ * `fadeWidth` 2, 0.1 lands at about 4.61 m: the blade is 10% of its height (a
+ * few centimetres) already, which is why cutting there reads as the blade having
+ * shrunk away rather than as a pop. Lowering it moves the hard edge further out,
+ * toward `cullRadius`; 0.5 would cut at 4.0 m.
+ */
+const CULL_HEIGHT_THRESHOLD = 0.03
 
 /**
  * Build the blade material.
@@ -253,6 +272,20 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
         distanceToPlayer,
     ).oneMinus()
 
+    // The same number, handed across to the fragment stage.
+    //
+    // `varying()` wraps its input in `subBuild(node, 'VERTEX')`, so the whole
+    // distance calculation above — including the per-instance `offset` attribute,
+    // which does not exist in a fragment shader — is evaluated per vertex and
+    // arrives interpolated. That is what lets the discard below judge a blade by
+    // exactly the number that shortened it, rather than recomputing an
+    // approximation from `positionWorld` and cutting at a distance that no longer
+    // matches the blade's own geometry.
+    //
+    // Every vertex of a blade shares one `offset`, so the interpolated value is
+    // constant across the blade — the discard is per-blade, not per-fragment.
+    const heightScaleVarying = varying(heightScale)
+
     // Per-blade height variation. The reference does not scale the whole blade
     // uniformly — it only stretches the Y component, which is why taller blades
     // are also slightly thinner in silhouette.
@@ -269,20 +302,18 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // instead of the whole meadow pivoting in lockstep. The /50 on the offset is
     // the reference's — it sets the gust wavelength at ~50 world units.
     const clock = time.mul(windSpeed)
-    const gust = float(1).sub(
-        mx_noise_float(vec2(clock.sub(offset.x.div(50)), clock.sub(offset.z.div(50)))),
-    )
+    const gust = float(1).sub(mx_noise_float(vec2(clock.sub(offset.x.div(50)), clock.sub(offset.z.div(50)))))
     const halfAngle = gust.mul(windStrength)
 
     // Rotating about the YZ plane (x = sin, y = 0, z = -sin) leans the blade
     // along one axis, so the field sways rather than spinning.
-    const windQuaternion = normalize(
-        vec4(sin(halfAngle), float(0), sin(halfAngle).negate(), cos(halfAngle)),
-    )
+    const windQuaternion = normalize(vec4(sin(halfAngle), float(0), sin(halfAngle).negate(), cos(halfAngle)))
 
     // The framework applies modelViewMatrix and projection on top of this, so
     // returning the world-local offset position is the whole job.
-    material.positionNode = offset.add(rotateByQuaternion(bent, windQuaternion))
+    material.positionNode = Fn(() => {
+        return offset.add(rotateByQuaternion(bent, windQuaternion))
+    })()
 
     // ---- Fragment ---------------------------------------------------------
 
@@ -291,17 +322,34 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     const albedo = texture(map, uv())
     const fragmentRootToTip = uv().y
     const tinted = mix(vec3(tipRgb.r, tipRgb.g, tipRgb.b), albedo.rgb, fragmentRootToTip)
-    material.colorNode = mix(
-        vec3(bottomRgb.r, bottomRgb.g, bottomRgb.b),
-        tinted,
-        fragmentRootToTip,
-    )
+    material.colorNode = mix(vec3(bottomRgb.r, bottomRgb.g, bottomRgb.b), tinted, fragmentRootToTip)
 
-    // The cutout. Set as `opacityNode` so three's own alpha-test handles it —
-    // it discards on `alpha <= alphaTest`, and honouring `alphaToCoverage` when
-    // it is on gives the blade edges a fwidth-based soft edge that the
+    // The cutout and the far-field discard, in that order.
+    //
+    // `Discard` is a **fragment-stage** statement — three emits a raw WGSL
+    // `discard`, which is not valid in a vertex shader — so it cannot sit beside
+    // the shrink that produces `heightScale`. It reads the varying instead, and
+    // has to run inside a fragment slot's graph, which is what the `Fn` wrapper
+    // is for: `toStack()` writes into whichever flow is being built, so a bare
+    // call at this point in the factory would land in no shader at all.
+    //
+    // A blade this short is already a few-centimetre sliver lying at the root:
+    // without the cut it still rasterizes a pixel or two and leaves a speck past
+    // where the field should have ended.
+    //
+    // It is not a saving on the texture fetches, and is not meant to be — three
+    // emits `colorNode` ahead of `opacityNode`, so the albedo above has already
+    // been sampled by the time this runs. What the discard does skip is the rest
+    // of this stage: the alpha map, the alpha test's own discard, and the write.
+    material.opacityNode = Fn(() => {
+        Discard(heightScaleVarying.lessThanEqual(CULL_HEIGHT_THRESHOLD))
+        return texture(alphaMap, uv()).r
+    })()
+
+    // The reference's own cutout, kept as `alphaTest` rather than an inline
+    // discard so three's alpha-test handling applies — it honours `alphaToCoverage`
+    // when it is on, giving the blade edges a fwidth-based soft edge that the
     // reference's hard `if (alpha < 0.15) discard` does not.
-    material.opacityNode = texture(alphaMap, uv()).r
     material.alphaTest = 0.15
 
     material.side = DoubleSide
