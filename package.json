@@ -19,7 +19,7 @@
     "@react-three/fiber": "^9.7.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.6",
-    "@types/three": "^0.185.4",
+    "@types/three": "^0.186.0",
     "concurrently": "^10.0.5",
     "cors": "^2.8.6",
     "draco3d": "^1.5.7",

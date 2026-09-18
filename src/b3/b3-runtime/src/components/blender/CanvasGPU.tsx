@@ -56,9 +56,17 @@ export const CanvasGPU: any = ({ children, ...props }: { children?: any; props: 
                             // stencil: false,
                             // multiview: true,
 
-                            // requiredLimits: {
-                            //   maxColorAttachments: 8,
-                            // },
+                            // The GPU cloth (`custom/shader/cloth.ts`) reads its
+                            // verlet positions out of a storage buffer in the
+                            // *vertex* stage. WebGPU's default for
+                            // `maxStorageBuffersInVertexStage` is 0, so without
+                            // asking for this the cloth's pipeline fails to build
+                            // — the compute passes are fine, and only the mesh
+                            // that draws them is affected.
+                            requiredLimits: {
+                                maxStorageBuffersInVertexStage: 1,
+                                // maxColorAttachments: 8,
+                            },
                         })
 
                         await renderer.init()

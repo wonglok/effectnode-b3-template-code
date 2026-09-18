@@ -1,3 +1,4 @@
+import { ClothComponent } from './ClothComponent'
 import { GrassComponent } from './GrassComponent'
 import { LoadCollider } from './LoadCollider'
 import { LoadCurve } from './LoadCurve'
@@ -16,6 +17,13 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 aligned to its normals. `objects` is passed only so a re-synced
                 collider (Blender bumps its version) re-samples the field. */}
             <GrassComponent objects={objects} />
+
+            {/* GPU verlet cloth, drawn with the TSL transmission material
+                (`shader/TransmissionTSLMaterial.ts`). It steps in its own
+                `useFrame` and hangs beside the player's start. Its vertex
+                shader reads a storage buffer, so `CanvasGPU` has to ask for
+                `maxStorageBuffersInVertexStage` — see the note there. */}
+            <ClothComponent />
 
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water'} objects={objects}></SceneWaterObject>

@@ -54,8 +54,10 @@ import {
 // accepts, and these feed straight into `vec4(...)` joins. The runtime node is
 // exactly what `nodeType` says, so these restore the type without changing it.
 //
-// (The repo pins @types/three 0.185.4 against three 0.186.0, so this is a
-// typing gap rather than a mismatch in behaviour.)
+// (This was written when the repo pinned @types/three 0.185.4 against three
+// 0.186.0; the pin has since moved to 0.186.0 and the declaration still loses
+// the type, so this is a gap in the typings rather than a version mismatch in
+// behaviour.)
 
 const vec3Attribute = (name: string) => attribute(name, 'vec3') as unknown as Node<'vec3'>
 const vec4Attribute = (name: string) => attribute(name, 'vec4') as unknown as Node<'vec4'>
