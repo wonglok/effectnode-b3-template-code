@@ -10,12 +10,18 @@
 // where it stands, which way it leans, how tall it is, which way it was already
 // growing — is a per-instance attribute the vertex shader consumes. Nothing is
 // animated on the CPU: the wind is a noise field sampled in the shader.
+//
+// Blades are placed by sampling the *collider* mesh's surface, so the field
+// follows the real terrain instead of an invented height field — and each blade
+// is aligned to the sampled surface normal, so it grows out of a slope rather
+// than standing plumb with the world and sinking into it.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
     InstancedBufferAttribute,
     InstancedBufferGeometry,
+    Matrix3,
     Mesh,
     NoColorSpace,
     PlaneGeometry,
@@ -25,8 +31,11 @@ import {
     TextureLoader,
     Vector3,
 } from 'three'
+import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 import type { Texture } from 'three'
+import { useThree } from '@react-three/fiber'
+import type { BlenderObject } from '../types/blenderTypes'
 import { createGrassMaterial } from './grassTSLMaterial'
 
 // ---------------------------------------------------------------------------
@@ -57,17 +66,13 @@ const bladeAlpha: Texture = loader.load('/texture/grass/blade_alpha.jpg', (d) =>
 })
 
 // ---------------------------------------------------------------------------
-// Terrain
+// Terrain fallback
 // ---------------------------------------------------------------------------
-// The reference calls the `simplex-noise` package, which is not a dependency of
-// this project. This is a deterministic value-noise fBm instead, reusing the
-// reference's three octaves, wavelengths and amplitudes so the terrain has the
-// same scale and character. It is *not* the same function — simplex has no
-// axis-aligned lattice and a different amplitude distribution — so the hills
-// will not match the example exactly, only in relief.
-//
-// The same function positions the blades and displaces the ground, which is what
-// keeps the blades sitting on the surface rather than hovering or sinking.
+// Used only when no collider mesh exists yet (or `placement` is forced to
+// 'terrain'). The reference calls the `simplex-noise` package, which is not a
+// dependency here, so this is a deterministic value-noise fBm reusing the
+// reference's three octaves, wavelengths and amplitudes. It is *not* the same
+// function as simplex — only the same relief and character.
 
 /** 32-bit lattice hash → [-1, 1]. */
 function hashLattice(ix: number, iy: number, seed: number): number {
@@ -97,12 +102,7 @@ function valueNoise2D(x: number, y: number, seed: number): number {
     return (n00 + (n10 - n00) * sx) * (1 - sy) + (n01 + (n11 - n01) * sx) * sy
 }
 
-/**
- * Ground height at a world position.
- *
- * `amplitude` scales the whole relief, and 0 flattens it — that is the switch
- * for laying this grass over ground the scene already provides.
- */
+/** Ground height at a world position. `amplitude` 0 flattens it. */
 function terrainHeight(x: number, z: number, amplitude: number): number {
     if (amplitude === 0) return 0
 
@@ -114,63 +114,216 @@ function terrainHeight(x: number, z: number, amplitude: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Per-instance attributes
+// Placement
 // ---------------------------------------------------------------------------
 
-interface GrassAttributes {
-    offsets: Float32Array
-    orientations: Float32Array
-    stretches: Float32Array
-    halfRootAngleSin: Float32Array
-    halfRootAngleCos: Float32Array
+/**
+ * Where the blades stand and which way the surface under them faces — the only
+ * two things the sampler has to produce; the rest is per-blade randomness.
+ *
+ * Both arrays are world space, and unit for the ups.
+ */
+interface BladePlacement {
+    /** World-space blade roots, xyz per instance. Becomes the `offset` attribute. */
+    positions: Float32Array
+    /** World-space unit surface normals, xyz per instance. */
+    ups: Float32Array
 }
 
+const WORLD_UP = new Vector3(0, 1, 0)
 const AXIS_X = new Vector3(1, 0, 0)
-const AXIS_Y = new Vector3(0, 1, 0)
 const AXIS_Z = new Vector3(0, 0, 1)
 
 /** Growth-direction tilt range, in radians — the reference's min/max. */
 const TILT_RANGE = 0.25
 
 /**
- * Generate the per-blade data the vertex shader consumes.
+ * Sample `instances` points off the collider mesh's surface.
  *
- * A faithful port of the reference's `getAttributeData`, with one substitution:
- * it builds its quaternions by hand out of Vector4s (its `multiplyQuaternions`
- * is the Hamilton product q1·q2, in that order), which THREE.Quaternion.multiply
- * computes identically. That removes the arithmetic without changing a rotation.
+ * Returns null when the mesh cannot be sampled (no geometry, no normals, or an
+ * InstancedMesh), so the caller can fall back rather than place every blade at
+ * the origin.
+ *
+ * `MeshSurfaceSampler` works in the mesh's **local** space — it reads the
+ * geometry attributes directly and never touches `matrixWorld` — so both the
+ * point and the normal are transformed out here.
  */
-function buildGrassAttributes(instances: number, width: number, terrainAmplitude: number): GrassAttributes {
-    const offsets = new Float32Array(instances * 3)
-    const orientations = new Float32Array(instances * 4)
-    const stretches = new Float32Array(instances)
-    const halfRootAngleSin = new Float32Array(instances)
-    const halfRootAngleCos = new Float32Array(instances)
+function sampleColliderPlacement(collider: Mesh, instances: number): BladePlacement | null {
+    const geometry = collider.geometry
 
-    // Two scratch quaternions, reused across every blade. Allocating a pair per
-    // instance is 60k objects at a typical instance count.
-    const heading = new Quaternion()
-    const tilt = new Quaternion()
+    // Without a normal attribute `sample()` silently leaves the target normal
+    // untouched, which would align every blade to whatever the last one got.
+    if (!geometry?.attributes?.position || !geometry.attributes.normal) return null
+
+    // An InstancedMesh would need each instance's matrix applied, and sampling
+    // the shared geometry would stamp the same shape over the whole field. The
+    // collider is a plain Mesh (useMeshSync only batches *identical* geometry,
+    // and terrain is unique), so treat anything else as unsupported.
+    if ((collider as unknown as { isInstancedMesh?: boolean }).isInstancedMesh) return null
+
+    const sampler = new MeshSurfaceSampler(collider).build()
+
+    // The mesh may have been created this frame, so its world matrix is not
+    // guaranteed to be current yet.
+    collider.updateWorldMatrix(true, false)
+
+    const positions = new Float32Array(instances * 3)
+    const ups = new Float32Array(instances * 3)
+
+    const point = new Vector3()
+    const normal = new Vector3()
+    const normalMatrix = new Matrix3()
+
+    for (let i = 0; i < instances; i++) {
+        sampler.sample(point, normal)
+
+        point.applyMatrix4(collider.matrixWorld)
+        normal.applyNormalMatrix(normalMatrix.getNormalMatrix(collider.matrixWorld))
+
+        // Exported meshes routinely carry inverted winding, which would grow
+        // every blade out of the *underside* of the terrain. Trust the side the
+        // surface faces rather than the winding: anything pointing below the
+        // horizon is flipped back up.
+        if (normal.y < 0) normal.negate()
+        normal.normalize()
+
+        positions[i * 3] = point.x
+        positions[i * 3 + 1] = point.y
+        positions[i * 3 + 2] = point.z
+
+        ups[i * 3] = normal.x
+        ups[i * 3 + 1] = normal.y
+        ups[i * 3 + 2] = normal.z
+    }
+
+    return { positions, ups }
+}
+
+/** Scatter blades over the fBm height field, all standing plumb. */
+function sampleTerrainPlacement(instances: number, width: number, terrainAmplitude: number): BladePlacement {
+    const positions = new Float32Array(instances * 3)
+    const ups = new Float32Array(instances * 3)
 
     for (let i = 0; i < instances; i++) {
         const x = Math.random() * width - width / 2
         const z = Math.random() * width - width / 2
 
-        offsets[i * 3] = x
-        offsets[i * 3 + 1] = terrainHeight(x, z, terrainAmplitude)
-        offsets[i * 3 + 2] = z
+        positions[i * 3] = x
+        positions[i * 3 + 1] = terrainHeight(x, z, terrainAmplitude)
+        positions[i * 3 + 2] = z
 
-        // The blade's root heading, as a rotation about Y.
+        ups[i * 3] = 0
+        ups[i * 3 + 1] = 1
+        ups[i * 3 + 2] = 0
+    }
+
+    return { positions, ups }
+}
+
+/**
+ * Bounding sphere covering every blade root, padded for the blades themselves.
+ *
+ * It has to be measured from the samples rather than assumed from `width`: with
+ * collider placement the field spans the collider, which bears no relation to the
+ * configured width, and three culls against this sphere — a too-small one makes
+ * the entire field vanish as soon as the camera leaves a small box around the
+ * origin.
+ */
+function computeFieldBounds(offsets: Float32Array, bladeHeight: number): Sphere {
+    const count = offsets.length / 3
+    if (count === 0) return new Sphere(new Vector3(), bladeHeight)
+
+    let minX = Infinity
+    let minY = Infinity
+    let minZ = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    let maxZ = -Infinity
+
+    for (let i = 0; i < count; i++) {
+        const x = offsets[i * 3]
+        const y = offsets[i * 3 + 1]
+        const z = offsets[i * 3 + 2]
+
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+        if (z < minZ) minZ = z
+        if (z > maxZ) maxZ = z
+    }
+
+    const center = new Vector3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2)
+
+    // Half-diagonal of the root cloud, plus room for the blades above it: the
+    // tall minority reach ~1.9x their height, and the gust leans them further.
+    const radius = center.distanceTo(new Vector3(maxX, maxY, maxZ)) + bladeHeight * 2.5
+
+    return new Sphere(center, radius)
+}
+
+// ---------------------------------------------------------------------------
+// Per-instance attributes
+// ---------------------------------------------------------------------------
+
+interface GrassAttributes {
+    offsets: Float32Array
+    rootDirection: Float32Array
+    orientations: Float32Array
+    stretches: Float32Array
+}
+
+/**
+ * Turn a placement into the per-blade attributes the vertex shader consumes.
+ *
+ * The quaternion composition follows the reference's `getAttributeData` — root
+ * heading, then a tilt about X, then one about Z — with one addition: the whole
+ * blade frame is first rotated so its local +Y points along the sampled surface
+ * normal. That is what makes grass grow out of a slope rather than through it.
+ *
+ * The reference builds its quaternions by hand out of Vector4s (its
+ * `multiplyQuaternions` is the Hamilton product q1·q2, in that order), which
+ * THREE.Quaternion computes identically.
+ */
+function buildGrassAttributes(placement: BladePlacement): GrassAttributes {
+    // Reused as the `offset` attribute directly — it is already xyz-per-instance.
+    const offsets = placement.positions
+    const instances = offsets.length / 3
+
+    const rootDirection = new Float32Array(instances * 4)
+    const orientations = new Float32Array(instances * 4)
+    const stretches = new Float32Array(instances)
+
+    // Scratch, reused across every blade. Allocating per instance is 100k+
+    // objects at a typical instance count.
+    const align = new Quaternion()
+    const heading = new Quaternion()
+    const unbent = new Quaternion()
+    const tilt = new Quaternion()
+    const up = new Vector3()
+
+    for (let i = 0; i < instances; i++) {
+        up.set(placement.ups[i * 3], placement.ups[i * 3 + 1], placement.ups[i * 3 + 2])
+
+        // Rotates the blade's local +Y onto the surface normal. Identity when the
+        // surface is flat, which is the reference's case.
+        align.setFromUnitVectors(WORLD_UP, up)
+
+        // The blade's root heading — a yaw *about its own axis*, i.e. about the
+        // surface normal once `align` has been applied.
         const rootAngle = Math.PI - Math.random() * (Math.PI * 2)
 
-        // Stored as a half-angle sin/cos pair rather than the angle itself — this
-        // is the form the shader's slerp needs as its "unbent" endpoint.
-        halfRootAngleSin[i] = Math.sin(0.5 * rootAngle)
-        halfRootAngleCos[i] = Math.cos(0.5 * rootAngle)
+        // Heading only: the endpoint `slerp` starts from. Pre-multiplying by
+        // `align` puts it in world space (quaternions compose right-to-left
+        // against a vector, so this is "align first, then yaw in its frame").
+        unbent.setFromAxisAngle(WORLD_UP, rootAngle).premultiply(align)
+        rootDirection[i * 4] = unbent.x
+        rootDirection[i * 4 + 1] = unbent.y
+        rootDirection[i * 4 + 2] = unbent.z
+        rootDirection[i * 4 + 3] = unbent.w
 
-        // Root heading, then a tilt about X, then one about Z. Composed in this
-        // order to match the reference.
-        heading.setFromAxisAngle(AXIS_Y, rootAngle)
+        // The same frame with the growth tilts on top — where the tip ends up.
+        heading.setFromAxisAngle(WORLD_UP, rootAngle).premultiply(align)
         heading.multiply(tilt.setFromAxisAngle(AXIS_X, (Math.random() * 2 - 1) * TILT_RANGE))
         heading.multiply(tilt.setFromAxisAngle(AXIS_Z, (Math.random() * 2 - 1) * TILT_RANGE))
 
@@ -184,7 +337,7 @@ function buildGrassAttributes(instances: number, width: number, terrainAmplitude
         stretches[i] = i < instances / 3 ? Math.random() * 1.8 : Math.random()
     }
 
-    return { offsets, orientations, stretches, halfRootAngleSin, halfRootAngleCos }
+    return { offsets, rootDirection, orientations, stretches }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,17 +345,33 @@ function buildGrassAttributes(instances: number, width: number, terrainAmplitude
 // ---------------------------------------------------------------------------
 
 export interface GrassComponentProps {
-    /** Number of blades. The reference uses 50000 over a 100-unit field. */
+    /** Blender objects, used only to notice when the collider is re-synced. */
+    objects?: BlenderObject[]
+    /**
+     * Number of blades.
+     *
+     * 120k over the default 60-unit field is ~33 blades per unit². The reference
+     * uses 50000 over 100 units (5 per unit²), so this is a finer, denser lawn
+     * rather than the reference's taller meadow.
+     */
     instances?: number
-    /** Edge length of the square field, in world units. */
+    /** Where to put the blades. 'collider' falls back to 'terrain' if absent. */
+    placement?: 'collider' | 'terrain'
+    /** Edge length of the square field — terrain placement and the ground only. */
     width?: number
     bladeWidth?: number
     bladeHeight?: number
     /** Vertical segments per blade — how smoothly a blade can bend. */
     joints?: number
-    /** Relief multiplier for the terrain. 0 flattens it (see `showGround`). */
+    /** Relief multiplier for the terrain fallback. 0 flattens it. */
     terrainAmplitude?: number
-    /** Draw the displaced ground plane under the grass. */
+    /**
+     * Draw the displaced fBm ground plane.
+     *
+     * Off by default: when blades are placed on the collider, that mesh *is* the
+     * ground, and a second surface underneath it would z-fight and poke through.
+     * Only meaningful with terrain placement.
+     */
     showGround?: boolean
     /** sRGB hex, applied at the blade tip. */
     tipColor?: string
@@ -213,35 +382,78 @@ export interface GrassComponentProps {
     windSpeed?: number
     /** Peak gust bend, in radians. */
     windStrength?: number
-    position?: [number, number, number]
 }
 
-// Module-level so their identity is stable — inline defaults are a new object
-// (or a new array for `position`) every render and would rebuild the field.
-const DEFAULT_POSITION: [number, number, number] = [0, 0, 0]
-
 export function GrassComponent({
-    instances = 30000,
+    objects = [],
+    instances = 120000,
+    placement = 'collider',
     width = 60,
-    bladeWidth = 0.12,
-    bladeHeight = 1,
+    // 5x smaller than the reference's 0.12 x 1 blades.
+    bladeWidth = 0.024,
+    bladeHeight = 0.2,
     joints = 5,
     terrainAmplitude = 1,
-    showGround = true,
+    showGround = false,
     // sRGB equivalents of the reference's (0, 0.6, 0) / (0, 0.1, 0).
     tipColor = '#009900',
     bottomColor = '#001a00',
     groundColor = '#000f00',
     windSpeed = 0.25,
     windStrength = 0.15,
-    position = DEFAULT_POSITION,
 }: GrassComponentProps) {
+    const scene = useThree((r) => r.scene)
+
+    const [collider, setCollider] = useState<Mesh | null>(null)
+
+    // Blender's version tag for the collider — a bump means the geometry was
+    // reshaped, so the samples have to be regenerated. Same contract as
+    // LoadCollider's `colliderVersion`.
+    const colliderVersion = useMemo(() => {
+        const found = objects.find((o) => o?.name === 'collider') as { version?: string } | undefined
+        return found?.version ?? null
+    }, [objects])
+
+    // The collider is created by useMeshSync, which runs after this component
+    // first renders (and only once Blender has pushed a scene), so it has to be
+    // waited for rather than looked up once.
+    useEffect(() => {
+        if (placement !== 'collider') return
+
+        const found = scene.getObjectByName('collider') as Mesh | null
+        if (found) {
+            setCollider(found)
+            return
+        }
+
+        let raf = 0
+        const tick = () => {
+            const mesh = scene.getObjectByName('collider') as Mesh | null
+            if (mesh) setCollider(mesh)
+            else raf = requestAnimationFrame(tick)
+        }
+        raf = requestAnimationFrame(tick)
+
+        return () => cancelAnimationFrame(raf)
+    }, [scene, placement, colliderVersion])
+
     const built = useMemo(() => {
         // --- Blade template ---
         // One blade: a single column of `joints` quads, anchored at its root so
         // the shader's per-vertex rotation pivots about the base.
         const bladeTemplate = new PlaneGeometry(bladeWidth, bladeHeight, 1, joints)
         bladeTemplate.translate(0, bladeHeight / 2, 0)
+
+        // --- Placement ---
+        // Falls back to the fBm field when the collider is missing or unusable
+        // (no normals, instanced), so the field is visible while a scene syncs
+        // rather than silently empty. It is rebuilt — visibly — once the real
+        // surface arrives.
+        const sampled = placement === 'collider' && collider ? sampleColliderPlacement(collider, instances) : null
+
+        const bladePlacement = sampled ?? sampleTerrainPlacement(instances, width, terrainAmplitude)
+
+        const attributes = buildGrassAttributes(bladePlacement)
 
         // --- Instanced geometry ---
         const grassGeometry = new InstancedBufferGeometry()
@@ -254,13 +466,10 @@ export function GrassComponent({
         grassGeometry.setAttribute('position', bladeTemplate.attributes.position)
         grassGeometry.setAttribute('uv', bladeTemplate.attributes.uv)
 
-        const attributes = buildGrassAttributes(instances, width, terrainAmplitude)
-
         grassGeometry.setAttribute('offset', new InstancedBufferAttribute(attributes.offsets, 3))
+        grassGeometry.setAttribute('rootDirection', new InstancedBufferAttribute(attributes.rootDirection, 4))
         grassGeometry.setAttribute('orientation', new InstancedBufferAttribute(attributes.orientations, 4))
         grassGeometry.setAttribute('stretch', new InstancedBufferAttribute(attributes.stretches, 1))
-        grassGeometry.setAttribute('halfRootAngleSin', new InstancedBufferAttribute(attributes.halfRootAngleSin, 1))
-        grassGeometry.setAttribute('halfRootAngleCos', new InstancedBufferAttribute(attributes.halfRootAngleCos, 1))
 
         // Required, and not optional. InstancedBufferGeometry defaults this to
         // Infinity, and three's WebGPU path reads it *directly* as the draw's
@@ -270,9 +479,8 @@ export function GrassComponent({
 
         // The geometry's own bounds cover a single blade at the origin, so three
         // would cull the entire field the moment the origin left the frustum.
-        // One sphere over the whole field is cheap and correct; the reference
-        // sets the same one.
-        grassGeometry.boundingSphere = new Sphere(new Vector3(), (Math.SQRT2 * width) / 2)
+        // Measured from the samples so it is right for either placement mode.
+        grassGeometry.boundingSphere = computeFieldBounds(attributes.offsets, bladeHeight)
 
         const { material } = createGrassMaterial({
             map: bladeDiffuse,
@@ -292,7 +500,7 @@ export function GrassComponent({
         grassMesh.castShadow = false
         grassMesh.receiveShadow = false
 
-        // --- Ground ---
+        // --- Optional fBm ground (terrain placement only) ---
         let groundMesh: Mesh | null = null
         let groundMaterial: MeshStandardNodeMaterial | null = null
 
@@ -325,7 +533,10 @@ export function GrassComponent({
 
         return { grassMesh, material, groundMesh, groundMaterial }
     }, [
+        collider,
+        colliderVersion,
         instances,
+        placement,
         width,
         bladeWidth,
         bladeHeight,
@@ -354,9 +565,9 @@ export function GrassComponent({
     }, [built])
 
     return (
-        <group position={position}>
+        <>
             <primitive object={built.grassMesh} />
             {built.groundMesh ? <primitive object={built.groundMesh} /> : null}
-        </group>
+        </>
     )
 }

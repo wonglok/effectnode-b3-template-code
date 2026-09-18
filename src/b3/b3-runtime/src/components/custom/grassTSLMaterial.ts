@@ -156,11 +156,16 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // Per-instance attributes generated in GrassComponent.buildGrassAttributes.
     // `attribute()` picks up the InstancedBufferAttribute by name; three's WebGPU
     // backend reads `isInstancedBufferAttribute` to set the vertex step mode.
+    //
+    // `rootDirection` is the blade's "unbent" endpoint — root heading only, no
+    // tilt. The reference reconstructs it in-shader as `vec4(0, sin, 0, cos)`,
+    // a pure Y rotation, because its blades only ever stand plumb with the world.
+    // Here blades are aligned to a sampled surface normal, so the endpoint is no
+    // longer a Y rotation and has to arrive as a full quaternion.
     const offset = vec3Attribute('offset')
     const orientation = vec4Attribute('orientation')
     const stretch = floatAttribute('stretch')
-    const halfRootAngleSin = floatAttribute('halfRootAngleSin')
-    const halfRootAngleCos = floatAttribute('halfRootAngleCos')
+    const rootDirection = vec4Attribute('rootDirection')
 
     const bladeHeight = uniform(options.bladeHeight)
     const windSpeed = uniform(options.windSpeed)
@@ -188,12 +193,11 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // from `uv().y` directly and the value interpolates identically.
     const rootToTip = positionLocal.y.div(bladeHeight)
 
-    // A blade is *born* pointing straight up, rotated about Y only by its random
-    // root angle. As you move up the blade, `slerp` walks that direction towards
-    // the blade's authored orientation — which is what produces a smooth arc
-    // rather than a hinge at the root.
-    const unbentDirection = vec4(0, halfRootAngleSin, 0, halfRootAngleCos)
-    const direction = slerp(unbentDirection, orientation, rootToTip)
+    // A blade is *born* pointing straight out of the surface, rotated about that
+    // surface normal by its random root angle. As you move up the blade, `slerp`
+    // walks that direction towards the blade's authored (tilted) orientation —
+    // which is what produces a smooth arc rather than a hinge at the root.
+    const direction = slerp(rootDirection, orientation, rootToTip)
 
     // Per-blade height variation. The reference does not scale the whole blade
     // uniformly — it only stretches the Y component, which is why taller blades

@@ -12,9 +12,10 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
 
             {/* Instanced grass field (TSL port of three's grass-shader example).
-                Flatten and hide its ground to lay it over terrain the scene
-                already provides: terrainAmplitude={0} showGround={false}. */}
-            <GrassComponent />
+                Blades are placed by sampling the 'collider' mesh's surface and
+                aligned to its normals. `objects` is passed only so a re-synced
+                collider (Blender bumps its version) re-samples the field. */}
+            <GrassComponent objects={objects} />
 
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water'} objects={objects}></SceneWaterObject>
