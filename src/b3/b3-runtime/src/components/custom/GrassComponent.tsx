@@ -386,7 +386,7 @@ export interface GrassComponentProps {
 
 export function GrassComponent({
     objects = [],
-    instances = 120000,
+    instances = 120000 * 8,
     placement = 'collider',
     width = 60,
     // 5x smaller than the reference's 0.12 x 1 blades.
