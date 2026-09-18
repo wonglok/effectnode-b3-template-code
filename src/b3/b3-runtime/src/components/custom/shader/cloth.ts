@@ -113,7 +113,7 @@ const DEFAULTS = {
     height: 1,
     segmentsX: 30,
     segmentsY: 30,
-    sphereRadius: 0.15,
+    sphereRadius: 0.1,
 } as const
 
 export interface ClothOptions {
