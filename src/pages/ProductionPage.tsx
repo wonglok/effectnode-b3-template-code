@@ -5,6 +5,7 @@ import { ProductionViewer } from '../b3/b3-runtime/src'
 import { BloomRender } from '../b3/b3-runtime/src/components/blender/canvas-units/BloomRender'
 import { SiteMenu } from '../components/SiteMenu'
 import { NavMeshRig } from '../components/NavMeshRig'
+import { WelcomeText } from '../components/WelcomeText'
 import { VirtualJoystick } from '../components/VirtualJoystick'
 import { EmotionButtons } from '../components/EmotionButtons'
 import { JumpButton } from '../components/JumpButton'
@@ -100,6 +101,8 @@ export function ProductionPage() {
                 {zipBuffer && (
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
+                        {/* Greets the player over wherever the rig places them. */}
+                        <WelcomeText />
                         <BloomRender />
                         {import.meta.env.DEV && <IntelligenceScan></IntelligenceScan>}
                     </ProductionViewer>

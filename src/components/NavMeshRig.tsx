@@ -545,6 +545,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const placePlayer = () => {
             if (!navMesh) return
 
+            // Adopt a resolved placement as the player's start, and publish it so
+            // scene props (the welcome sign) can sit at the start without having to
+            // reconstruct where that is. This function is the only authority on it:
+            // placement prefers a scene *birthplace* marker over anything derivable
+            // from the geometry, and re-runs when Blender re-syncs.
+            const adoptStart = (position: ArrayLike<number>) => {
+                playerGroup.position.fromArray(position)
+                useGameGlobal.setState({ startPosition: playerGroup.position.clone() })
+            }
+
             // Prefer a named *birthplace* marker — snap the player onto the navmesh
             // at that location; otherwise fall back to auto-placement below.
             const birthplace = findBirthplacePosition(scene)
@@ -557,7 +567,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                     DEFAULT_QUERY_FILTER,
                 )
                 if (result.success) {
-                    playerGroup.position.fromArray(result.position)
+                    adoptStart(result.position)
                     console.log('[NavMeshRig] Positioned player at birthplace:', result.position)
                     return
                 }
@@ -586,7 +596,7 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                     DEFAULT_QUERY_FILTER,
                 )
                 if (result.success) {
-                    playerGroup.position.fromArray(result.position)
+                    adoptStart(result.position)
                     console.log('[NavMeshRig] Positioned player at:', result.position)
                     return
                 }
