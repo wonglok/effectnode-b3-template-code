@@ -309,7 +309,7 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         runningSpeed: 8,
         offsetAbove: 15,
         offsetBehind: 10,
-        npcCount: 6,
+        npcCount: 250,
         npcAggroRadius: 12,
         npcScatterSeconds: 6,
         npcStandoffDistance: 5,
@@ -361,8 +361,7 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
     // Clamped at 0 rather than going negative: the rig watches for the crossing
     // to zero to trigger the death beat, and a value that keeps falling would
     // re-trigger it on every hit landed on an already-downed player.
-    damagePlayer: (amount) =>
-        set((s) => ({ playerHp: Math.max(0, s.playerHp - amount) })),
+    damagePlayer: (amount) => set((s) => ({ playerHp: Math.max(0, s.playerHp - amount) })),
 
     // The outer `max` earns its keep: a bare `min(maxHp, hp + amount)` would
     // *lower* the player's health if it ever sat above `maxHp` — which is what

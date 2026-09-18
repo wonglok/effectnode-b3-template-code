@@ -102,7 +102,7 @@ export function ProductionPage() {
                     <ProductionViewer zipBuffer={zipBuffer}>
                         <NavMeshRig />
                         {/* Greets the player over wherever the rig places them. */}
-                        <WelcomeText />
+                        {/* <WelcomeText /> */}
                         <BloomRender />
                         {import.meta.env.DEV && <IntelligenceScan></IntelligenceScan>}
                     </ProductionViewer>
