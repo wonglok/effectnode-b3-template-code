@@ -24,6 +24,9 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water2'} objects={objects}></SceneWaterObject>
             </group>
+
+            {/*  */}
+
             {/*  */}
 
             {/*  */}
