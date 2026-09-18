@@ -18,11 +18,13 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 collider (Blender bumps its version) re-samples the field. */}
             <GrassComponent objects={objects} />
 
-            {/* GPU verlet cloth, drawn with the TSL transmission material
-                (`shader/TransmissionTSLMaterial.ts`). It steps in its own
-                `useFrame` and hangs beside the player's start. Its vertex
-                shader reads a storage buffer, so `CanvasGPU` has to ask for
-                `maxStorageBuffersInVertexStage` — see the note there. */}
+            {/* The player's cape: a GPU verlet cloth drawn with the TSL
+                transmission material (`shader/TransmissionTSLMaterial.ts`),
+                pinned across the avatar's back at shoulder height. It steps in its own
+                `useFrame`, and mounts nothing until the avatar exists to hang
+                it from. Its vertex shader reads a storage buffer, so
+                `CanvasGPU` has to ask for `maxStorageBuffersInVertexStage` —
+                see the note there. */}
             <ClothComponent />
 
             <group position={[0, 0.0, 0]}>

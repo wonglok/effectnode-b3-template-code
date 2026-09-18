@@ -21,6 +21,8 @@
  * | Wireframe helpers always built | Built only when `wireframe: true` — they are the part of the example that is a debug view rather than the cloth, and they are the part this port cannot verify headlessly |
  * | The sphere is unconditional | Optional, on by default — the collision in the vertex pass reads `sphereUniform`, which is 0 when the sphere is off, so the two always agree |
  * | The sphere drifts on the example's two sines | It **follows the player**, so walking through the cloth drags it over the sphere. The drift is gone; a caller that supplies no `getPlayerPosition` gets a sphere parked where the cloth hangs |
+ * | Pinned vertices are never touched after upload | `getPinLine` **places** them, every step, on the line they hang from — which is what lets the cloth be worn (`ClothComponent` hangs it across the avatar's back) instead of hanging in one spot. With no line the pins are seeded with their own authored row, so a static cloth behaves exactly as the example did |
+ * | The wind always blows along the world's `-Z` | `getWindDirection` — read in the direction the caller gives it, defaulting to the example's `-Z`. A garment has to be blown along its **wearer's** back: with a fixed world direction a character who turns away from `-Z` gets a sidewind, and one who turns to face it gets a cape blown through their front |
  *
  * The transmission material needs a **storage buffer readable from the vertex
  * stage**, which is not a WebGPU default: the renderer must be created with
@@ -50,6 +52,7 @@ import {
     Line,
     Mesh,
     PlaneGeometry,
+    Quaternion,
     Vector3,
 } from 'three'
 import { DoubleSide, LineBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } from 'three/webgpu'
@@ -63,12 +66,12 @@ import {
     float,
     instanceIndex,
     instancedArray,
+    mix,
     select,
     time,
     transformNormalToView,
     triNoise3D,
     uniform,
-    vec3,
 } from 'three/tsl'
 import type { Node, WebGPURenderer } from 'three/webgpu'
 import { TransmissionTSLMaterial, type TransmissionTSLParams } from './TransmissionTSLMaterial'
@@ -99,6 +102,11 @@ const MAX_FRAME_DELTA = 1 / 60
  *  than guarded — two verlet vertices can land on the same point, and the force
  *  that should push them apart is undefined there. */
 const MIN_SPRING_LENGTH = 0.000001
+
+/** Pin one vertex of the top edge in this many — the example's cadence, which
+ *  leaves the sheet free to move under its own weight. 1 pins the whole edge,
+ *  which is what a worn garment needs. */
+const DEFAULT_PIN_EVERY = 5
 
 /** How fast the sphere chases the player, in metres per second. Well clear of
  *  the player's own 8 m/s sprint, so normal movement is tracked with no
@@ -170,6 +178,61 @@ export interface ClothOptions {
      * contact entirely. Aim this at wherever the cloth hangs.
      */
     playerOffset?: [number, number, number]
+    /**
+     * The line the cloth hangs from, in **world** units — read every step, so
+     * the cloth can be worn: this is what turns it into a cape on a moving
+     * character, and the pins a static sheet never needed.
+     *
+     * `start` is the line's 0 end and `end` its 1 end, matching the pinned
+     * vertices' `pinT`. For a cape that is left shoulder → right shoulder, which
+     * is also what orients the sheet: the grid runs down from this line, so the
+     * cloth's surface ends up facing along whatever direction is perpendicular
+     * to it.
+     *
+     * Read once per `update` and converted into the cloth's own space, so a
+     * caller supplies **world** positions and does no maths. Null means "not yet"
+     * — an avatar that has not spawned — and the pins then hold wherever they
+     * last were, rather than snapping to the origin.
+     *
+     * The returned vectors are read and copied synchronously — a caller can
+     * return the same two scratch vectors every frame, and should, since this
+     * runs sixty times a second.
+     *
+     * The initial buffer positions are placed on the first line read, so a cloth
+     * created with a line already available starts life as a hanging sheet
+     * instead of a horizontal one dragging itself into place. That placement is
+     * world-space, so a pinned cloth's group should be left at the origin (or
+     * given nothing but a translation); the line carries the position, not the
+     * group.
+     */
+    getPinLine?: () => PinLine | null
+    /**
+     * Which way the wind pushes, in **world** units — read once per `update`
+     * exactly like `getPinLine`, and null means "no opinion, keep the last one".
+     *
+     * Omit it and the wind is the example's: a constant push along the world's
+     * `-Z`. That is right for a sheet hanging in a scene and wrong for a garment,
+     * because it is the one force in the simulation the cloth cannot work out
+     * from the geometry. Gravity is world-down whatever the caller is doing, and
+     * the springs only pull along themselves — but "which way the wind blows" is
+     * only answerable in a frame, and for a cape that frame is the wearer's. Left
+     * in the world's frame, a character who turns 180° gets a cape the wind holds
+     * against their front: the drape reads as rotated a half-turn from the body.
+     *
+     * The direction should be a unit vector, and it should point *along* the
+     * drape's normal rather than across it — a wind that pushed the cloth
+     * sideways would slide the sheet rather than billow it. A cape's normal is
+     * its wearer's facing, so the value to supply is their backward axis.
+     * Magnitude is the `wind` knob's business, not this one's.
+     */
+    getWindDirection?: () => Vector3 | null
+    /**
+     * How often a vertex of the pinned edge is actually pinned, in vertices.
+     * 5 is the example's: a flat sheet that can still move. 1 pins the whole
+     * edge, which is what an attached garment needs — a row pinned every fifth
+     * vertex sags between its pins and shows what it is hanging from.
+     */
+    pinEvery?: number
     /** Draw the verlet system's wireframe instead of the cloth. Off by default:
      *  it is a debug view, and it is built only when requested, so the default
      *  path never pays for it. */
@@ -179,6 +242,9 @@ export interface ClothOptions {
     /** How fast the sphere may chase the player, in metres per second. Live;
      *  see `ClothParams`. */
     sphereFollowSpeed?: number
+    /** Wind strength. Live; see `ClothParams`. It scales the gusts, not the
+     *  direction — that is `getWindDirection`'s. */
+    wind?: number
     /** Knobs for the cloth's `TransmissionTSLMaterial`. */
     material?: TransmissionTSLParams
 }
@@ -188,7 +254,8 @@ export interface ClothParams {
     wireframe: boolean
     /** Whether the sphere is drawn *and* collides. */
     sphere: boolean
-    /** Wind strength on the z axis. */
+    /** Wind strength — the gusts' magnitude, along whatever direction
+     *  `getWindDirection` supplies (world `-Z` without one). */
     wind: number
     /** Spring stiffness. The example's 0.2 barely holds the drape; 0.5 is stiff. */
     stiffness: number
@@ -236,8 +303,12 @@ export interface ClothHandle {
 interface VerletVertex {
     id: number
     position: Vector3
-    /** Pinned: never integrated, and never has springs walked for it. */
+    /** Pinned: never integrated, and never has springs walked for it. Its
+     *  position is *placed* on the pin line every step instead. */
     isFixed: boolean
+    /** Where along that line a pinned vertex sits, 0..1. Meaningless (0) on the
+     *  vertices that hang. */
+    pinT: number
     /** Ids of the springs touching this vertex, in global spring order. */
     springIds: number[]
 }
@@ -249,6 +320,36 @@ interface VerletSpring {
     vertex1: VerletVertex
 }
 
+/** The line a cloth hangs from, in world units. */
+export interface PinLine {
+    /** The line's 0 end — `pinT` 0. */
+    start: Vector3
+    /** The line's 1 end — `pinT` 1. */
+    end: Vector3
+}
+
+/** World down. The direction the placed grid's `z` is taken to mean. */
+const DOWN = new Vector3(0, -1, 0)
+
+/**
+ * Place one authored grid position on the pin line: the x it was authored at
+ * becomes a fraction along the line, and the z it was authored at becomes that
+ * far *down* from it — which turns a grid authored lying flat into a sheet
+ * hanging from the line, without needing a rotation to say so.
+ *
+ * The authored `y` is dropped entirely: on the flat grid it is the constant
+ * height the sheet lies at, and it has no meaning once the sheet hangs.
+ *
+ * A width of zero would divide by it, so a degenerate caller gets the middle of
+ * the line rather than a NaN in the buffer — that NaN would spread to every
+ * spring through the rest lengths and take the whole cloth with it.
+ */
+function placeOnPinLine(authored: Vector3, line: PinLine, width: number): Vector3 {
+    const u = width > 1e-6 ? (authored.x + width * 0.5) / width : 0.5
+
+    return new Vector3().lerpVectors(line.start, line.end, u).addScaledVector(DOWN, authored.z)
+}
+
 /**
  * Build the verlet grid and its springs.
  *
@@ -256,14 +357,25 @@ interface VerletSpring {
  * diagonals — which is what gives the cloth shear resistance. The example notes
  * a second-order pass (skipping every other vertex) makes it more rigid; it is
  * left out here as it was there.
+ *
+ * The grid is authored in its own little space — x across the width, centred;
+ * z from 0 at the pinned edge to `height` at the hem — and only the pinned row
+ * has an obvious world position. Placing the rest is the caller's business via
+ * `getPinLine`, or nobody's at all for a free-hanging sheet.
  */
-function buildVerletSystem(width: number, height: number, segmentsX: number, segmentsY: number) {
+function buildVerletSystem(width: number, height: number, segmentsX: number, segmentsY: number, pinEvery: number) {
     const vertices: VerletVertex[] = []
     const springs: VerletSpring[] = []
     const columns: VerletVertex[][] = []
 
-    const addVertex = (x: number, y: number, z: number, isFixed: boolean) => {
-        const vertex: VerletVertex = { id: vertices.length, position: new Vector3(x, y, z), isFixed, springIds: [] }
+    const addVertex = (x: number, y: number, z: number, isFixed: boolean, pinT: number) => {
+        const vertex: VerletVertex = {
+            id: vertices.length,
+            position: new Vector3(x, y, z),
+            isFixed,
+            pinT,
+            springIds: [],
+        }
         vertices.push(vertex)
         return vertex
     }
@@ -282,11 +394,17 @@ function buildVerletSystem(width: number, height: number, segmentsX: number, seg
             const posX = x * (width / segmentsX) - width * 0.5
             const posZ = y * (height / segmentsY)
 
-            // Pin the top edge, but only every fifth vertex — pinning all of it
-            // makes a flat sheet that cannot move, and pinning one is a pendulum.
-            const isFixed = y === 0 && x % 5 === 0
+            // Pin the top edge. Every fifth vertex by default — pinning all of
+            // it makes a flat sheet that can barely move, and pinning one is a
+            // pendulum; but a cape wants the whole edge held, so it passes 1.
+            const isFixed = y === 0 && x % pinEvery === 0
 
-            column.push(addVertex(posX, height * 0.5, posZ, isFixed))
+            // Where along the edge this vertex sits. Taken from x rather than
+            // from its index among the pins, so that a sparse pin row still
+            // spreads evenly across the line instead of bunching at one end.
+            const pinT = x / segmentsX
+
+            column.push(addVertex(posX, height * 0.5, posZ, isFixed, pinT))
         }
 
         columns.push(column)
@@ -314,17 +432,48 @@ function buildVerletSystem(width: number, height: number, segmentsX: number, seg
  * place.
  */
 export function createCloth(options: ClothOptions): ClothHandle {
-    const { renderer, getPlayerPosition } = options
+    const { renderer, getPlayerPosition, getPinLine, getWindDirection } = options
     const width = options.width ?? DEFAULTS.width
     const height = options.height ?? DEFAULTS.height
     const segmentsX = options.segmentsX ?? DEFAULTS.segmentsX
     const segmentsY = options.segmentsY ?? DEFAULTS.segmentsY
     const sphereRadius = options.sphereRadius ?? DEFAULTS.sphereRadius
 
-    const { vertices, springs, columns } = buildVerletSystem(width, height, segmentsX, segmentsY)
+    const pinEvery = Math.max(1, Math.floor(options.pinEvery ?? DEFAULT_PIN_EVERY))
+
+    const { vertices, springs, columns } = buildVerletSystem(width, height, segmentsX, segmentsY, pinEvery)
 
     const vertexCount = vertices.length
     const springCount = springs.length
+
+    // With a pin line, the whole sheet is placed hanging from it before anything
+    // is uploaded: the pinned row onto the line, and the rest of the grid
+    // straight down from there. That is the difference between a cape that is
+    // already on the character's back at the first frame and a horizontal sheet
+    // near the origin that spends a second being dragged across the scene to it.
+    //
+    // It runs before the rest lengths below, but does not affect them: the
+    // placement moves and stretches the grid, and the springs' rest lengths are
+    // the distances they were authored with — which is what makes a cloth whose
+    // width does not match the line it hangs from pleat along its top edge
+    // instead of springing back to its authored width.
+    const pinLine = getPinLine?.() ?? null
+
+    // The group's own origin, which a caller may have set. The placement above
+    // works in world units because the line is world; the buffer is local, so
+    // the origin comes back off. Only valid for an untransformed group beyond a
+    // translation — which is all this module's callers use, and all a pinned
+    // cloth needs: it is the line that carries the position, not the group.
+    const groupOrigin = new Vector3().fromArray(options.position ?? [0, 0, 0])
+
+    if (pinLine) {
+        // let i = 0
+        for (const vertex of vertices) {
+            const vert = placeOnPinLine(vertex.position, pinLine, width)
+            // vert.z += (i / (vertices.length - 1)) * 2
+            vertex.position.copy(vert).sub(groupOrigin)
+        }
+    }
 
     // --- verlet vertex buffers ------------------------------------------------
     // `instancedArray` is three's storage-buffer node: the sim reads and writes
@@ -344,6 +493,11 @@ export function createCloth(options: ClothOptions): ClothHandle {
     // what makes `springPointer + springCount` a contiguous run for one vertex.
     const springListArray: number[] = []
 
+    // Where a pinned vertex sits along the pin line. One float per vertex, read
+    // only by the pinned ones, which is why the rest can hold anything — they
+    // hold 0, and nothing reads it.
+    const vertexPinArray = new Float32Array(vertexCount)
+
     for (let i = 0; i < vertexCount; i++) {
         const vertex = vertices[i]
 
@@ -351,6 +505,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         vertexPositionArray[i * 3 + 1] = vertex.position.y
         vertexPositionArray[i * 3 + 2] = vertex.position.z
         vertexParamsArray[i * 3] = vertex.isFixed ? 1 : 0
+        vertexPinArray[i] = vertex.pinT
 
         if (vertex.isFixed === false) {
             vertexParamsArray[i * 3 + 1] = vertex.springIds.length
@@ -362,6 +517,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const vertexPositionBuffer = instancedArray(vertexPositionArray, 'vec3').setPBO(true)
     const vertexForceBuffer = instancedArray(vertexCount, 'vec3')
     const vertexParamsBuffer = instancedArray(vertexParamsArray, 'uvec3')
+    const vertexPinBuffer = instancedArray(vertexPinArray, 'float')
     const springListBuffer = instancedArray(new Uint32Array(springListArray), 'uint').setPBO(true)
 
     // --- spring buffers -------------------------------------------------------
@@ -388,12 +544,31 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const spherePositionUniform = uniform(new Vector3(0, 0, 0))
     const sphereUniform = uniform(1.0)
     const windUniform = uniform(1.0)
+    // Which way the wind pushes, in the cloth's own space. The default is the
+    // example's world `-Z` — out of the plane a free-hanging sheet drapes in —
+    // and a caller with a frame of its own overrides it every frame through
+    // `getWindDirection`.
+    const windDirectionUniform = uniform(new Vector3(0, 0, -1))
+    const objectQuaternion = new Quaternion()
     const stiffnessUniform = uniform(0.2)
+    // The pin line, in the cloth's own space, written from `getPinLine` every
+    // frame.
+    //
+    // Without a line these are seeded with the *authored* pin row — the row's
+    // own ends, at the top of the grid — because the vertex pass now places
+    // every pinned vertex on the line rather than leaving it alone. Seeding from
+    // the authored row makes that placement a no-op: each pin is written back to
+    // where it already was, which is the example's behaviour, kept.
+    const authoredPinStart = new Vector3(-width * 0.5, height * 0.5, 0)
+    const authoredPinEnd = new Vector3(width * 0.5, height * 0.5, 0)
+
+    const pinStartUniform = uniform(pinLine ? pinLine.start.clone().sub(groupOrigin) : authoredPinStart)
+    const pinEndUniform = uniform(pinLine ? pinLine.end.clone().sub(groupOrigin) : authoredPinEnd)
 
     const params: ClothParams = {
         wireframe: options.wireframe ?? false,
         sphere: true,
-        wind: 1.0,
+        wind: options.wind ?? 1.0,
         stiffness: 0.2,
         dampening: 0.99,
         sphereFollowSpeed: options.sphereFollowSpeed ?? DEFAULT_SPHERE_FOLLOW_SPEED,
@@ -435,6 +610,15 @@ export function createCloth(options: ClothOptions): ClothHandle {
         const springPointer = vertexParams.z
 
         If(isFixed, () => {
+            // A pinned vertex is not integrated — it is *placed*, every step, on
+            // the line it hangs from. For the demo cloth that line never moves,
+            // which is why the example could leave the buffer alone and return;
+            // a cape's line is being carried around the scene, and a pin that
+            // only held its initial position would leave the cape behind.
+            vertexPositionBuffer
+                .element(instanceIndex)
+                .assign(mix(pinStartUniform, pinEndUniform, vertexPinBuffer.element(instanceIndex)))
+
             Return()
         })
 
@@ -466,10 +650,18 @@ export function createCloth(options: ClothOptions): ClothHandle {
 
         // Wind: 3D simplex noise sampled at the vertex's own position, walked by
         // time. The 0.2 offset keeps the field from being centred on zero, so it
-        // pushes more than it pulls. Only the z axis is used — a wind that moved
-        // the cloth sideways would fight the drape.
+        // pushes more than it pulls — it is a *gust*, with a direction that
+        // holds and a strength that wanders.
+        //
+        // `windDirectionUniform` is the direction it pushes in, and it is the
+        // one force here that cannot be derived from the geometry: gravity is
+        // world-down whoever the caller is, and the springs only pull along
+        // themselves, but "which way the wind blows" needs a frame. The default
+        // is the example's world -Z; a worn cloth reads its wearer's frame
+        // instead (see `getWindDirection`), which is what keeps a cape on the
+        // same side of its owner at every facing.
         const noise = triNoise3D(position, 1, time).sub(0.2).mul(0.0001)
-        force.z.subAssign(noise.mul(windUniform))
+        force.addAssign(windDirectionUniform.mul(noise.mul(windUniform)))
 
         // Sphere collision: below the surface, push straight out along the
         // radius, scaled by how far inside the vertex is. `max(0)` is what makes
@@ -535,7 +727,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
         thickness: 0.08,
-        roughness: 0.05,
+        roughness: 0.0,
         ior: 1.5,
         transmission: 1,
         attenuationColor: '#ffffff',
@@ -694,9 +886,20 @@ export function createCloth(options: ClothOptions): ClothHandle {
 
         // The sphere is the collision's other half: switching it off has to stop
         // the force as well as hide the mesh, or the cloth would drape over
-        // nothing.
-        sphere.visible = false // params.sphere
+        // nothing. The mesh is hidden outright — it is a stand-in for the body,
+        // not something to look at — while `params.sphere` still gates the
+        // force, so that is the switch that matters.
+        sphere.visible = false
         sphereUniform.value = params.sphere ? 1 : 0
+
+        // Both readings below convert world positions into this group's space,
+        // so its matrix has to be current first: `update` runs before the render
+        // pass, which means the matrix would otherwise be last frame's. One
+        // frame stale is invisible for a cloth, but it is not invisible on the
+        // first frame, when the matrix is still the identity.
+        if (getPlayerPosition || getPinLine) {
+            object3D.updateWorldMatrix(true, false)
+        }
 
         // Where the sphere is headed, read once here rather than per step: the
         // player's position is a frame-rate quantity, and the local-space
@@ -708,13 +911,6 @@ export function createCloth(options: ClothOptions): ClothHandle {
             const reported = getPlayerPosition()
 
             if (reported) {
-                // The group's own matrix has to be current before converting
-                // into its space: `update` runs before the render pass, so the
-                // matrix would otherwise be last frame's. One frame stale is
-                // invisible for the cloth, but it is not invisible on the first
-                // frame, when the matrix is still the identity.
-                object3D.updateWorldMatrix(true, false)
-
                 playerWorld.copy(reported).add(playerOffset)
                 target.copy(playerWorld)
                 object3D.worldToLocal(target)
@@ -729,6 +925,35 @@ export function createCloth(options: ClothOptions): ClothHandle {
                     sphere.position.copy(target)
                     snapped = true
                 }
+            }
+        }
+
+        // The line the cloth hangs from — the shoulders, for a cape. Read once
+        // per frame for the same reason as the player, and left alone when it
+        // reads null: the pins hold where they were rather than jumping to the
+        // origin, so an avatar that has not spawned yet does not drag the cloth
+        // across the scene and back.
+        if (getPinLine) {
+            const line = getPinLine()
+
+            if (line) {
+                pinStartUniform.value.copy(line.start)
+                pinEndUniform.value.copy(line.end)
+                object3D.worldToLocal(pinStartUniform.value)
+                object3D.worldToLocal(pinEndUniform.value)
+            }
+        }
+
+        // Which way the wind blows, in the caller's frame — the wearer's back,
+        // for a cape. A *direction*, so it is rotated into the cloth's space
+        // rather than translated: the group's position must not leak into it.
+        // Read after the line, which recomputes the facing both share.
+        if (getWindDirection) {
+            const direction = getWindDirection()
+
+            if (direction) {
+                object3D.getWorldQuaternion(objectQuaternion)
+                windDirectionUniform.value.copy(direction).applyQuaternion(objectQuaternion.invert())
             }
         }
 
@@ -766,7 +991,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
             // The uniform is what the collision reads, so it is written every
             // step whether or not the sphere moved — a sphere switched off and
             // back on must not leave a stale position in the shader.
-            spherePositionUniform.value.lerp(sphere.position, 0.05)
+            spherePositionUniform.value.lerp(sphere.position, 1.0)
 
             // Read by the next step, so the GUI's value lands on the sim rather
             // than after it.
