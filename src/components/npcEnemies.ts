@@ -69,7 +69,9 @@ import {
 } from '../b3/b3-runtime/src/components/AvatarSDK'
 import { ARMED_FIRING_CLIP, ARMED_SET_KEY, armedClipSet } from './armedClipSet'
 import { deathClipFor } from './deathClip'
+import { FORCE_FIELD_SWEEP_SECONDS, ringJustCrossed, shoveImpulse, sweepReach } from './forceField'
 import { BAR_HEIGHT_ABOVE, createHealthBar, type HealthBar } from './healthBar'
+import { STUN_CLIP } from './stunClip'
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -218,6 +220,15 @@ export interface NpcTunables {
      *  the feet from sliding. */
     npcArmedWalkTimescale: number
     npcArmedRunTimescale: number
+    /** How far the jump's force field reaches — the radius that both turns the
+     *  crowd's droplets and shoves the crowd itself. Measured on the ground
+     *  plane, like every other distance here. */
+    forceFieldRadius: number
+    /** How far the field throws an NPC outward, in world units — the distance
+     *  the slide covers, not a speed. See `shoveImpulse`. */
+    forceFieldPush: number
+    /** How long the field leaves an NPC stunned, in seconds. */
+    forceFieldStunSeconds: number
     /** Health every NPC starts with, and the value a respawn restores. */
     maxHp: number
     /** Damage one droplet does. Read by the crowd so `NpcTarget.damage` needs no
@@ -311,6 +322,27 @@ export interface NpcEnemies {
      * no longer has anything to do with the scene.
      */
     setNavMesh(navMesh: NavMesh): void
+    /**
+     * The jump's force field: open a ring at `origin` that sweeps out to
+     * `forceFieldRadius`, turning the crowd's droplets back and throwing and
+     * stunning every NPC it passes.
+     *
+     * **A sweep, not a blast.** The ring travels out over
+     * `FORCE_FIELD_SWEEP_SECONDS` and acts as it arrives, so an NPC at the rim is
+     * thrown when the wave gets there rather than when the player left the
+     * ground — the pulse is the cause, and reads as one. Each thing is hit once,
+     * and the throw is an outward impulse the crowd's own integrator decelerates,
+     * so an NPC slides back and settles instead of teleporting.
+     *
+     * One call, here, because this module owns both halves — the droplet pool and
+     * the `npcs` array. Anywhere else would mean reaching through two private
+     * handles to reach the same two things.
+     *
+     * Reads the tunables live, so a lil-gui drag applies to the next jump. Safe
+     * to call at any time, including before the crowd has finished loading, and
+     * safe to call again mid-sweep — the new pulse supersedes the old.
+     */
+    forceField(origin: THREE.Vector3): void
     /** Advance the crowd and pose the avatars. Call once per frame. */
     update(delta: number): void
     /** Stop the crowd, remove the avatars, and drop the group from the scene. */
@@ -346,6 +378,16 @@ interface Npc {
     armedClips: boolean
     /** Countdown to the next shot, in seconds. Only ticks while armed and holding. */
     shotTimer: number
+    /**
+     * Seconds left of the jump field's stun, or 0 when not stunned.
+     *
+     * Distinct from `dead` in the one way that matters: a stunned NPC **keeps
+     * its `agentId`**. It is still in the crowd, still on the navmesh, and still
+     * a valid target — it is simply pinned for a moment. So the stun cannot use
+     * the dead path's "null the agent and let step 1 skip it" trick; it needs its
+     * own gate at the top of step 1 (see `forceField`).
+     */
+    stunTimer: number
     /**
      * Has the player shot this NPC? Latches, and keeps the grudge for the rest of
      * this life — the only thing that clears it is the respawn.
@@ -540,6 +582,7 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             armed: false,
             armedClips: false,
             shotTimer: 0,
+            stunTimer: 0,
             hp: barMax,
             dead: false,
             respawnTimer: 0,
@@ -635,8 +678,8 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
      * constant on both sides means a droplet that visibly reaches an NPC's chest
      * is the one recycled by the hit test.
      */
-    const npcAimPoint = (npc: Npc): THREE.Vector3 =>
-        _npcAimPoint.set(npc.group.position.x, npc.group.position.y + AIM_HEIGHT, npc.group.position.z)
+    const npcAimPoint = (npc: Npc, out: THREE.Vector3 = _npcAimPoint): THREE.Vector3 =>
+        out.set(npc.group.position.x, npc.group.position.y + AIM_HEIGHT, npc.group.position.z)
 
     // ------------------------------------------------------------------
     // Health, death and respawn
@@ -725,6 +768,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         // and a dead NPC is out of the simulation anyway (`agentId` is null, which
         // step 1 skips on), so a flag left set on a corpse is never read.
         npc.provoked = false
+        // Same reasoning for the stun, with one twist: a stunned NPC *keeps* its
+        // agent, so a stun caught mid-flight by a killing blow is never cleared by
+        // the loop — the corpse leaves step 1 through the `!agentId` skip, and its
+        // stun timer sits at whatever it had left. A respawn that inherited it
+        // would walk the fresh NPC straight back into a freeze.
+        npc.stunTimer = 0
         npc.group.position.fromArray(spawn)
         npc.agentId = crowd.addAgent(state, navMesh, spawn, agentParams)
         if (npc.rig) npc.rig.scene.visible = true
@@ -759,10 +808,63 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     // Every droplet in this pool is aimed at the player, so the damage hook is
     // pool-wide rather than per shot — the mirror of the player's own pool, where
     // each shot may be locked onto a different NPC.
+    /**
+     * The nearest NPC that a world point is close to, or null.
+     *
+     * The whole of the bounce's targeting: "is this water next to anyone?". Asked
+     * on XZ from the NPC's feet — the convention the field and the aggro test
+     * use — while the point handed back is its chest, because that is what the
+     * pool measures the droplet against, so a bounce passing at chest height
+     * counts and one that sails over the head does not.
+     *
+     * Deliberately unbounded. The pool's own capture radius decides whether a
+     * droplet is close enough to have hit anything; a range check here would be a
+     * second opinion about the same thing, and the two would eventually disagree.
+     */
+    const nearestNpcTo = (position: THREE.Vector3): Npc | null => {
+        let best: Npc | null = null
+        let bestSq = Infinity
+        for (const npc of npcs) {
+            // A corpse is not a target: the water flies past it rather than
+            // bursting on it for nothing.
+            if (npc.dead) continue
+            const dx = npc.group.position.x - position.x
+            const dz = npc.group.position.z - position.z
+            const distSq = dx * dx + dz * dz
+            if (distSq < bestSq) {
+                bestSq = distSq
+                best = npc
+            }
+        }
+        return best
+    }
+
+    /** Where a deflected droplet may hit — see `getBouncePoint`. */
+    const bouncePoint = (position: THREE.Vector3): THREE.Vector3 | null => {
+        const npc = nearestNpcTo(position)
+        // Its own scratch, not `_npcAimPoint`: the player's lock-on reads that
+        // one through the same helper, and aliasing them would leave a shot aimed
+        // at whichever target was resolved last.
+        return npc ? npcAimPoint(npc, _bouncePoint) : null
+    }
+
+    /** One droplet's worth of damage to whatever the water flew into — the
+     *  mirror of `bouncePoint`, resolved the same way. See `onBounceHit`. */
+    const bounceHit = (position: THREE.Vector3) => {
+        const npc = nearestNpcTo(position)
+        if (npc) damageNpc(npc)
+    }
+
     const projectiles = createNpcProjectiles({
         scene,
         getTarget: aimPoint,
         onHit: () => onPlayerHit(),
+        // The other side of the jump's force field: water blown back can hit
+        // whichever of the crowd it flies into, and still cannot touch the player
+        // — see `deflect`. This is what makes the pulse an attack and not just a
+        // shove.
+        getBouncePoint: bouncePoint,
+        onBounceHit: bounceHit,
     })
 
     /**
@@ -912,6 +1014,101 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     }
 
     // ------------------------------------------------------------------
+    // The jump's force field
+    // ------------------------------------------------------------------
+    // A ring sweeping out from where the player left the ground, acting on the
+    // crowd and the crowd's water as it passes them. The state is a handful of
+    // numbers rather than a per-NPC flag: the ring's own position *is* the memory
+    // of what it has already hit — something is thrown when its distance falls in
+    // this frame's slice of the sweep, and never again (see `ringJustCrossed`).
+    let fieldActive = false
+    let fieldElapsed = 0
+    let fieldRadius = 0
+    let fieldPush = 0
+    let fieldStun = 0
+    /** Where the ring is centred. Copied: the player keeps moving, and the wave
+     *  does not travel with them. */
+    const fieldOrigin = new THREE.Vector3()
+
+    /**
+     * Throw one NPC back from the field, and leave it dizzy.
+     *
+     * `dist` is the NPC's ground distance from the ring's centre, already known
+     * to be inside it.
+     */
+    const throwBack = (npc: Npc, agent: crowd.Agent, dist: number) => {
+        if (dist > 1e-4 && fieldPush > 0) {
+            // An outward *impulse*, not a moved position. The crowd's integrator
+            // takes it from here: it clamps the change in velocity to
+            // `maxAcceleration`, and the stun below holds the speed cap at zero,
+            // so the NPC slides out and decelerates into a stop. Writing the
+            // position directly would instead teleport it — the whole 3 m in one
+            // frame, which is what made the pulse look like a glitch rather than
+            // a shove.
+            const speed = shoveImpulse(agent.maxAcceleration, fieldPush)
+            agent.velocity[0] = ((agent.position[0] - fieldOrigin.x) / dist) * speed
+            agent.velocity[1] = 0
+            agent.velocity[2] = ((agent.position[2] - fieldOrigin.z) / dist) * speed
+        } else if (dist <= 1e-4) {
+            // Dead centre of the field: no outward line to throw along. It is
+            // still stopped and stunned, it just has nowhere in particular to go.
+            agent.velocity[0] = 0
+            agent.velocity[1] = 0
+            agent.velocity[2] = 0
+        }
+
+        // The cap the stun keeps at zero for the next second, which is also what
+        // lets the impulse above decay into a stop instead of steering fighting
+        // it back the whole way.
+        agent.maxSpeed = 0
+
+        npc.stunTimer = fieldStun
+        // The shot clock restarts, so an NPC caught mid-interval does not resume
+        // by firing the instant it comes out of the stun.
+        npc.shotTimer = 0
+
+        // Last, so a clip that fails to load cannot cost the shove or the stun. A
+        // stunned NPC with no clip is still stunned — see STUN_CLIP.
+        //
+        // Gated on the stun actually lasting, because the stun branch in step 1 is
+        // the only thing that cuts this clip: at a stun of zero seconds it would
+        // play out in full while the NPC walked away underneath it.
+        if (fieldStun > 0 && STUN_CLIP) npc.rig?.playEmotionOnce(STUN_CLIP)
+    }
+
+    /**
+     * Advance the ring, and let it hit whatever it has just reached.
+     *
+     * Runs at the top of `update`, ahead of the crowd's own step, so an impulse
+     * applied here is carried by the simulation on this same frame.
+     */
+    const sweepField = (delta: number) => {
+        if (!fieldActive) return
+
+        const previousReach = sweepReach(fieldRadius, fieldElapsed)
+        fieldElapsed += delta
+        const reach = sweepReach(fieldRadius, fieldElapsed)
+
+        // The crowd's water, as the edge passes it. Safe to call with a reach
+        // that only grows: `deflect` turns inbound shots only, and a shot it has
+        // already turned is travelling outward, so nothing can be caught twice.
+        projectiles.deflect(fieldOrigin, reach)
+
+        for (const npc of npcs) {
+            // The same skip step 1 opens with: a downed NPC has no agent to throw.
+            if (!npc.agentId) continue
+            const agent = state.agents[npc.agentId]
+            if (!agent) continue
+            const dist = Math.hypot(agent.position[0] - fieldOrigin.x, agent.position[2] - fieldOrigin.z)
+            // Not reached yet, or the wave is already past it.
+            if (!ringJustCrossed(dist, previousReach, reach)) continue
+            throwBack(npc, agent, dist)
+        }
+
+        if (fieldElapsed >= FORCE_FIELD_SWEEP_SECONDS) fieldActive = false
+    }
+
+    // ------------------------------------------------------------------
     // Handle
     // ------------------------------------------------------------------
 
@@ -973,10 +1170,36 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
             }
         },
 
+        forceField(origin: THREE.Vector3) {
+            if (disposed) return
+            fieldRadius = tunables.forceFieldRadius
+            if (!(fieldRadius > 0)) return // a disabled field turns nothing and moves nobody
+
+            // Snapshotted rather than read per NPC as the wave sweeps: half a
+            // crowd thrown by an old number and half by a new one, because a
+            // lil-gui drag landed mid-sweep, is not a thing anyone could debug.
+            fieldPush = tunables.forceFieldPush
+            fieldStun = tunables.forceFieldStunSeconds
+            // The wave is anchored where the player left the ground and does not
+            // follow them, so this is copied — `forceField` is handed the rig's
+            // live `playerGroup.position`, which moves a frame later.
+            fieldOrigin.copy(origin)
+            // A second jump mid-sweep restarts it, which is the honest read of two
+            // pulses: the first is simply superseded. `sweepField` does the work
+            // from here, a slice of the ring per frame.
+            fieldElapsed = 0
+            fieldActive = true
+        },
+
         update(delta: number) {
             if (disposed || npcs.length === 0) return
             const playerPos = getPlayerPosition()
             const hostile = getHostile()
+
+            // --- The jump's force field -------------------------------------
+            // Ahead of the crowd's own step, so a throw applied here is integrated
+            // on this frame rather than the next.
+            sweepField(delta)
 
             // --- 0. The dead -----------------------------------------------
             // Ahead of everything else, because a downed NPC is a hole in the
@@ -1055,6 +1278,35 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 if (!npc.agentId) continue
                 const agent = state.agents[npc.agentId]
                 if (!agent) continue
+
+                // Stunned by the jump's force field. Handled ahead of the mode
+                // decision because everything the stun has to suppress is
+                // downstream of this branch: `continue` is what keeps the
+                // `maxSpeed` write at the bottom of this loop from re-issuing the
+                // NPC's chase speed, and what stops a dizzy NPC from picking a
+                // wander target, re-aiming at the player, or re-deciding to chase.
+                if (npc.stunTimer > 0) {
+                    npc.stunTimer -= delta
+                    // The cap is the whole of it, and it must *not* be joined by
+                    // a zeroed velocity: this branch runs every frame of the stun,
+                    // and the field's throw is an impulse that needs those frames
+                    // to spend itself. Zeroing here would cut the shove off after
+                    // a single frame — 11 cm of a 3 m throw. Speed zero is what
+                    // stops the NPC: the steering asks for a velocity of nothing
+                    // and the integrator brings the current one down to meet it at
+                    // `maxAcceleration`, which is exactly the deceleration that
+                    // turns the impulse into a slide that settles.
+                    agent.maxSpeed = 0
+                    // On the crossing frame only, and only while the stun's own
+                    // clip is the one playing. The check earns its keep because
+                    // the death clip supersedes the stun clip: cancelling *that*
+                    // would leave a corpse standing, which is exactly what
+                    // `respawnNpc`'s wait on `isEmotionActive` exists to prevent.
+                    if (npc.stunTimer <= 0 && STUN_CLIP && npc.rig?.getEmotionId() === STUN_CLIP.id) {
+                        npc.rig.cancelEmotion()
+                    }
+                    continue
+                }
 
                 let next: NpcMode = 'wander'
                 let distanceSq = Infinity
@@ -1150,7 +1402,11 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // standing at the standoff ring would otherwise keep whichever
                 // heading it happened to arrive on and fire across its shoulder.
                 // Peaceful NPCs still face where they are going.
-                if (npc.armed && playerPos) facePlayer(npc, playerPos, delta)
+                // A stunned NPC is the one case where an armed NPC does *not* keep
+                // the player at gunpoint: a dizzy body tracking you with its head
+                // reads as a glare, not as a stagger. It falls through to
+                // `faceVelocity`, which holds the heading on the zeroed velocity.
+                if (npc.armed && playerPos && npc.stunTimer <= 0) facePlayer(npc, playerPos, delta)
                 else faceVelocity(npc, agent, delta)
                 animate(npc, agent, delta)
 
@@ -1186,7 +1442,12 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
                 // barrel before the barrel points. The wait is short (the turn
                 // converges in a handful of frames) but it is what closes the
                 // gap where a just-aggroed NPC fires the instant it stops.
-                if (npc.armed && npc.gun && playerPos) {
+                // `npc.stunTimer` is on this gate as well as the one in step 1:
+                // the stun deliberately leaves `npc.mode` at whatever it was (it
+                // skips the mode write rather than faking one), so an NPC stunned
+                // mid-`hold` would otherwise sail straight through the `mode ===
+                // 'hold'` test below and keep firing while dizzy.
+                if (npc.armed && npc.gun && playerPos && npc.stunTimer <= 0) {
                     const dx = playerPos.x - npc.group.position.x
                     const dz = playerPos.z - npc.group.position.z
                     const inRange = dx * dx + dz * dz <= fireRangeSq
@@ -1256,6 +1517,14 @@ const _aimPoint = new THREE.Vector3()
 
 /** The mirror of `_aimPoint` for the player shooting an NPC (see `npcAimPoint`). */
 const _npcAimPoint = new THREE.Vector3()
+
+/**
+ * Where a deflected droplet is being aimed, kept apart from `_npcAimPoint`
+ * because both are live in the same frame: the player's lock reads the latter
+ * and the bounce reads this, and one scratch serving both would have the two
+ * shots aiming at each other's target.
+ */
+const _bouncePoint = new THREE.Vector3()
 
 /** Muzzle world position, read once per shot. */
 const _muzzleWorld = new THREE.Vector3()

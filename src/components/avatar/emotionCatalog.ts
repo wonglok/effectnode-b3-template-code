@@ -244,6 +244,9 @@ export const EMOTION_GROUPS: EmotionGroup[] = [
     make("shooter", "walking-backwards", 0, false),
     make("shooter", "walking-to-dying", 0, false),
   ] },
+  { folder: "more", title: "More", items: [
+    make("more", "gun-got-hit", 0, false),
+  ] },
 ];
 
 /** Flat list of every playable emotion. */

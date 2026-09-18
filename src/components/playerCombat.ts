@@ -55,14 +55,33 @@ import { createNpcProjectiles } from './npcProjectiles'
 /**
  * Muzzle velocity for the player's shots, world units / second.
  *
- * Deliberately **not** the crowd's `npcProjectileSpeed` (8). The solve fixes the
- * horizontal component at exactly this speed, so a droplet's reach is
- * `speed × LIFETIME` — 12.8 m at 8, against the crowd's 14 m fire range — and
- * its arc grows with the square of the flight time, which at 8 over 12 m is a
- * 2.3 m apex. That is a mortar, and it reads correctly for an NPC lobbing at a
- * player from a 5 m standoff. The player shoots across open ground at whatever
- * they clicked, so this is fast enough that the arc is a squirt: 0.3 s and a
- * ~5 cm apex over 6 m.
+ * Deliberately **not** the crowd's `npcProjectileSpeed` (8): an NPC lobs water at
+ * a player standing 5 m away, and the player shoots at whatever they clicked, so
+ * the two want very different arcs.
+ *
+ * `speed × LIFETIME` is the gun's reach — 20 × 1.6 = 32 m — and the
+ * `playerFireRange` dial sits just inside it, so a lock held at its limit is
+ * still a shot the gun can actually deliver. Change this and that relationship
+ * moves: at 40 the reach is 64 m and the range dial stops bounding anything
+ * physically.
+ *
+ * Two things to know before changing this again, both learned the hard way:
+ *
+ * - **The speed sets the step, and the step sets whether shots can miss.** A
+ *   droplet moves `speed × dt` per frame — 0.33 m here, against a capture sphere
+ *   0.81 m across, so a comfortable margin. The hit test is swept against the
+ *   step regardless (see `sweptHit` in `npcProjectiles`): a frame-end point test
+ *   stops connecting above roughly `2r / dt` ≈ **49 u/s**, and the failure is
+ *   silent — at 2000 every shot passed straight through every enemy and the gun
+ *   simply never hit anything. The sweep is headroom at this speed and a
+ *   necessity above that one.
+ * - **The arc is `speed⁻²`.** Apex over a level shot is `g·flight²/8`, so
+ *   doubling the speed quarters it. Measured over 6 m at 60 fps: about **9 cm**
+ *   here and 2 cm at 40, both a little under the ideal (10.1 and 2.5 cm) because
+ *   a frame-sampled rise is under-integrated — the same coarse-frame effect that
+ *   makes the force field's shove land a few percent short. Beyond about 50 the
+ *   flight is under five frames, and then the sampling itself flattens the arc
+ *   further still, which is where a shot stops reading as thrown water at all.
  */
 const MUZZLE_SPEED = 20
 
@@ -155,6 +174,22 @@ export interface PlayerCombat {
      * disagree with what the gun does.
      */
     setFireInterval(seconds: number): void
+    /**
+     * Whether a shot may play its recoil clip.
+     *
+     * The recoil is a *reflex* one-shot, and the emotion path gives a clip the
+     * mixers outright — so with a shot every `fireInterval`, sustained fire holds
+     * the body almost continuously. Anything else that wants the body has to be
+     * able to take it away and keep it away, which is what this is for: the rig
+     * suppresses the recoil while the character is airborne, so a jump renders as
+     * a jump instead of being overruled by the next shot.
+     *
+     * Suppressing the clip does **not** hold fire. The droplet, the damage, the
+     * cadence and the aim are all untouched — only the animation is held back.
+     *
+     * Pushed per frame like the interval, so it takes effect on the next shot.
+     */
+    setRecoilEnabled(enabled: boolean): void
     /** Match the armed walk / run clip cadence to the player's movement speed
      *  (the rig owns the clip sets; this just forwards the numbers). */
     setCadence(walk: number, run: number): void
@@ -216,6 +251,8 @@ export function createPlayerCombat(
     /** Seconds until the next locked shot. Negative means owed. */
     let fireCountdown = 0
     let fireInterval = DEFAULT_FIRE_INTERVAL
+    /** Whether the recoil clip may play. See `setRecoilEnabled`. */
+    let recoilEnabled = true
 
     /**
      * Remove the gun and free what it owns.
@@ -288,8 +325,11 @@ export function createPlayerCombat(
         }
 
         // The recoil, through the same path the crowd uses. Played after the
-        // spawn so a missing FBX still produces the water.
-        if (ARMED_FIRING_CLIP) rig?.playEmotionOnce(ARMED_FIRING_CLIP)
+        // spawn so a missing FBX still produces the water — and skipped while
+        // suppressed, which leaves the water exactly as it is. See
+        // `setRecoilEnabled`: an emotion owns the mixers, so a recoil replayed
+        // every `fireInterval` would otherwise never let a jump show.
+        if (ARMED_FIRING_CLIP && recoilEnabled) rig?.playEmotionOnce(ARMED_FIRING_CLIP)
     }
 
     return {
@@ -341,6 +381,10 @@ export function createPlayerCombat(
 
         setFireInterval(seconds) {
             fireInterval = seconds
+        },
+
+        setRecoilEnabled(enabled) {
+            recoilEnabled = enabled
         },
 
         setCadence(walk, run) {

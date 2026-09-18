@@ -14,7 +14,7 @@ import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
 import { BASE_SET_KEY, loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
 import { AIM_HEIGHT, createNpcEnemies, type NpcEnemies, type NpcTarget } from './npcEnemies'
 import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/components/AvatarSDK'
-import { ARMED_SET_KEY } from './armedClipSet'
+import { ARMED_SET_KEY, isReflexEmotion } from './armedClipSet'
 import { DEATH_CLIPS } from './deathClip'
 import { BAR_HEIGHT_ABOVE, createHealthBar } from './healthBar'
 import { createHealthCrates, type HealthCrates } from './healthCrates'
@@ -1273,6 +1273,22 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         attackFolder.add(settings, 'playerFireRange', 5, 40, 0.5).name('Fire Range')
         attackFolder.close()
 
+        // The jump's force field — the defensive move. Everything the field
+        // reaches is thrown outward: the crowd's droplets in flight are turned
+        // back, and the NPCs it catches are shoved and left dizzy. No `onChange`
+        // handlers, because the crowd reads all three live, so a drag applies to
+        // the next jump.
+        //
+        // The radius is the jump ring's radius too — `LoadCollider` draws the floor
+        // pulse to this same number — so dragging it moves the visual and the
+        // mechanic together, and the ring cannot claim a reach the field does not
+        // have.
+        const jumpFolder = gui.addFolder('Jump')
+        jumpFolder.add(settings, 'forceFieldRadius', 1, 20, 0.5).name('Field Radius')
+        jumpFolder.add(settings, 'forceFieldPush', 0, 10, 0.25).name('Shove Distance')
+        jumpFolder.add(settings, 'forceFieldStunSeconds', 0, 5, 0.05).name('Stun (s)')
+        jumpFolder.close()
+
         // Health crates. No `onChange` handlers anywhere: the crate pool reads
         // `settings` live on every frame, so a slider takes effect immediately —
         // including the count, which only decides how many pooled meshes are
@@ -1455,6 +1471,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // character steer/walk (not locked); a *gesture* parks it (feet planted).
             const emotionActive = avatarRig?.isEmotionActive() ?? false
             const emotionDanceActive = emotionActive && (avatarRig?.isEmotionDance() ?? false)
+            // A *reflex* one-shot — the firing recoil — is not the player's choice
+            // of pose, so it does not get to pin them down. Everything the other
+            // emotions own (the body, the mixers) it still owns, so this is not a
+            // free pass: it says the character may keep moving and jumping, and
+            // the two places that act on it below hand the body back to whatever
+            // the player is doing — see `isReflexEmotion`.
+            const emotionReflex = emotionActive && isReflexEmotion(avatarRig?.getEmotionId() ?? null)
 
             // Hold-to-move: while the mouse is held, keep re-aiming the target from
             // the current pointer position (throttled to ~150ms — findPath is costly).
@@ -1501,12 +1524,40 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 const jumpFromSpace = input.jump
                 if (jumpFromSpace || buttonJump) {
                     input.jump = false
-                    if (!isJumping && !emotionActive) {
+                    // A reflex one-shot does not lock the player out of jumping.
+                    // The firing recoil is re-triggered on every shot, so during
+                    // sustained fire `emotionActive` is true almost continuously —
+                    // gating on it alone is what made the player unable to jump at
+                    // all while shooting. A gesture or a dance still holds the
+                    // character: those are the player's own choice of what to do
+                    // with the body, not a side effect of firing a gun.
+                    if (!isJumping && (!emotionActive || emotionReflex)) {
                         isJumping = true
                         jumpVelocity = JUMP_SPEED
+                        // The jump takes the body back from the recoil, and has to
+                        // do it explicitly: while an emotion is active the rig
+                        // asserts it at full weight and every locomotion action at
+                        // zero, so without this the jump would be a silent lift of
+                        // the whole group with the pose still firing the gun.
+                        if (emotionReflex) avatarRig?.cancelEmotion()
                         // Restart the jump clip at its launch frame (skipping the
                         // anticipation crouch so the pose matches the takeoff).
                         avatarRig?.startJumpAt(JUMP_CLIP_START)
+                        // The force field, in attack mode only: it is the counter
+                        // to the crowd's fire, so a peaceful jump stays a peaceful
+                        // jump and a wandering NPC is never shoved. `npcs` is
+                        // nullable — the crowd builds asynchronously — so a jump
+                        // before it exists is a no-op rather than a crash.
+                        //
+                        // Anchored at the player's feet, which is what
+                        // `playerGroup.position` holds here: the jump lift is added
+                        // later in the frame, and the field is a ground effect.
+                        //
+                        // Runs before `npcs?.update` below, so the shove, the stun
+                        // and the turned droplets all land on this frame.
+                        if (useNavRigStore.getState().attackMode) {
+                            npcs?.forceField(playerGroup.position)
+                        }
                         // Space never touches the navRig store (the on-screen button
                         // does), so broadcast a jump nonce here too — the floor pulse
                         // in LoadCollider keys off the store and plays once per jump.
@@ -1523,7 +1574,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
                 // downed. `playerDowned` is the one lever for all three movement
                 // sources — WASD, the joystick and click-to-move path following
                 // are each gated on this below.
-                const canMove = !playerDowned && !isPinching && (!emotionActive || emotionDanceActive)
+                //
+                // `emotionReflex` joins the dance here for the same reason it is
+                // let through the jump above: firing is not a reason to stop
+                // walking. Together with the cancel at the blend below, this is
+                // what lets the player advance while shooting.
+                const canMove =
+                    !playerDowned && !isPinching && (!emotionActive || emotionDanceActive || emotionReflex)
                 if (canMove && anySteer) {
                     if (forward) movement.vector.z -= 1
                     if (back) movement.vector.z += 1
@@ -1598,6 +1655,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             }
 
             const speed = movement.vector.length()
+            // Movement takes the body back from a reflex clip, exactly as the jump
+            // does. Letting the character move is only half of it: while an emotion
+            // is active the rig asserts it at full weight and every locomotion
+            // action at zero, so a recoil still playing would hold the firing pose
+            // across the ground and the walk would only appear once the clip ran
+            // out — a slide, then a walk. Cancelling the moment they set off gives
+            // the locomotion blend the body on this same frame, and the recoil gate
+            // below keeps the next shot from handing it back a tenth of a second
+            // later.
+            if (emotionReflex && speed > 0.01) avatarRig?.cancelEmotion()
             let idleWeight: number
             let walkWeight: number
             let runWeight: number
@@ -1702,6 +1769,17 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // the fire-interval slider has to land on the next shot with no
             // rebuild and no stale copy to go out of step.
             playerCombat.setFireInterval(settings.playerFireInterval)
+            // Whatever else the character is doing owns the body: the recoil clip
+            // is held back while airborne and while walking, because the next shot
+            // — at most a tenth of a second later — would otherwise take the mixers
+            // straight back off the jump or the walk, and the character would fly
+            // through the air, or advance across the ground, miming a recoil.
+            //
+            // So the kick shows when the player is standing still and firing, which
+            // is where a recoil reads anyway. The gun itself is unaffected: the
+            // droplet, the damage, the cadence and the aim all carry on regardless
+            // — this holds back an animation, not a shot.
+            playerCombat.setRecoilEnabled(!isJumping && speed <= 0.01)
             playerCombat.update(clamped)
 
             if (navMeshHelper?.object) {

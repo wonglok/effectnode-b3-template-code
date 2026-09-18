@@ -24,6 +24,7 @@ import {
 import { MeshPhysicalNodeMaterial, Node } from 'three/webgpu'
 import gsap from 'gsap'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
+import { FORCE_FIELD_SWEEP_SECONDS, forceFieldEase } from '../../../../../components/forceField'
 // import { getOrCreateTexture } from '../utils/meshBuilder'
 import { useNavRigStore } from '../stores/navRigStore'
 // The ring shockwave lives in its own module — the grass uses the same one.
@@ -117,6 +118,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return uniform(0.0, 'float')
     }, [])
 
+    // How far the ring's edge travels. A uniform rather than a constant because
+    // the ring *is* the jump's force field, and the field's radius is a live
+    // tunable: built once here, kept in step with the store by the frame loop
+    // below, so the ring can never claim a reach the field does not have.
+    const uFieldRadius = useMemo(() => {
+        return uniform(5.0, 'float')
+    }, [])
+
     const reflection = useMemo(() => {
         if (!playerGroup) {
             return
@@ -147,6 +156,10 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
     }, [reflection])
 
     useFrame(() => {
+        // Outside the reflection guard on purpose: the ring is drawn from this
+        // radius whether or not the reflective floor exists, so binding it to the
+        // reflector would freeze it at its default in any scene without one.
+        uFieldRadius.value = useNavRigStore.getState().settings.forceFieldRadius
         if (playerGroup && reflection) {
             placeOfPlayer.position.copy(playerGroup.position)
             reflection.target.position.x = playerGroup?.position.x
@@ -157,7 +170,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     //
 
-    const PULSE_DURATION = 1.0 // seconds for the ring to reach maxRadius
+    // Seconds for the ring to reach maxRadius — and, because this is the same
+    // second the force field spends sweeping out to the same radius, also how
+    // long the jump's wave lasts. One constant for both, so the ring you watch
+    // is the wave that pushes; a local copy here is how the two would drift.
+    const PULSE_DURATION = FORCE_FIELD_SWEEP_SECONDS
     const playPulse = useCallback(() => {
         console.log('[LoadCollider] pulse triggered') // TEMP debug — remove once visible
         gsap.killTweensOf(uPulseProgress)
@@ -165,7 +182,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         gsap.to(uPulseProgress, {
             value: 1,
             duration: PULSE_DURATION,
-            ease: 'quat.out', // slow out of the centre and into the edge
+            // The force field's own curve, by reference — the ring *is* the
+            // field's edge, and the wave that shoves the crowd is timed off this
+            // same progress. `LoadCollider` used to pass the string `'quat.out'`,
+            // which gsap cannot parse: it silently fell back to its default
+            // (`power1.out`), so the ring has been rendering on a curve nobody
+            // wrote and the field's sweep had to guess at it. This pins the curve
+            // down and gives both sides one copy of it.
+            ease: forceFieldEase,
             onComplete: () => {
                 uPulseProgress.value = 0
             },
@@ -207,7 +231,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
             const texScale = 35.0
 
-            const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(1.0), uPulseProgress)
+            // Band widened from 1.0 and the emissive lifted from 5.0 below: the
+            // ring is the jump's force field, and it should read as one.
+            const pulseMotion = circlePulse(uPlayerPosition, uFieldRadius, float(1.6), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale).mul(0.5)) as Node<'float'>
             const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
@@ -236,7 +262,9 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         .mul(pulseMotion)
                         .mul(honeyCombThinBase)
                         .pow(3)
-                        .mul(5.0),
+                        // After the pow, so this scales the band's brightness
+                        // without widening it — the ring keeps its hard edge.
+                        .mul(9.0),
                     1.0,
                 )
             })()

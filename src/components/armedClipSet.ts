@@ -61,3 +61,27 @@ export function armedClipSet(): { clips: Partial<Record<LocomotionKey, MotionCli
 
 /** The firing one-shot, played through the rig's emotion path. */
 export const ARMED_FIRING_CLIP: MotionClipDef | null = sectionClip('shooter', 'firing-rifle')
+
+/**
+ * Is the emotion the rig reports a **reflex** one — a clip played as a side
+ * effect of something the player is already doing, rather than one they asked
+ * for?
+ *
+ * The emotion path hands a clip the mixers outright (see `avatarLoader`), which
+ * is right for a gesture or a dance and wrong for a reflex: a clip that keeps
+ * the mixers keeps the character in its pose. The firing recoil is the one that
+ * bites, because it is re-triggered on every shot — during sustained fire it is
+ * active almost continuously, so anything that defers to it defers to it
+ * forever. Concretely: without this, the player cannot jump while shooting.
+ *
+ * The id is matched against the clip's own name because that is what
+ * `AvatarRig.getEmotionId()` reports for a def that carries no `id` of its own,
+ * which is how every clip in the SDK's motion registry is identified.
+ *
+ * Deliberately a whitelist of one. A dance or a gesture is the player's own
+ * choice and still owns the character; only the clips in here may be interrupted
+ * by movement.
+ */
+export function isReflexEmotion(emotionId: string | null): boolean {
+    return emotionId !== null && emotionId === ARMED_FIRING_CLIP?.name
+}

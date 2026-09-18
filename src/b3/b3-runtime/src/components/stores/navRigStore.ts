@@ -78,13 +78,37 @@ interface NavRigSettings {
     /** How far a locked target can be before the lock is dropped, in world
      *  units.
      *
-     *  Derived from the player's own reach rather than picked: the ballistic
-     *  solve fixes the horizontal speed at `MUZZLE_SPEED` (20), so a droplet
-     *  covers 20 × 1.6 = 32 m, and this sits just inside that — a lock held at a
-     *  range the gun cannot actually reach would fire at nothing. Deliberately
-     *  not the crowd's `npcFireRange` (14), which is the NPCs' lobbing standoff,
-     *  not the player's reach. Applied live. */
+     *  Derived from the player's own reach rather than picked: the solve fixes
+     *  the horizontal speed at `MUZZLE_SPEED` (20), so a droplet covers
+     *  20 × 1.6 = 32 m, and this sits just inside that — a lock held at a range
+     *  the gun cannot actually reach would only ever fire at nothing. Raise
+     *  `MUZZLE_SPEED` and this can go with it; the two are a pair.
+     *
+     *  Deliberately not the crowd's `npcFireRange` (14), which is the NPCs'
+     *  lobbing standoff, not the player's reach. Applied live. */
     playerFireRange: number
+
+    /** How far the jump's force field reaches, in world units, measured on the
+     *  ground plane. The ring sweeps out to this radius and takes the crowd's
+     *  droplets and the NPCs themselves as it arrives.
+     *
+     *  The jump's floor ring is drawn to this same radius, and over the same
+     *  second, so the visual and the mechanic cannot disagree when it is dragged.
+     *  Applied live — the next jump uses the new number. */
+    forceFieldRadius: number
+    /** How far the field throws an NPC back, in world units.
+     *
+     *  A distance, not a speed: the crowd is handed the outward impulse that
+     *  covers this much ground before its own deceleration stops it, so the NPC
+     *  slides out over roughly a second rather than being moved in one frame.
+     *  Only fully honoured while the stun is holding its speed cap at zero — an
+     *  NPC that is not stunned steers back against the throw. Applied live. */
+    forceFieldPush: number
+    /** How long the field leaves an NPC dizzy, in seconds — frozen in place,
+     *  not tracking the player, not firing, playing the hit reaction. The clip
+     *  is cut when this expires rather than the other way round, so the stun is
+     *  exactly this long. Applied live. */
+    forceFieldStunSeconds: number
 
     /** Health every character starts with. Ten droplets at `dropletDamage`. */
     maxHp: number
@@ -245,6 +269,9 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         playerArmedRunTimescale: 2.7,
         playerFireInterval: 0.15,
         playerFireRange: 30,
+        forceFieldRadius: 5,
+        forceFieldPush: 3,
+        forceFieldStunSeconds: 1,
         maxHp: DEFAULT_MAX_HP,
         dropletDamage: 10,
         npcRespawnSeconds: 4,

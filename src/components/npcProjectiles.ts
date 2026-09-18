@@ -34,6 +34,21 @@
  * avatar teardown. Splashes break the sharing rule in one place and only one:
  * opacity is animated per burst, so each splash slot owns a material of its own,
  * pre-built with the pool.
+ *
+ * ## Deflection
+ *
+ * `deflect` is the one call that reaches into live droplets instead of firing
+ * them: the jump's force field turns every shot inside its radius back outward.
+ * A turned droplet is never disarmed by *clearing* the per-shot callbacks. The
+ * crowd's pool spawns with neither, so clearing them falls back to the pool-wide
+ * target — the live player chest — and the reversed water would curve back in and
+ * damage the player it was just blown away from.
+ *
+ * Instead it is **re-armed**: `hitPoint` is replaced with a resolver that looks
+ * for a target on the *other* side (see `getBouncePoint`), so the water thrown
+ * back can hit the crowd that fired it, and can never hit the player. Returning
+ * null from that resolver parks the droplet on the miss path, which is what keeps
+ * a bounce harmless when there is nobody near it.
  */
 
 import * as THREE from 'three'
@@ -153,6 +168,26 @@ export interface NpcProjectiles {
     ): void
     /** Advance every live droplet. Call once per frame. */
     update(delta: number): void
+    /**
+     * Turn every **inbound** droplet inside `radius` of `origin` (XZ only) back
+     * out along its own line from that origin, at the speed it arrived. Returns
+     * how many were turned.
+     *
+     * A turned droplet flies off on its own arc and **cannot damage the player** —
+     * that is the one thing deflection guarantees, and it is enforced by the
+     * per-shot `hitPoint` the droplet is given rather than by clearing it (see
+     * this file's header). What it *can* hit is whatever `getBouncePoint`
+     * resolves: the crowd that fired it. With no resolver, it hits nothing at all.
+     *
+     * It does not splash at the point of deflection — splashing there would
+     * consume the droplet as spray, which is absorbing the shot rather than
+     * deflecting it. A turned droplet recycles on its existing `LIFETIME` /
+     * `floorY` exactly as a miss does.
+     *
+     * A droplet already travelling away is left alone: it is no longer a threat,
+     * and redirecting it is motion for nothing.
+     */
+    deflect(origin: THREE.Vector3, radius: number): number
     /** Recycle everything and free the shared geometry + material. */
     dispose(): void
 }
@@ -176,6 +211,30 @@ export interface NpcProjectilesOptions {
      */
     onHit?: () => void
     /**
+     * What a **deflected** droplet may hit instead, given its current world
+     * position — the crowd that fired it, for the jump's force field. Return the
+     * point to test against, or null for "nothing near it".
+     *
+     * Only consulted for droplets `deflect` has turned, and it replaces their
+     * target outright: a turned droplet is aimed at what this finds, never at the
+     * pool-wide `getTarget`. That is the point of it — the water blown back can
+     * hurt the shooter, and cannot hurt the player it was blown away from.
+     *
+     * Called once per turned droplet per frame, so it must not allocate (see
+     * {@link onBounceHit} for the damage half).
+     */
+    getBouncePoint?: (position: THREE.Vector3) => THREE.Vector3 | null
+    /**
+     * Damage whatever `getBouncePoint` resolved — the pool-level counterpart to
+     * the pair above, and the only way a deflected droplet hurts anything.
+     *
+     * Positional like `getBouncePoint` rather than taking a target: the hit is
+     * resolved from where the water actually is, which is the same question, and
+     * the two calls are adjacent for the same droplet on the same frame. Called
+     * only on a frame the droplet registered a hit.
+     */
+    onBounceHit?: (position: THREE.Vector3) => void
+    /**
      * Root names for the two groups this pool adds to the scene.
      *
      * Defaults match the crowd's historical names. A second pool must override
@@ -189,13 +248,69 @@ export interface NpcProjectilesOptions {
 /** Scratch — `update` runs per droplet per frame and must not allocate. */
 const _toTarget = new THREE.Vector3()
 
+/** Scratch — where a droplet was at the start of this frame's step, and the
+ *  closest point on the step to its target. See `sweptHit`. */
+const _stepFrom = new THREE.Vector3()
+const _sweptTo = new THREE.Vector3()
+const _hitPoint = new THREE.Vector3()
+
+/** Scratch — the outward direction `deflect` pushes along. */
+const _outward = new THREE.Vector3()
+
+/**
+ * The disarm a deflected droplet carries when the pool has no bounce resolver —
+ * a non-null `hitPoint` is what keeps the pool-wide `getTarget` out of the test
+ * (see `update`), and returning null from it is the documented miss path: no hit
+ * test, no splash, no damage. One shared function, so deflecting a volley
+ * allocates nothing.
+ */
+const NEVER_HITS = () => null
+
+/**
+ * Did the step `from`→`to` pass within `radius` of `point`? Writes the closest
+ * point on that step to `out`, and answers whether it was close enough.
+ *
+ * The hit test used to be a plain distance from the droplet to its target, taken
+ * once per frame. That is only correct while a droplet moves less than the
+ * capture radius in a frame: the player's muzzle speed crosses tens of metres per
+ * frame, so a droplet would step clean over an enemy between two frames and never
+ * register a hit at all. Testing the whole step is the *same test* at low speed —
+ * once the step is shorter than the radius the closest point is the endpoint, and
+ * the answer is identical — and stays correct at any speed or frame rate.
+ *
+ * The closest point is handed back because a fast shot crosses the capture sphere
+ * mid-frame: that crossing is where the water landed, and it is what the splash
+ * should be drawn at, not wherever the frame happened to end.
+ */
+function sweptHit(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    point: THREE.Vector3,
+    radius: number,
+    out: THREE.Vector3,
+): boolean {
+    _sweptTo.copy(to).sub(from)
+    const lengthSq = _sweptTo.lengthSq()
+    if (lengthSq < 1e-12) {
+        // No movement this frame; the point test is the whole of it.
+        out.copy(to)
+    } else {
+        _toTarget.copy(point).sub(from)
+        // Clamped to the step, so a target behind the droplet (t < 0) or beyond it
+        // (t > 1) is measured to the nearest end rather than to the infinite line.
+        const t = Math.min(1, Math.max(0, _toTarget.dot(_sweptTo) / lengthSq))
+        out.copy(from).addScaledVector(_sweptTo, t)
+    }
+    return out.distanceToSquared(point) <= radius * radius
+}
+
 /** Scratch — the splash basis, rebuilt per burst. */
 const _splashN = new THREE.Vector3()
 const _splashU = new THREE.Vector3()
 const _splashW = new THREE.Vector3()
 
 export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectiles {
-    const { scene, getTarget, onHit, names } = opts
+    const { scene, getTarget, onHit, getBouncePoint, onBounceHit, names } = opts
 
     const root = new THREE.Group()
     root.name = names?.droplets ?? 'npc-droplets'
@@ -427,6 +542,12 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                     continue
                 }
 
+                // Where the step begins, kept for the swept hit test below — at
+                // the player's muzzle speed a droplet crosses tens of metres in a
+                // frame, so the target has to be tested against the path it took
+                // rather than the point it ended on.
+                _stepFrom.copy(d.mesh.position)
+
                 d.velocity.y -= GRAVITY * delta
                 d.mesh.position.addScaledVector(d.velocity, delta)
 
@@ -442,16 +563,16 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                 // nothing — which parks the droplet on the miss path below.
                 const target = d.hitPoint ? d.hitPoint() : sharedTarget
                 if (target) {
-                    _toTarget.copy(target).sub(d.mesh.position)
-                    // Compare squared lengths — no sqrt per droplet per frame.
                     const reach = HIT_RADIUS + DROP_RADIUS
-                    if (_toTarget.lengthSq() <= reach * reach) {
-                        // Where the water is, not where the target is: the hit
-                        // radius is a generous capture, and the droplet has not
-                        // necessarily travelled the last few centimetres to the
-                        // centre. Splashing on the droplet keeps the burst
-                        // attached to the water the player just watched arrive.
-                        splash(d.mesh.position, d.velocity)
+                    // Swept, not a point test: see `sweptHit`. The comparison is
+                    // still on squared lengths, inside the helper.
+                    if (sweptHit(_stepFrom, d.mesh.position, target, reach, _hitPoint)) {
+                        // Where the water met the target, not where the target is:
+                        // the capture radius is generous and the droplet has not
+                        // necessarily travelled to the centre. On the step, rather
+                        // than at the frame's end position, so a fast shot's burst
+                        // lands where it crossed instead of tens of metres past.
+                        splash(_hitPoint, d.velocity)
                         // Zeroed on this very frame, which is what makes the hit
                         // fire exactly once: the next frame's `life <= 0` guard
                         // skips the droplet before it can be tested again.
@@ -488,6 +609,68 @@ export function createNpcProjectiles(opts: NpcProjectilesOptions): NpcProjectile
                     s.beads[b].position.addScaledVector(v, delta)
                 }
             }
+        },
+
+        deflect(origin, radius) {
+            if (disposed || radius <= 0) return 0
+            let turned = 0
+            for (const d of droplets) {
+                if (d.life <= 0) continue
+
+                // XZ only, like every other distance in this file and the
+                // crowd's own aggro test: the field is anchored at the player's
+                // feet and the shots fly at chest height, so a sphere would
+                // shrink the effective radius with height for no reason.
+                const dx = d.mesh.position.x - origin.x
+                const dz = d.mesh.position.z - origin.z
+                const dist = Math.hypot(dx, dz)
+                if (dist > radius) continue
+
+                // The horizontal speed is the one being reversed. Carrying the
+                // vertical into it too would inflate the punch — a shot arriving
+                // on a steep descent leaves faster than it came.
+                const speed = Math.hypot(d.velocity.x, d.velocity.z)
+                if (speed < 1e-4) continue // nothing in flight to turn
+
+                if (dist > 1e-4) {
+                    _outward.set(dx / dist, 0, dz / dist)
+                } else {
+                    // Dead centre: there is no outward line to push along, so
+                    // send it back the way it came — which for an inbound shot
+                    // is still outward. Avoids a NaN direction, and the dot test
+                    // below passes by construction.
+                    _outward.set(-d.velocity.x / speed, 0, -d.velocity.z / speed)
+                }
+
+                // Inbound only.
+                if (d.velocity.x * _outward.x + d.velocity.z * _outward.z >= 0) continue
+
+                // Flat out and then falling: the outward punch dominates, so the
+                // arc reads as "blown away", not as "bounced back up".
+                d.velocity.copy(_outward).multiplyScalar(speed)
+
+                // Re-arm it at whatever the pool's bounce resolver finds — the
+                // crowd that fired it — and at nothing else. Supplying a per-shot
+                // `hitPoint` is the load-bearing half: it is what keeps the
+                // pool-wide `getTarget`, the player's own chest, out of this
+                // droplet's test. See this file's header.
+                //
+                // The closures are built once per turned droplet, not per frame:
+                // they capture the droplet's mesh and answer where the water is,
+                // so a flight back across the field allocates nothing.
+                const mesh = d.mesh
+                if (getBouncePoint) {
+                    d.hitPoint = () => getBouncePoint(mesh.position)
+                    d.onHit = onBounceHit ? () => onBounceHit(mesh.position) : null
+                } else {
+                    // No bounce resolver on this pool: the water is inert from
+                    // here on out, which is still better than aiming at the player.
+                    d.hitPoint = NEVER_HITS
+                    d.onHit = null
+                }
+                turned++
+            }
+            return turned
         },
 
         dispose() {
