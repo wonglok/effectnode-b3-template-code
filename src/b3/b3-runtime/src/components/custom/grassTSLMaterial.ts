@@ -16,19 +16,11 @@
 //
 // The deformation is driven entirely by per-instance geometry attributes that
 // `GrassComponent` generates on the CPU — see `buildGrassAttributes` there.
-//
-// One thing here is not in the reference at all: the blade shortens as it
-// approaches the player's cull radius, and is discarded once it is short enough
-// to be a speck. See the "Radius culling" block in the vertex nodes — it is the
-// shader half of a split described in grassCuller.ts, and the two only make
-// sense together. The discard and the shrink read the *same* number, which is
-// why it crosses the two stages as a varying.
 // ---------------------------------------------------------------------------
 
-import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace, Vector3 } from 'three/webgpu'
+import { Color, DoubleSide, MeshBasicNodeMaterial, SRGBColorSpace } from 'three/webgpu'
 import type { Node, Texture } from 'three/webgpu'
 import {
-    Discard,
     Fn,
     abs,
     acos,
@@ -45,13 +37,10 @@ import {
     saturate,
     select,
     sin,
-    smoothstep,
-    sqrt,
     texture,
     time,
     uniform,
     uv,
-    varying,
     vec2,
     vec3,
     vec4,
@@ -144,16 +133,6 @@ export interface GrassMaterialOptions {
     windSpeed: number
     /** Peak bend, in radians, of the per-blade gust. */
     windStrength: number
-    /**
-     * Distance from the player at which a blade is scaled away entirely.
-     *
-     * Must agree with the radius `GrassComponent` hands the culler: past this
-     * distance the blade is not in the draw at all, and inside it this is what
-     * decides how much of it survives.
-     */
-    cullRadius: number
-    /** Width of the shrink-out band just inside `cullRadius`. */
-    fadeWidth: number
 }
 
 export interface GrassMaterial {
@@ -163,27 +142,8 @@ export interface GrassMaterial {
         bladeHeight: { value: number }
         windSpeed: { value: number }
         windStrength: { value: number }
-        /**
-         * Where the shrink-out is centred. Written every frame by
-         * `GrassComponent`, which is what lets the fade move smoothly while the
-         * drawn set only changes in steps.
-         */
-        playerPosition: { value: Vector3 }
     }
 }
-
-/**
- * Height fraction at or below which the shrink-out has taken enough of a blade
- * that it is discarded outright rather than drawn as a sliver.
- *
- * This is not a spatial threshold — the shrink is a `smoothstep` over the fade
- * band, so a fraction maps to a distance through it. At `cullRadius` 5 with
- * `fadeWidth` 2, 0.1 lands at about 4.61 m: the blade is 10% of its height (a
- * few centimetres) already, which is why cutting there reads as the blade having
- * shrunk away rather than as a pop. Lowering it moves the hard edge further out,
- * toward `cullRadius`; 0.5 would cut at 4.0 m.
- */
-const CULL_HEIGHT_THRESHOLD = 0.03
 
 /**
  * Build the blade material.
@@ -213,18 +173,11 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     const windSpeed = uniform(options.windSpeed)
     const windStrength = uniform(options.windStrength)
 
-    // Starts at the origin and is moved to the player every frame. The initial
-    // value only has to be finite: until the first frame writes it, every blade
-    // sits at some distance from (0, 0, 0) and the field draws at whatever scale
-    // that implies — which is why `GrassComponent` draws the full field until the
-    // player group exists, rather than relying on this default being meaningful.
-    const playerPosition = uniform(new Vector3(0, 0, 0), 'vec3')
-
     // Colours arrive as sRGB hex and are converted exactly once. The reference
     // builds them with `new THREE.Color(r, g, b).convertSRGBToLinear()`, but a
     // Color constructed from raw components is *already* in the working
     // (linear) space, so that call decodes twice and darkens the ramp. The hex
-    // values below are the sRGB equivalents of the reference's components, so
+    // values below are the  sRGB equivalents of the reference's components, so
     // this reproduces its intended colours rather than its double-decode.
     const tipRgb = new Color().setStyle(tipColor, SRGBColorSpace)
     const bottomRgb = new Color().setStyle(bottomColor, SRGBColorSpace)
@@ -248,50 +201,12 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     // which is what produces a smooth arc rather than a hinge at the root.
     const direction = slerp(rootDirection, orientation, rootToTip)
 
-    // ---- Radius culling ---------------------------------------------------
-    // Which blades are drawn is decided on the CPU (grassCuller.ts) and expressed
-    // as the instance count, so by the time a vertex gets here its blade is
-    // already known to be in range. What that cannot express is the *edge*: the
-    // set changes in whole steps, so a blade in range one update and out the next
-    // would switch on at full height.
-    //
-    // So the radius here is a length, not a filter — the blade shortens to nothing
-    // as it approaches `cullRadius` and sinks into the ground. Scaling the height
-    // rather than fading the opacity is deliberate: this material is opaque and
-    // alpha-tested, and the reference's `alphaTest` cutout means an opacity fade
-    // would not be gradual at all — the blade would hold its full silhouette and
-    // then vanish the moment the product crossed the threshold.
-    //
-    // Measured from the per-instance root, so the whole blade shares one scale and
-    // the arc of the bend is preserved as it shortens.
-    const toPlayer = offset.sub(playerPosition)
-    const distanceToPlayer = sqrt(dot(toPlayer, toPlayer))
-    const heightScale = smoothstep(
-        options.cullRadius - options.fadeWidth,
-        options.cullRadius,
-        distanceToPlayer,
-    ).oneMinus()
-
-    // The same number, handed across to the fragment stage.
-    //
-    // `varying()` wraps its input in `subBuild(node, 'VERTEX')`, so the whole
-    // distance calculation above — including the per-instance `offset` attribute,
-    // which does not exist in a fragment shader — is evaluated per vertex and
-    // arrives interpolated. That is what lets the discard below judge a blade by
-    // exactly the number that shortened it, rather than recomputing an
-    // approximation from `positionWorld` and cutting at a distance that no longer
-    // matches the blade's own geometry.
-    //
-    // Every vertex of a blade shares one `offset`, so the interpolated value is
-    // constant across the blade — the discard is per-blade, not per-fragment.
-    const heightScaleVarying = varying(heightScale)
-
     // Per-blade height variation. The reference does not scale the whole blade
     // uniformly — it only stretches the Y component, which is why taller blades
     // are also slightly thinner in silhouette.
     const stretched = vec3(
         positionLocal.x,
-        positionLocal.y.add(positionLocal.y.mul(stretch)).mul(heightScale),
+        positionLocal.y.add(positionLocal.y.mul(stretch)),
         positionLocal.z,
     )
 
@@ -322,34 +237,15 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
     const albedo = texture(map, uv())
     const fragmentRootToTip = uv().y
     const tinted = mix(vec3(tipRgb.r, tipRgb.g, tipRgb.b), albedo.rgb, fragmentRootToTip)
-    material.colorNode = mix(vec3(bottomRgb.r, bottomRgb.g, bottomRgb.b), tinted, fragmentRootToTip)
+    const bladeColor = mix(vec3(bottomRgb.r, bottomRgb.g, bottomRgb.b), tinted, fragmentRootToTip)
 
-    // The cutout and the far-field discard, in that order.
-    //
-    // `Discard` is a **fragment-stage** statement — three emits a raw WGSL
-    // `discard`, which is not valid in a vertex shader — so it cannot sit beside
-    // the shrink that produces `heightScale`. It reads the varying instead, and
-    // has to run inside a fragment slot's graph, which is what the `Fn` wrapper
-    // is for: `toStack()` writes into whichever flow is being built, so a bare
-    // call at this point in the factory would land in no shader at all.
-    //
-    // A blade this short is already a few-centimetre sliver lying at the root:
-    // without the cut it still rasterizes a pixel or two and leaves a speck past
-    // where the field should have ended.
-    //
-    // It is not a saving on the texture fetches, and is not meant to be — three
-    // emits `colorNode` ahead of `opacityNode`, so the albedo above has already
-    // been sampled by the time this runs. What the discard does skip is the rest
-    // of this stage: the alpha map, the alpha test's own discard, and the write.
-    material.opacityNode = Fn(() => {
-        Discard(heightScaleVarying.lessThanEqual(CULL_HEIGHT_THRESHOLD))
-        return texture(alphaMap, uv()).r
-    })()
+    material.colorNode = bladeColor
 
-    // The reference's own cutout, kept as `alphaTest` rather than an inline
-    // discard so three's alpha-test handling applies — it honours `alphaToCoverage`
-    // when it is on, giving the blade edges a fwidth-based soft edge that the
-    // reference's hard `if (alpha < 0.15) discard` does not.
+    // The cutout, kept as `alphaTest` rather than as an inline discard so three's
+    // own alpha-test handling applies — it honours `alphaToCoverage` when it is
+    // on, giving the blade edges a fwidth-based soft edge that the reference's
+    // hard `if (alpha < 0.15) discard` does not.
+    material.opacityNode = texture(alphaMap, uv()).r
     material.alphaTest = 0.15
 
     material.side = DoubleSide
@@ -360,7 +256,6 @@ export function createGrassMaterial(options: GrassMaterialOptions): GrassMateria
             bladeHeight: bladeHeight as unknown as { value: number },
             windSpeed: windSpeed as unknown as { value: number },
             windStrength: windStrength as unknown as { value: number },
-            playerPosition: playerPosition as unknown as { value: Vector3 },
         },
     }
 }
