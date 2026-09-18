@@ -46,6 +46,7 @@
 import {
     BufferAttribute,
     BufferGeometry,
+    Color,
     Group,
     IcosahedronGeometry,
     InstancedBufferGeometry,
@@ -62,6 +63,7 @@ import {
     Loop,
     Return,
     attribute,
+    color,
     cross,
     float,
     instanceIndex,
@@ -119,9 +121,9 @@ const DEFAULT_SPHERE_FOLLOW_SPEED = 30
 const DEFAULTS = {
     width: 1,
     height: 1,
-    segmentsX: 30,
-    segmentsY: 30,
-    sphereRadius: 0.1,
+    segmentsX: 24,
+    segmentsY: 24,
+    sphereRadius: 0.15,
 } as const
 
 export interface ClothOptions {
@@ -346,8 +348,11 @@ const DOWN = new Vector3(0, -1, 0)
  */
 function placeOnPinLine(authored: Vector3, line: PinLine, width: number): Vector3 {
     const u = width > 1e-6 ? (authored.x + width * 0.5) / width : 0.5
+    let line2 = new Vector3().lerpVectors(line.start, line.end, u).addScaledVector(DOWN, authored.z)
 
-    return new Vector3().lerpVectors(line.start, line.end, u).addScaledVector(DOWN, authored.z)
+    // line2.y += 2.0 * (line.end.distanceTo(line.start) / 2)
+
+    return line2
 }
 
 /**
@@ -570,7 +575,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         sphere: true,
         wind: options.wind ?? 1.0,
         stiffness: 0.2,
-        dampening: 0.99,
+        dampening: 0.985,
         sphereFollowSpeed: options.sphereFollowSpeed ?? DEFAULT_SPHERE_FOLLOW_SPEED,
     }
 
@@ -736,6 +741,9 @@ export function createCloth(options: ClothOptions): ClothHandle {
         anisotropicBlur: 0.1,
         ...options.material,
     })
+
+    clothMaterial.sheenNode = color(new Color('#5954de'))
+    clothMaterial.colorNode = color(new Color('#00d0ff'))
 
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which
@@ -912,6 +920,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
 
             if (reported) {
                 playerWorld.copy(reported).add(playerOffset)
+
+                //
+                // playerOffset.y = 0
+
                 target.copy(playerWorld)
                 object3D.worldToLocal(target)
 

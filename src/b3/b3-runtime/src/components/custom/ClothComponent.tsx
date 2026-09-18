@@ -66,7 +66,7 @@ const SHOULDER_ABOVE_FEET = 1.35
  * is only as wide as the spacing of two arm bones reads as a bib, and the line
  * it hangs from is this wide too, so the sheet is not gathered in at the top.
  */
-const CAPE_WIDTH = 0.5
+const CAPE_WIDTH = 1.375
 
 /**
  * Where the collider sits relative to the point the cape hangs from, in world
@@ -78,7 +78,7 @@ const CAPE_WIDTH = 0.5
  * A module constant rather than a literal in the props, because the cloth
  * rebuilds — losing the simulation — whenever this identity changes.
  */
-const CAPE_PLAYER_OFFSET: [number, number, number] = [0, 0, 0]
+const CAPE_PLAYER_OFFSET: [number, number, number] = [0, -0.15, 0.0]
 
 /** How far behind the cape's line the sheet hangs, in world units. The sheet is
  *  placed in the plane the line and gravity describe, which is the plane through
@@ -186,9 +186,14 @@ let startCape = new Group()
 startCape.userData.wp = new Vector3()
 let endCape = new Group()
 endCape.userData.wp = new Vector3()
-startCape.position.x = -CAPE_WIDTH / 2
-endCape.position.x = CAPE_WIDTH / 2
+startCape.position.y = 0
+endCape.position.y = CAPE_WIDTH * 0.75
 
+startCape.position.z = -0.1
+endCape.position.z = -0.1 - 0.75
+
+startCape.position.x = 0.0
+endCape.position.x = 0.0
 cape.add(startCape)
 cape.add(endCape)
 
@@ -212,39 +217,13 @@ function readCapeLine(width: number): PinLine | null {
         playerGroup.add(cape)
     }
 
-    cape.position.z = -0.15
-    cape.position.y = 0.95
+    cape.position.z = 0.0
+    cape.position.y = 1
     startCape.getWorldPosition(startCape.userData.wp)
     endCape.getWorldPosition(endCape.userData.wp)
 
     LINE_START.lerp(startCape.userData.wp, 1.0)
     LINE_END.lerp(endCape.userData.wp, 1.0)
-
-    // // The line runs *across* the facing, so the sheet's surface ends up facing
-    // // along it — which is what makes the drape hang on the character's back
-    // // rather than across their shoulders.
-    // readFacing(playerGroup)
-    // RIGHT.set(0, 1, 0).cross(FORWARD)
-
-    // // Recomputed rather than reused, so this shares no state with the collider's
-    // // reading of it: the cloth copies the point it is handed immediately, and
-    // // both callers ask for it in the same frame.
-    // readBodyCentre(playerGroup)
-
-    // // Half either side of the midline. Symmetric by construction — the two ends
-    // // are the same centre offset by ±half, so nothing about the body can push
-    // // the cape off to one side.
-    // const half = width / 2
-
-    // LINE_START.copy(CENTRE).addScaledVector(RIGHT, -half)
-    // LINE_END.copy(CENTRE).addScaledVector(RIGHT, half)
-
-    // // Both ends back, so the sheet hangs behind the character rather than
-    // // through them.
-    // LINE_START.addScaledVector(FORWARD, -CAPE_BACK_OFFSET)
-    // LINE_END.addScaledVector(FORWARD, -CAPE_BACK_OFFSET)
-
-    // // LINE_START.applyAxisAngle(new Vector3(0, 1, 0), Math.PI)
 
     return { start: LINE_START, end: LINE_END }
 }
