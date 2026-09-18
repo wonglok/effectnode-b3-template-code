@@ -1,15 +1,15 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
-import { Group, Vector3, type Bone, type Object3D } from 'three'
+import { Vector3, type Bone, type Object3D } from 'three'
 import { useGameGlobal } from '../../../../../components/useGameGlobal'
 import { findBone } from '../AvatarSDK'
-import { createCloth, type ClothOptions, type PinLine } from './shader/cloth'
+import { createCloth, type ClothOptions, type PinCircle } from './shader/cloth'
 
 // ---------------------------------------------------------------------------
 // The cape
 // ---------------------------------------------------------------------------
-// The GPU verlet cloth from `shader/cloth.ts`, worn: its top edge is pinned
-// across the character's back at shoulder height and carried around the scene,
+// The GPU verlet cloth from `shader/cloth.ts`, worn: its top edge is pinned in a
+// **ring around the character** at shoulder height and carried around the scene,
 // so it trails when they run instead of hanging in one place.
 //
 // The simulation runs in **world space**, not in the avatar's. That is the whole
@@ -20,15 +20,15 @@ import { createCloth, type ClothOptions, type PinLine } from './shader/cloth'
 // so it lags behind, swings on turns and settles when they stop — with no
 // pseudo-force to fake it.
 //
-// ## Where the cape hangs, and why it is centred on the hips
+// ## Where the cape hangs, and why the ring is centred on the hips
 //
-// The line is **symmetric about the body's own root bone** — `Hips`, the bone
-// every rig here roots at, which the rest of this project already depends on
-// (`avatarLoader`, `headCompose`). Half the cape left, half right, about a point
-// the skeleton itself defines.
+// The ring is **centred on the body's own root bone** — `Hips`, the bone every
+// rig here roots at, which the rest of this project already depends on
+// (`avatarLoader`, `headCompose`) — so it is centred on the character by
+// construction rather than by the rig happening to agree.
 //
 // That is a deliberate choice over hanging it from the two shoulder bones, which
-// is what a real cape does. A line between `LeftArm` and `RightArm` puts the
+// is what a real cape does. A ring between `LeftArm` and `RightArm` puts the
 // cape's centre wherever those two bones' midpoint happens to be — and there is
 // no reason that is the body's centre: an arm bone carries the pose, the model
 // may sit off its group's origin (each body has a placement offset in the
@@ -40,6 +40,26 @@ import { createCloth, type ClothOptions, type PinLine } from './shader/cloth'
 // The height comes from `Spine2` — the chest — when the body has it, since that
 // is body-scaled rather than a number guessed for a 1.7 m character, with a
 // constant offset above the hips as the fallback.
+//
+// ## Why the edge is an arc, and how much of the ring it takes
+//
+// The pinned edge follows the ring rather than cutting straight across it, so
+// the sheet wraps the body instead of hanging behind it as a flat plane. The one
+// number that decides how far off the body it stands is `anchorRadius`: at
+// 0.75 m every point of the top edge is that far from the body's midline, and
+// the sheet drapes down from the ring into a cloak with depth of its own.
+//
+// The arc does not have to close the ring, and its sweep is set directly in
+// `readPinCircle` rather than derived here. Two landmarks are worth knowing:
+// `width / radius` is the arc exactly as long as the sheet is wide — the one
+// that neither gathers the top edge in nor stretches it — and 2π is a full turn,
+// past which the edge overlaps its own start. Under a sweep shorter than the
+// matching one the top edge is compressed and *stays* compressed, because the
+// springs' rest lengths are measured where the grid was placed.
+//
+// Whatever the sweep, the arc is centred on the character's **back**, so the
+// drape covers them from behind and from either side, and nothing hangs in front
+// of them.
 //
 // The bones are looked up once and cached: `findBone` is a traverse and this
 // runs per frame. The cache is invalidated by the avatar being replaced — the
@@ -62,29 +82,41 @@ const SHOULDER_ABOVE_CHEST = 0.15
 const SHOULDER_ABOVE_FEET = 1.35
 
 /**
- * Cape width, in world units. Wider than the shoulders on purpose — a cape that
- * is only as wide as the spacing of two arm bones reads as a bib, and the line
- * it hangs from is this wide too, so the sheet is not gathered in at the top.
+ * Cape width, in world units — the sheet's size across its top edge. Wider than
+ * the shoulders on purpose: a cape only as wide as the spacing of two arm bones
+ * reads as a bib.
+ *
+ * It is also half of the arc that matches it exactly. A sweep of `width /
+ * radius` is an arc precisely this long — the one that neither gathers the top
+ * edge in nor stretches it — which is why that ratio is worth reaching for when
+ * tuning the sweep in `readPinCircle`.
  */
 const CAPE_WIDTH = 1.375
 
 /**
- * Where the collider sits relative to the point the cape hangs from, in world
- * units. Zero — on the attach point itself, which is the body's midline at
- * shoulder height, and already the chest. It used to be `[0, 1, 0]`, measured up
- * from the feet: that frame went away when the cape started hanging from the
+ * The radius of the ring the cape hangs from, in world units — how far the
+ * pinned edge stands off the body's midline at every point.
+ *
+ * This is the whole of the cape's stand-off from the body: the sheet is placed
+ * on a circle this size around the character and hangs from there, so it starts
+ * clear of the torso and nothing has to push it out. It is also why the torso
+ * collider below never touches the cloth — at this radius the drape is a good
+ * half-metre outside it — and lowering this towards the body's own width is what
+ * would bring the two back into contact.
+ */
+const CAPE_ANCHOR_RADIUS = 0.75
+
+/**
+ * Where the collider sits relative to the point the cape's ring is centred on,
+ * in world units. Zero — on the attach point itself, which is the body's midline
+ * at shoulder height, and already the chest. It used to be `[0, 1, 0]`, measured
+ * up from the feet: that frame went away when the cape started hanging from the
  * skeleton, and an offset of one metre above a chest is a point above the head.
  *
  * A module constant rather than a literal in the props, because the cloth
  * rebuilds — losing the simulation — whenever this identity changes.
  */
-const CAPE_PLAYER_OFFSET: [number, number, number] = [0, -0.15, 0.0]
-
-/** How far behind the cape's line the sheet hangs, in world units. The sheet is
- *  placed in the plane the line and gravity describe, which is the plane through
- *  the body — so without this the cape starts inside the torso and the body
- *  collider has to push it out, noisily, every frame. */
-const CAPE_BACK_OFFSET = 0.15
+const CAPE_PLAYER_OFFSET: [number, number, number] = [0, -0.125, 0.0]
 
 /** Cape length in world units, hanging from the shoulders: hip length on a
  *  1.7 m body. */
@@ -93,19 +125,19 @@ const CAPE_LENGTH = 0.9
 /** Cells per side. Denser than the demo cloth's 30 per metre in neither
  *  direction — the cape is a smaller sheet, so 24 cells is ~3 cm — and the
  *  pinned edge is a whole row here, so its resolution is the cape's silhouette. */
-const CAPE_SEGMENTS = 50
+const CAPE_SEGMENTS = 36
 
-// --- the line, resolved and reused -------------------------------------------
-// Module-level scratch, as the cloth's contract allows: `getPinLine`'s result is
-// read and copied synchronously, and this runs every frame.
-const LINE_START = new Vector3()
-const LINE_END = new Vector3()
+// --- the ring, resolved and reused -------------------------------------------
+// Module-level scratch, as the cloth's contract allows: `getPinCircle`'s result
+// is read and copied synchronously, and this runs every frame.
+const ANCHOR_CENTRE = new Vector3()
+const ANCHOR_MIDDLE = new Vector3()
+const ANCHOR_TANGENT = new Vector3()
 const FORWARD = new Vector3()
-const RIGHT = new Vector3()
 const CENTRE = new Vector3()
 // Its own vector rather than `FORWARD`, because the cloth reads the wind in the
-// same frame as the line: the facing is recomputed by whichever reads it, so
-// negating in place would flip the line's own axis out from under it.
+// same frame as the ring: the facing is recomputed by whichever reads it, so
+// negating in place would flip the ring's own axis out from under it.
 const CAPE_WIND = new Vector3()
 
 let avatarRoot: Object3D | null = null
@@ -131,9 +163,9 @@ function readFacing(playerGroup: Object3D): Vector3 {
  * The point the cape is attached to, written into `CENTRE`: the body's own
  * midline, at shoulder height.
  *
- * Both the line and the body collider are built from it, so the two cannot
+ * Both the ring and the body collider are built from it, so the two cannot
  * disagree about where the character is — which they could while the collider
- * tracked `playerGroup.position` (the feet on the navmesh) and the line tracked
+ * tracked `playerGroup.position` (the feet on the navmesh) and the ring tracked
  * the skeleton. A body whose model sits off its group's origin, or a rig whose
  * shoulders are not where a constant guessed them to be, would have had the
  * cloth draping around a point that was not the one it hung from.
@@ -181,51 +213,60 @@ function resolveBody(playerGroup: Object3D) {
     return { hips: hipsBone, chest: chestBone }
 }
 
-let cape = new Group()
-let startCape = new Group()
-startCape.userData.wp = new Vector3()
-let endCape = new Group()
-endCape.userData.wp = new Vector3()
-startCape.position.y = 0
-endCape.position.y = CAPE_WIDTH * 0.75
-
-startCape.position.z = -0.1
-endCape.position.z = -0.1 - 0.75
-
-startCape.position.x = 0.0
-endCape.position.x = 0.0
-cape.add(startCape)
-cape.add(endCape)
-
-cape.position.y = 1
-
 /**
- * The line the cape hangs from, in world units — read by the cloth once a frame.
+ * The ring the cape hangs from, in world units — read by the cloth once a frame.
  *
- * Built symmetrically about the body's midline, so the cape is centred on the
- * character by construction rather than by the rig happening to agree. `width`
- * is the cape's width and therefore the line's length; it is a parameter rather
- * than read off the authored grid so the two are one number in one place, and
- * the top edge is never gathered in by a line shorter than the sheet.
+ * Built out of the body itself rather than out of anything in the scene graph:
+ * the centre is the hips' midline point, the plane is horizontal, and the arc's
+ * middle points straight out of the character's **back**, so the drape ends up
+ * behind them and turns with them — the same frame `readCapeWind` blows along.
+ * Nothing is parented and nothing is added to `playerGroup`; the ring is
+ * arithmetic on bones that are already positioned.
+ *
+ * `span` is how much of the ring the pinned edge covers, in radians — set
+ * directly rather than derived from the sheet's width, so the edge can be
+ * gathered in (a sweep under `width / radius`) or wrapped past a full turn
+ * (over 2π, where the edge overlaps its own start) instead of always matching
+ * the grid.
  *
  * Returns null until the avatar exists, which is what keeps the cape from being
  * built against a character that has not spawned.
  */
-function readCapeLine(width: number): PinLine | null {
+function readPinCircle(radius: number): PinCircle | null {
     const playerGroup = useGameGlobal.getState().playerGroup as Object3D | null
     if (!playerGroup) return null
 
-    if (!playerGroup.children.includes(cape)) {
-        playerGroup.add(cape)
+    ANCHOR_CENTRE.copy(readBodyCentre(playerGroup))
+    ANCHOR_CENTRE.y += 0.15
+
+    // Both directions come straight off `rotation.y` — one angle gives the pair,
+    // rather than a facing read out of `readFacing` and a cross product taken
+    // from it. The two are then a rigid quarter turn of the same angle: exactly
+    // perpendicular and unit by construction, with nothing to normalise and
+    // nothing read from the shared `FORWARD` scratch the wind writes later in
+    // the same frame.
+    const yaw = playerGroup.rotation.y
+
+    // Behind the character. The arc is centred on this direction, so the cape
+    // hangs behind them and turns with them.
+    ANCHOR_MIDDLE.set(-Math.sin(yaw), 0, -Math.cos(yaw))
+
+    // That angle opened a quarter turn: horizontal, perpendicular to `middle`,
+    // and the direction `pinT` runs in — so the edge sweeps from one side of
+    // the back to the other.
+    ANCHOR_TANGENT.set(-Math.cos(yaw), 0, Math.sin(yaw))
+
+    // A radius of zero divides into the span and leaves no ring to hang from, so
+    // the degenerate case is floored rather than guarded.
+    const safeRadius = Math.max(radius, 1e-3)
+
+    return {
+        centre: ANCHOR_CENTRE,
+        middle: ANCHOR_MIDDLE,
+        tangent: ANCHOR_TANGENT,
+        radius: safeRadius,
+        span: Math.PI * 2 * 1.0 * Math.abs(Math.sin((performance.now() / 1000.0) * 0.5)),
     }
-
-    startCape.getWorldPosition(startCape.userData.wp)
-    endCape.getWorldPosition(endCape.userData.wp)
-
-    LINE_START.lerp(startCape.userData.wp, 1.0)
-    LINE_END.lerp(endCape.userData.wp, 1.0)
-
-    return { start: LINE_START, end: LINE_END }
 }
 
 /**
@@ -241,8 +282,9 @@ function readCapeLine(width: number): PinLine | null {
  * turn to face `-Z` and it is blown against their front — a half-turn out from
  * the body.
  *
- * Along the same axis the line is offset along (see `CAPE_BACK_OFFSET`), which
- * is what makes it a tailwind at every facing.
+ * Straight out along the direction the arc is centred on (see `readPinCircle`),
+ * which is what makes it a tailwind at every facing — and the reason the two are
+ * built from the same facing rather than each deriving its own.
  */
 function readCapeWind(): Vector3 | null {
     const playerGroup = useGameGlobal.getState().playerGroup as Object3D | null
@@ -253,17 +295,22 @@ function readCapeWind(): Vector3 | null {
 
 export interface ClothComponentProps extends Omit<
     ClothOptions,
-    'renderer' | 'position' | 'getPinLine' | 'getWindDirection'
+    'renderer' | 'position' | 'getPinCircle' | 'getWindDirection'
 > {
     /** Cape width in world units. Defaults to `CAPE_WIDTH` — this is also the
-     *  length of the line it hangs from, so the sheet is never gathered in at
-     *  the top by a line shorter than the grid. */
+     *  length of the arc it hangs from, so the sheet is never gathered in at
+     *  the top by an arc shorter than the grid. Widening it wraps more of the
+     *  ring. */
     width?: number
+    /** Radius of the ring the cape hangs from, in world units — how far its top
+     *  edge stands off the character. Defaults to `CAPE_ANCHOR_RADIUS`. */
+    anchorRadius?: number
 }
 
 export function ClothComponent({
     width = CAPE_WIDTH,
     height = CAPE_LENGTH,
+    anchorRadius = CAPE_ANCHOR_RADIUS,
     segmentsX = CAPE_SEGMENTS,
     segmentsY = CAPE_SEGMENTS,
     sphereRadius,
@@ -283,10 +330,10 @@ export function ClothComponent({
 
     const cloth = useMemo(() => {
         // No player, no cape: the cloth's pins are the character's body, and
-        // there is nothing to hang it from yet. Reading the line is the
+        // there is nothing to hang it from yet. Reading the ring is the
         // readiness test — the cloth reads it again in its own frame, so this
         // one is only about whether a character exists at all.
-        if (!playerGroup || !readCapeLine(width)) return null
+        if (!playerGroup || !readPinCircle(anchorRadius)) return null
 
         return createCloth({
             // `gl` from R3F's store is the WebGPURenderer this scene draws with,
@@ -294,16 +341,17 @@ export function ClothComponent({
             // declares `RootState['gl']` as the WebGL renderer regardless of what
             // the factory returned, so the cast goes through `unknown`.
             renderer: renderer as unknown as ClothOptions['renderer'],
-            getPinLine: () => readCapeLine(width),
+            getPinCircle: () => readPinCircle(anchorRadius),
             // The wind follows the wearer rather than the world — see
             // `readCapeWind`, which is the whole of "the cape turns with them".
             getWindDirection: readCapeWind,
             // Every vertex of the top edge, not the example's every fifth: a row
             // pinned sparsely sags between its pins and shows what it hangs from.
             pinEvery: 1,
-            // The grid and the line are the same number by construction —
-            // `readCapeLine` builds the line `width` long, so the pins are spread
-            // across the sheet's full width and its top edge is not pleated.
+            // The sheet's own size. How much of the ring the pins cover is
+            // `readPinCircle`'s sweep, not this — a sweep of `width / radius` is
+            // the one that matches the grid exactly, and anything under it
+            // gathers the top edge in.
             width,
             height,
             segmentsX,
@@ -313,10 +361,11 @@ export function ClothComponent({
             stepsPerSecond,
             sphereFollowSpeed,
             wind,
-            // The body, for the cape to slide over — the *same* point the cape
-            // hangs from, so the collider and the pins cannot disagree about
-            // where the character is. The sphere is hidden (`cloth.ts` hides the
-            // mesh and keeps the force) because it stands in for the torso.
+            // The body, for the cape to slide over — the *same* point the cape's
+            // ring is centred on, so the collider and the ring cannot disagree
+            // about where the character is. The sphere is hidden (`cloth.ts`
+            // hides the mesh and keeps the force) because it stands in for the
+            // torso.
             getPlayerPosition: () => {
                 const group = useGameGlobal.getState().playerGroup as Object3D | null
                 return group ? readBodyCentre(group) : null
@@ -329,6 +378,7 @@ export function ClothComponent({
         playerGroup,
         width,
         height,
+        anchorRadius,
         segmentsX,
         segmentsY,
         sphereRadius,
