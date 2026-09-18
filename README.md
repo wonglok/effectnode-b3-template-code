@@ -1,5 +1,11 @@
 # Blender Three.JS WebSocket Sync Protocol (B3)
 
+
+
+https://github.com/user-attachments/assets/4cd626ed-7793-496c-ba41-52e697fe2207
+
+
+
 A Vite + React + Three.js (WebGPU) template built around three systems:
 
 - **Blender → Three.js sync** — the **B3 Blender add-on** streams your scene over WebSocket and it renders in the browser live, then snapshots, optimises and deploys as a self-contained zip.
