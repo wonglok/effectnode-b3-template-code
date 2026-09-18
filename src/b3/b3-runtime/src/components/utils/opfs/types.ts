@@ -30,8 +30,10 @@
 //       data.avif                — Tonemapped AVIF preview
 //       config.json
 //     textures/
-//       <name>.avif              — AVIF-compressed texture
-//       manifest.json
+//       <name>.ktx2              — GPU-compressed texture (KTX2/Basis ETC1S)
+//       <name>.avif              — Plain fallback payload for devices without
+//                                  GPU-compressed texture support (WebP fallback)
+//       manifest.json            — { name, mime, fallbackMime? }
 //     geometry/
 //       <name>/
 //         draco.bin              — Draco-compressed geometry blob
@@ -51,7 +53,21 @@ export interface HdrConfig {
 /** Metadata for a single texture entry in the manifest. */
 export interface TextureEntry {
   name: string;
+  /** MIME type of the primary payload — `image/ktx2` when GPU-compressed. */
   mime: string;
+  /**
+   * MIME type of the plain (AVIF/WebP) payload written alongside a KTX2 one.
+   *
+   * The zip is baked on the optimising device but opened on an unknown one, and
+   * three's WebGPU path *crashes* rather than degrading when the viewing device
+   * exposes no `texture-compression-*` feature: the transcoder falls back to
+   * RGBA32, and that reaches `_getBlockData` (which has no RGBA8 case) and
+   * throws on `blockData.width`. The plain payload is the escape hatch.
+   *
+   * Absent when `mime` is already the plain payload — i.e. when KTX2 was
+   * unavailable at optimise time, or failed for this texture.
+   */
+  fallbackMime?: string;
 }
 
 /** Metadata for a single geometry entry in the manifest. */

@@ -1,21 +1,30 @@
 // ---------------------------------------------------------------------------
-// OPFS Optimizer — compress raw buffers/textures to AVIF + Draco
+// OPFS Optimizer — compress raw buffers/textures to KTX2 + AVIF/WebP + Draco
 // ---------------------------------------------------------------------------
 // Reads from ./current-rawdata-view/* and writes optimised assets to
 // ./current-optimised-view/*.
 //
 // Optimisation pipeline:
-//   1. Textures    → AVIF re-encode (WebP fallback, via OffscreenCanvas)
+//   1. Textures    → KTX2/Basis ETC1S (GPU-compressed, via ktx2-encoder WASM),
+//                    plus a plain AVIF/WebP payload alongside it
 //   2. HDR         → Raw copy (no compression — preserves float precision)
 //   3. Geometry    → Deduplicate + Draco-compress (via draco3d WASM)
 //   4. Scene JSON  → Copy-through with instance groups + updated references
+//
+// Textures are written *twice* on purpose. KTX2 is the one that matters for
+// memory — it stays compressed in VRAM instead of decoding to raw RGBA — but it
+// is only readable on a device whose renderer exposes a `texture-compression-*`
+// feature. The plain payload is what a device without one reads; without it,
+// three's WebGPU path throws rather than degrading. See `TextureEntry.fallbackMime`.
 // ---------------------------------------------------------------------------
 
 import draco3d from 'draco3d'
 import JSZip from 'jszip'
 
 import type { TextureEntry, GeometryEntry, GeometryConfig, OpfsCapabilities } from './types'
+import type { SceneData } from '../../types/blenderTypes'
 import { opfs } from './core'
+import { encodeKtx2, ensureKtx2Encoder, supportsCompressedFormats } from './ktx2'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -143,6 +152,67 @@ function computeScaledSize(w: number, h: number, maxW: number, maxH: number): { 
     if (w <= maxW && h <= maxH) return { width: w, height: h }
     const scale = Math.min(maxW / w, maxH / h)
     return { width: Math.round(w * scale), height: Math.round(h * scale) }
+}
+
+/**
+ * Quality for the *fallback* payload only.
+ *
+ * KTX2 is the primary path, so this copy is traded against download size rather
+ * than fidelity — it exists solely for a device that exposes no GPU-compressed
+ * texture feature. Raise it if that fallback render ever needs to match KTX2.
+ */
+const FALLBACK_TEXTURE_QUALITY = 0.7
+
+/**
+ * Yield to the event loop.
+ *
+ * The ETC1S encode is a *synchronous* WASM call (~2s on a 1024² texture), so
+ * without this the progress callback fires but the UI never gets a turn to paint
+ * it — the whole run looks hung rather than slow.
+ */
+function yieldToUI(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Which material slots a texture is referenced from, as encoder hints. */
+interface TextureSlotInfo {
+    isNormalMap: boolean
+    isColor: boolean
+}
+
+/**
+ * Map texture name → the encode hints its *usages* imply.
+ *
+ * Derived from the scene, not the texture manifest: the manifest is only
+ * `{name, mime}` and carries no slot information. A texture absent from the
+ * returned map is referenced by no object, so callers fall back to a colour-ish
+ * default for it.
+ */
+function buildTextureSlotMap(scene: SceneData | null): Map<string, TextureSlotInfo> {
+    const normal = new Set<string>()
+    const color = new Set<string>()
+    const linear = new Set<string>()
+
+    for (const obj of scene?.objects ?? []) {
+        if (obj.normalMap) normal.add(obj.normalMap)
+        if (obj.texture) color.add(obj.texture)
+        // sRGB — matching ProductionViewer's `kind: 'color'` for emissiveMap.
+        if (obj.emissiveMap) color.add(obj.emissiveMap)
+        if (obj.roughnessMap) linear.add(obj.roughnessMap)
+        if (obj.metalnessMap) linear.add(obj.metalnessMap)
+    }
+
+    const out = new Map<string, TextureSlotInfo>()
+    for (const name of new Set([...normal, ...color, ...linear])) {
+        // normalMap wins a dual-use texture: ETC1S smears exactly the smooth
+        // gradients a tangent-space normal map is made of, and the reader's
+        // per-kind colourSpace already covers the colour-correctness half.
+        out.set(name, {
+            isNormalMap: normal.has(name),
+            isColor: !normal.has(name) && color.has(name),
+        })
+    }
+    return out
 }
 
 // ---------------------------------------------------------------------------
@@ -279,9 +349,9 @@ export class OpfsOptimiser {
 
     /**
      * Run the full optimisation pipeline:
-     *   1. Textures → AVIF
-     *   2. HDR → KTX2 (UASTC, full HDR)
-     *   3. Geometry → Draco
+     *   1. Textures → KTX2 (GPU-compressed) plus a plain AVIF/WebP payload
+     *   2. HDR → raw copy (no compression — full float precision preserved)
+     *   3. Geometry → Draco (deduplicated first)
      *   4. Cameras, lights, scene JSON copy-through
      */
     async optimise(onProgress?: OptimiserCallback): Promise<void> {
@@ -290,6 +360,29 @@ export class OpfsOptimiser {
         // -- Clear previous optimised output --
         await opfs.clearOptimisedView()
         const outRoot = await ensureDir(root, 'current-optimised-view')
+
+        // ---- Scene (read up front) ----
+        // Read *before* textures so each one can be encoded with the hints its
+        // usages imply (normal-map preset, perceptual colour). Reused by the scene
+        // copy-through at the end, so it is read exactly once.
+        const rawScene = await opfs.readScene()
+        const texSlotMap = buildTextureSlotMap(rawScene)
+
+        // ---- KTX2 capability ----
+        // Probed once for the whole run, not per texture: `ensureKtx2Encoder` does
+        // a real 4×4 encode, and a failed bootstrap clears its own cached promise —
+        // so a broken wasm path would otherwise re-fetch 3.3 MB for every texture.
+        let ktx2Enabled = false
+        if (await supportsCompressedFormats()) {
+            try {
+                await ensureKtx2Encoder()
+                ktx2Enabled = true
+            } catch (err) {
+                console.warn('[OPFS Optimiser] KTX2 encoder unavailable — writing AVIF/WebP only:', err)
+            }
+        } else {
+            console.info('[OPFS Optimiser] No GPU-compressed texture support here — writing AVIF/WebP only.')
+        }
 
         // ---- Textures ----
         const texManifest = await (async () => {
@@ -307,6 +400,11 @@ export class OpfsOptimiser {
 
             const texOutDir = await ensureDir(outRoot, 'textures')
             const texOutManifest: TextureEntry[] = []
+            // Accumulated so the two-payload trade is reported rather than silent:
+            // the fallback copy is only for devices without compressed-texture
+            // support, so it is pure download overhead for everyone else.
+            let ktx2BytesWritten = 0
+            let fallbackBytesWritten = 0
 
             for (let i = 0; i < texEntries.length; i++) {
                 const entry = texEntries[i]
@@ -315,20 +413,68 @@ export class OpfsOptimiser {
                     current: i,
                     total: texEntries.length,
                 })
+                // Let the progress line above paint before the synchronous encode below.
+                await yieldToUI()
 
                 try {
                     const texData = await opfs.readTexture(entry.name)
                     if (!texData) continue
 
+                    // A Blob, deliberately — never a shared ImageBitmap.
+                    // `encodeTexture` closes any bitmap it is handed, while
+                    // `encodeKtx2` only closes ones it created, so a single bitmap
+                    // passed to both would be detached under the second consumer
+                    // and the fallback would silently vanish.
                     const blob = new Blob([texData.bytes], { type: texData.mime })
-                    const { blob: outBlob, mime } = await encodeTexture(blob, texData.mime, {
-                        quality: 1.0,
+
+                    // The plain payload is written first and unconditionally: it is
+                    // what a device without GPU-compressed texture support reads, so
+                    // it must exist even when the KTX2 encode below fails.
+                    const { blob: fallbackBlob, mime: fallbackMime } = await encodeTexture(blob, texData.mime, {
+                        quality: FALLBACK_TEXTURE_QUALITY,
                         maxHeight: 1024,
                         maxWidth: 1024,
                     })
-                    const ext = mime.split('/')[1] ?? 'avif'
-                    await writeBinary(texOutDir, `${entry.name}.${ext}`, await outBlob.arrayBuffer())
-                    texOutManifest.push({ name: entry.name, mime })
+                    const fallbackExt = fallbackMime.split('/')[1] ?? 'webp'
+                    await writeBinary(texOutDir, `${entry.name}.${fallbackExt}`, await fallbackBlob.arrayBuffer())
+                    fallbackBytesWritten += fallbackBlob.size
+
+                    // `mime` names the primary payload: KTX2 when it succeeded, and
+                    // the plain payload otherwise.
+                    let mime = fallbackMime
+                    let entryFallbackMime: string | undefined
+
+                    if (ktx2Enabled) {
+                        const slot = texSlotMap.get(entry.name)
+                        try {
+                            const ktx = await encodeKtx2(blob, {
+                                maxWidth: 1024,
+                                maxHeight: 1024,
+                                isNormalMap: slot?.isNormalMap ?? false,
+                                isColor: slot?.isColor ?? true,
+                            })
+                            const ktxExt = ktx.mime.split('/')[1] ?? 'ktx2'
+                            await writeBinary(texOutDir, `${entry.name}.${ktxExt}`, sliceBuffer(ktx.bytes))
+                            ktx2BytesWritten += ktx.bytes.byteLength
+                            mime = ktx.mime
+                            entryFallbackMime = fallbackMime
+                        } catch (err) {
+                            // Per-texture fallback — a mixed manifest is valid by
+                            // construction, because the reader resolves the format
+                            // per entry.
+                            console.warn(
+                                `[OPFS Optimiser] KTX2 encode failed for "${entry.name}", ` +
+                                    `shipping ${fallbackMime} instead:`,
+                                err,
+                            )
+                        }
+                    }
+
+                    texOutManifest.push({
+                        name: entry.name,
+                        mime,
+                        fallbackMime: entryFallbackMime,
+                    })
                 } catch (err) {
                     console.warn(`[OPFS Optimiser] Texture "${entry.name}" skipped:`, err)
                 }
@@ -340,6 +486,17 @@ export class OpfsOptimiser {
                 current: texEntries.length,
                 total: texEntries.length,
             })
+
+            if (ktx2BytesWritten > 0) {
+                const mb = (n: number) => (n / 1024 / 1024).toFixed(1)
+                console.info(
+                    `[OPFS Optimiser] Textures: ${mb(ktx2BytesWritten)} MB KTX2 (GPU-compressed) ` +
+                        `+ ${mb(fallbackBytesWritten)} MB plain fallback = ` +
+                        `${mb(ktx2BytesWritten + fallbackBytesWritten)} MB shipped. ` +
+                        `The fallback is read only by devices with no GPU-compressed ` +
+                        `texture support.`,
+                )
+            }
         }
 
         // ---- HDR ----
@@ -465,7 +622,7 @@ export class OpfsOptimiser {
         }
 
         // ----- Phase 3: update scene.json with alias + instance group info -----
-        const rawScene = await opfs.readScene()
+        // `rawScene` was read up front (texture slot map); reused here.
         if (rawScene) {
             // Rewrite object geometry references to canonical names
             const aliasedObjects = rawScene.objects.map((obj) => ({
@@ -559,7 +716,7 @@ export class OpfsOptimiser {
 // ---------------------------------------------------------------------------
 
 /** Safe slice of a TypedArray's underlying buffer. */
-function sliceBuffer(arr: Float32Array | Float64Array | Uint32Array): ArrayBuffer {
+function sliceBuffer(arr: Float32Array | Float64Array | Uint32Array | Uint8Array): ArrayBuffer {
     return arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength) as ArrayBuffer
 }
 

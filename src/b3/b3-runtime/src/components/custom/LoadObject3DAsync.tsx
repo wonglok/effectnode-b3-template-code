@@ -6,7 +6,7 @@ import { SceneWaterObject } from './SceneWaterObject'
 export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
     return (
         <>
-            {/* <LoadCollider texData={texData} objects={objects}></LoadCollider> */}
+            <LoadCollider texData={texData} objects={objects}></LoadCollider>
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
 

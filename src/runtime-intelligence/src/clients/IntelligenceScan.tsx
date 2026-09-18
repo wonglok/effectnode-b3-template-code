@@ -102,8 +102,7 @@ export function IntelligenceScan() {
 
             performance: (params) => collectScenePerformance(rootFor(params.object)),
 
-            memory: (params) =>
-                collectMemory(rootFor(params.object), useRuntimePerf.getState().snapshot().load.memory),
+            memory: (params) => collectMemory(rootFor(params.object), useRuntimePerf.getState().snapshot().load.memory),
 
             drawcalls: (params) =>
                 collectDrawCalls(rootFor(params.object), useRuntimePerf.getState().snapshot().load.drawCalls),

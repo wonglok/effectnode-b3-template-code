@@ -626,6 +626,10 @@ function mimeToExt(mime: string): string {
     "image/jpeg": "jpg",
     "image/webp": "webp",
     "image/avif": "avif",
+    // Only reached if an *optimised* tree is ever read through this API — the
+    // raw manifest this normally serves never carries KTX2. Without it the
+    // extension falls through to "bin" and the file is never found.
+    "image/ktx2": "ktx2",
     "image/bmp": "bmp",
     "image/tiff": "tiff",
   };

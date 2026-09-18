@@ -110,11 +110,23 @@ export interface Ktx2EncodeOptions {
     /**
      * Whether the payload is colour. Defaults to true.
      *
-     * Set false for every linear slot — normal, roughness, metalness, emissive.
-     * This is not cosmetic: it writes (or omits) the sRGB transfer function in
-     * the container's DFD, and the transcode target is chosen from that flag,
-     * so an sRGB-tagged roughness map uploads into an `*-SRGB` GPU format and
-     * gets decoded as if it were a colour.
+     * Set false for the linear slots — normal, roughness, metalness. Emissive is
+     * **not** one of them: it is a colour slot (see `ProductionViewer`, which
+     * resolves `emissiveMap` with `kind: 'color'`).
+     *
+     * This writes (or omits) the sRGB transfer function in the container's DFD.
+     * It does not change the encoded pixels — the bitstream is identical either
+     * way — but three reads the tag back as the texture's *default* `colorSpace`,
+     * and `colorSpace` is what selects the GPU format at upload (the SRGB and
+     * UNORM vk-formats map to the same three `Format`, so the choice is resolved
+     * here rather than at transcode time). A wrongly-tagged roughness map is
+     * therefore uploaded as an `*-SRGB` GPU format and decoded as if it were
+     * colour, unless its consumer overrides `colorSpace` — which the production
+     * viewer does, per material slot. Treat `isColor` as the default that catches
+     * anything which forgets to.
+     *
+     * Also drives `isPerceptual`, which does affect encoding, so it is worth
+     * getting right regardless.
      */
     isColor?: boolean
 }

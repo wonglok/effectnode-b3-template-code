@@ -213,11 +213,11 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
 
     useEffect(() => {
         const rm = roughnessMap
-        if (!rm) return
-        if (!colliderVersion) return
-        if (!normalMap) {
-            return
-        }
+        // if (!rm) return
+        // if (!colliderVersion) return
+        // if (!normalMap) {
+        //     return
+        // }
 
         let cancelled = false
         let raf = 0
@@ -233,15 +233,16 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 collider.userData.oMaterial = collider.material
             }
 
+            const texScale = 35.0
+
             const pulseMotion = circlePulse(uPlayerPosition, float(5.0), float(1.0), uPulseProgress)
-            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(1)) as Node<'float'>
+            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale).mul(0.5)) as Node<'float'>
             // const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
             // yet wired in; uncomment once it's referenced (kept the build green).
             // const reflectionColor = texture(reflection, uv())
 
-            const texScale = 35.0
             //
             const normalVec4 = texture(normalMap, uv().mul(texScale))
             const roughnessVec4 = texture(rm, uv().mul(texScale))
@@ -250,7 +251,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             const mat = new MeshPhysicalNodeMaterial({ userData: { applied: true } })
             mat.roughnessNode = roughnessVec4.r.oneMinus()
             mat.metalnessNode = roughnessVec4.r
-            mat.normalNode = normalVec4.rgb
+            mat.normalNode = normalVec4.rgb.normalize().mul(1.0)
             mat.transparent = true
 
             mat.emissiveNode = Fn(() => {
@@ -264,7 +265,6 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                         .mul(honeyCombThinBase)
                         .pow(3)
                         .mul(5.0),
-
                     1.0,
                 )
             })()
@@ -274,7 +274,8 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                     //
                     add(
                         //
-                        colorValue.rgb,
+                        vec3(0.0),
+                        // colorValue.rgb,
                         0.0,
                     ),
                     colorValue.a,
@@ -314,7 +315,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         // commit, so attach immediately. Only poll while creation is pending.
         const existing = scene.getObjectByName('collider') as Mesh | null
         if (existing) {
-            // attach(existing)
+            attach(existing)
         } else {
             raf = requestAnimationFrame(tick)
         }
@@ -324,7 +325,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             cancelAnimationFrame(raf)
             cleanup.forEach((fn) => fn())
         }
-    }, [scene, normalMap, roughnessMap, colliderVersion, placeOfPlayer])
+    }, [scene, normalMap, roughnessMap, placeOfPlayer])
 
     return <></>
 }

@@ -154,6 +154,10 @@ export function Sidebar({
   const [snapshotStatus, setSnapshotStatus] = useState<
     "idle" | "saving" | "optimising" | "packaging" | "done" | "error"
   >("idle");
+  // Fine-grained optimiser progress, e.g. "textures 12/40". Worth surfacing
+  // because the KTX2/ETC1S encode is a synchronous WASM call per texture — the
+  // stage takes minutes on a textured scene, not seconds.
+  const [optimiseProgress, setOptimiseProgress] = useState<string | null>(null);
 
   const takeSnapshot = async () => {
     if (!isConnected) return;
@@ -174,7 +178,13 @@ export function Sidebar({
       });
 
       setSnapshotStatus("optimising");
-      await opfsOptimiser.optimise();
+      setOptimiseProgress(null);
+      await opfsOptimiser.optimise((p) => {
+        // Single-item stages say nothing useful, so they leave the plain
+        // "Optimising…" label alone.
+        setOptimiseProgress(p.total > 1 ? `${p.stage} ${p.current}/${p.total}` : null);
+      });
+      setOptimiseProgress(null);
 
       setSnapshotStatus("packaging");
       await opfsOptimiser.packageDeployment();
@@ -187,6 +197,7 @@ export function Sidebar({
       setTimeout(() => setSnapshotStatus("idle"), 2000);
     } catch (err) {
       console.error("[B3Sync] Snapshot failed:", err);
+      setOptimiseProgress(null);
       setSnapshotStatus("error");
       setTimeout(() => setSnapshotStatus("idle"), 3000);
     }
@@ -369,13 +380,15 @@ export function Sidebar({
                   : ""
               }
             `}
-            title="Save raw scene data to OPFS, then run AVIF+Draco optimiser"
+            title="Save raw scene data to OPFS, then run KTX2+Draco optimiser"
           >
             <SaveIcon />
             {snapshotStatus === "saving"
               ? "Saving…"
               : snapshotStatus === "optimising"
-                ? "Optimising…"
+                ? optimiseProgress
+                  ? `Optimising ${optimiseProgress}`
+                  : "Optimising…"
                 : snapshotStatus === "packaging"
                   ? "Packaging…"
                   : snapshotStatus === "done"

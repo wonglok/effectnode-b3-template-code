@@ -13,6 +13,8 @@ import { useEmptySync } from '../canvas-units/useEmptySync'
 import { useEnvironmentMap } from '../canvas-units/useEnvironmentMap'
 import { buildGeometryFromBuffer, computeMeshCacheKey, type TexKind } from '../../utils/meshBuilder'
 import { decodeImageBytes, fitWithinCap, rasterize } from '../../utils/textureSizing'
+import { supportsCompressedTextures, transcodeKtx2 } from '../../utils/ktx2Decode'
+import { isKtx2Mime } from '../../utils/opfs/ktx2'
 import { CanvasGPU } from '../CanvasGPU'
 import { LoadObject3DAsync } from '../../custom/LoadObject3DAsync'
 
@@ -20,13 +22,28 @@ import { LoadObject3DAsync } from '../../custom/LoadObject3DAsync'
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * A texture out of the deploy zip, plus the plain payload the optimiser writes
+ * alongside a KTX2 one.
+ *
+ * The fallback is not optional decoration: a device whose renderer exposes no
+ * `texture-compression-*` feature cannot sample KTX2 at all, and handing three a
+ * transcoded-to-RGBA32 container throws rather than degrading (see
+ * `supportsCompressedTextures`). It is also the only readable copy of a texture
+ * whose transcode failed, because `transcodeKtx2` detaches `bytes`.
+ */
+interface ProductionTextureData extends TextureData {
+    fallbackMime?: string
+    fallbackBytes?: ArrayBuffer
+}
+
 interface ProductionScene {
     objects: BlenderObject[]
     geometryMap: Map<string, GeoBuffer>
     /** Encoded texture bytes keyed by texture name. Decoded lazily per colour
      *  space — the same image can be a colour map on one object and a
      *  roughness map on another. */
-    textureData: Map<string, TextureData>
+    textureData: Map<string, ProductionTextureData>
     lights: LightData[]
     cameras: CameraData[]
     /** Radiance RGBE HDR buffer — decoded via HDRLoader inside Canvas. */
@@ -39,6 +56,40 @@ interface ProductionScene {
  *  otherwise collide with the live sync scene's. Derived state, so it's held
  *  beside the scene instead of on it. */
 const _textureCaches = new WeakMap<ProductionScene, Map<string, THREE.Texture>>()
+
+/**
+ * Transcoded KTX2 textures per loaded scene, keyed by texture **name**.
+ *
+ * The transcode cannot be lazy the way the AVIF path is: a compressed texture
+ * cannot be swapped onto a placeholder after it has been uploaded (the upload
+ * path copies into the GPU texture already created), and `useMeshSync` needs
+ * `resolveTexture` to stay synchronous. So this is filled before the mesh sync
+ * is allowed to build, and `resolveTexture` clones from it.
+ */
+const _compressedBases = new WeakMap<ProductionScene, Map<string, THREE.CompressedTexture>>()
+
+/**
+ * How long the mesh build waits for transcoding before proceeding with whatever
+ * landed.
+ *
+ * A hard bound is required, not defensive: the gate withholds every mesh from
+ * the scene, and other components give up on meshes that never arrive —
+ * `NavMeshRig` polls for the collider ~20 times at 1.5s and then never builds
+ * the navmesh. A partly-untextured scene is far better than one that never
+ * appears, and every entry that misses the deadline still has its plain payload.
+ */
+const TRANSCODE_TIMEOUT_MS = 4000
+
+/** Texture names in this scene that are stored as KTX2 and are actually used. */
+function collectKtx2Names(scene: ProductionScene): Set<string> {
+    const names = new Set<string>()
+    for (const obj of scene.objects) {
+        for (const name of [obj.texture, obj.emissiveMap, obj.roughnessMap, obj.metalnessMap, obj.normalMap]) {
+            if (name && isKtx2Mime(scene.textureData.get(name)?.mime)) names.add(name)
+        }
+    }
+    return names
+}
 
 /**
  * Decode a zip texture into a Three.js texture with the correct colour space
@@ -60,6 +111,36 @@ function resolveTexture(scene: ProductionScene, name: string | undefined, kind: 
     const entry = scene.textureData.get(name)
     if (!entry) return null
 
+    // GPU-compressed path. Cloned per `kind` deliberately: `colorSpace` is not a
+    // sampling hint — it selects the GPU format when the texture is *created*
+    // (sRGB vs linear), so one Texture cannot serve both a colour slot and a
+    // roughness slot. A clone shares the source and mipmaps, so this costs no
+    // second decode, only a second upload.
+    const base = _compressedBases.get(scene)?.get(name)
+    if (base) {
+        const compressed = base.clone()
+        compressed.wrapS = THREE.RepeatWrapping
+        compressed.wrapT = THREE.RepeatWrapping
+        compressed.colorSpace = kind === 'color' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
+        // `flipY` stays false: the Y flip is baked into the KTX2 payload itself
+        // (`KTX2_IS_Y_FLIP`), because the compressed upload path accepts no flip
+        // argument — unlike the plain path below, which still needs flipY = true.
+        //
+        // No `fitWithinCap`/`rasterize` either: these are already capped at encode
+        // time, and a compressed texture cannot be drawn through a canvas.
+        cache.set(cacheKey, compressed)
+        return compressed
+    }
+
+    // Plain payload. For a KTX2 entry this is the fallback written alongside it,
+    // reached when the device cannot sample compressed textures — or when this
+    // texture's transcode failed, in which case `bytes` was detached by the
+    // worker transfer and the fallback is the only readable copy left.
+    const useFallback = isKtx2Mime(entry.mime)
+    const plainBytes = useFallback ? entry.fallbackBytes : entry.bytes
+    const plainMime = useFallback ? entry.fallbackMime : entry.mime
+    if (!plainBytes || !plainMime) return null
+
     // Reserve the texture up front: callers read its uuid to build material
     // cache keys immediately, and the decoded image is published once decode
     // finishes — the same async contract `getOrCreateTexture` uses.
@@ -76,7 +157,7 @@ function resolveTexture(scene: ProductionScene, name: string | undefined, kind: 
     //
     // This path never enforced power-of-two sizes, so the cap preserves the
     // exact aspect ratio rather than snapping — see utils/textureSizing.
-    decodeImageBytes(entry.bytes, entry.mime)
+    decodeImageBytes(plainBytes, plainMime)
         .then((image) => {
             const target = fitWithinCap(image.width, image.height)
             texture.image =
@@ -219,23 +300,37 @@ async function loadProductionScene(zipBuffer: ArrayBuffer): Promise<ProductionSc
 
     // Pre-load textures into a Map (keyed by texture name)
     const texManifestFile = zip.file('textures/manifest.json')
-    const texEntries: { name: string; mime: string }[] = texManifestFile
+    const texEntries: { name: string; mime: string; fallbackMime?: string }[] = texManifestFile
         ? JSON.parse(await texManifestFile.async('text'))
         : []
 
     // Keep the encoded bytes — the colour space depends on how each object
     // uses the texture, so decoding is deferred to `resolveTexture`.
-    const textureData = new Map<string, TextureData>()
+    const textureData = new Map<string, ProductionTextureData>()
 
     for (const entry of texEntries) {
         const ext = entry.mime.split('/')[1] || 'webp'
         const texFile = zip.file(`textures/${entry.name}.${ext}`)
         if (!texFile) continue
 
-        textureData.set(entry.name, {
+        const data: ProductionTextureData = {
             mime: entry.mime,
             bytes: await texFile.async('arraybuffer'),
-        })
+        }
+
+        // Read the plain payload up front as well, not on demand: it is only
+        // needed by a device without compressed-texture support, but by the time
+        // that is known the zip has been released.
+        if (entry.fallbackMime) {
+            const fallbackExt = entry.fallbackMime.split('/')[1] || 'webp'
+            const fallbackFile = zip.file(`textures/${entry.name}.${fallbackExt}`)
+            if (fallbackFile) {
+                data.fallbackMime = entry.fallbackMime
+                data.fallbackBytes = await fallbackFile.async('arraybuffer')
+            }
+        }
+
+        textureData.set(entry.name, data)
     }
 
     // Decode geometries into GeoBuffer format (raw typed arrays)
@@ -308,6 +403,90 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     const gl = useThree((s) => s.gl)
     const threeScene = useThree((s) => s.scene)
 
+    // The scene whose meshes may be built yet. Held as the scene itself rather
+    // than a boolean because `SceneContent` is not remounted when the zip
+    // changes — a bare `true` would leak readiness across deployments.
+    const [meshReadyScene, setMeshReadyScene] = useState<ProductionScene | null>(() =>
+        collectKtx2Names(scene).size === 0 ? scene : null,
+    )
+
+    // Transcode this scene's KTX2 textures before any mesh is built from them.
+    //
+    // It cannot happen in `loadProductionScene`: that runs outside the canvas,
+    // and `KTX2Loader.detectSupport` needs the initialised device. It also cannot
+    // be lazy the way the plain path is — a compressed texture cannot be filled
+    // in after its placeholder has been uploaded, and `resolveTextures` must stay
+    // synchronous because `useMeshSync` keys mesh caching on texture uuid.
+    useEffect(() => {
+        let cancelled = false
+
+        const names = collectKtx2Names(scene)
+        if (names.size === 0) {
+            _compressedBases.set(scene, new Map())
+            setMeshReadyScene(scene)
+            return
+        }
+
+        // Guarded, not assumed: `Renderer.hasFeature` throws outright if the
+        // backend is not yet initialised. A throw here must still open the gate
+        // below — leaving it closed would render an empty scene, which is a much
+        // worse outcome than an untextured one.
+        let compressedSupported = false
+        try {
+            compressedSupported = supportsCompressedTextures(gl)
+        } catch (error) {
+            console.warn('[ProductionViewer] Could not query compressed-texture support.', error)
+        }
+
+        if (!compressedSupported) {
+            console.warn(
+                '[ProductionViewer] Renderer exposes no GPU-compressed texture support — ' +
+                    'using the plain fallback payloads for this scene.',
+            )
+            _compressedBases.set(scene, new Map())
+            setMeshReadyScene(scene)
+            return
+        }
+
+        setMeshReadyScene(null)
+
+        ;(async () => {
+            const bases = new Map<string, THREE.CompressedTexture>()
+
+            const work = [...names].map(async (name) => {
+                const entry = scene.textureData.get(name)
+                if (!entry) return
+                try {
+                    bases.set(name, await transcodeKtx2(gl, entry.bytes))
+                } catch (error) {
+                    // Per-texture, not per-scene: this one falls back to its own
+                    // plain payload rather than costing the scene its textures.
+                    console.warn(
+                        `[ProductionViewer] KTX2 transcode failed for "${name}" — ` +
+                            'falling back to its plain payload.',
+                        error,
+                    )
+                }
+            })
+
+            // Bounded and always settles — see TRANSCODE_TIMEOUT_MS. Entries that
+            // miss the deadline simply are not in `bases`, so they resolve through
+            // their plain payload instead.
+            await Promise.race([
+                Promise.allSettled(work),
+                new Promise((resolve) => setTimeout(resolve, TRANSCODE_TIMEOUT_MS)),
+            ])
+
+            if (cancelled) return
+            _compressedBases.set(scene, bases)
+            setMeshReadyScene(scene)
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [scene, gl])
+
     // Apply HDR environment map (shared hook — same as SyncViewer)
     useEnvironmentMap({
         scene: threeScene,
@@ -322,7 +501,11 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     // batching, incremental updates, and cleanup.
     useMeshSync({
         scene: threeScene,
-        objects: scene.objects,
+        // Withheld until the KTX2 transcode above settles, so meshes are built
+        // once against their real textures. Building early would key the mesh
+        // cache on placeholder uuids that immediately change — a wasted build,
+        // a visible rebuild, and an orphaned entry in the hook's geoMatCache.
+        objects: meshReadyScene === scene ? scene.objects : [],
         resolveTextures: (obj: BlenderObject) => ({
             map: resolveTexture(scene, obj.texture, 'color'),
             roughnessMap: resolveTexture(scene, obj.roughnessMap, 'noncolor'),

@@ -50,6 +50,7 @@
     "autoprefixer": "^10.5.4",
     "draco3d": "^1.5.7",
     "jszip": "^3.10.1",
+    "ktx2-encoder": "^0.6.0",
     "meshoptimizer": "^1.2.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3"
