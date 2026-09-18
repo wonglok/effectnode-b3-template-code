@@ -784,7 +784,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // instead (see `getWindDirection`), which is what keeps a cape on the
         // same side of its owner at every facing.
         const noise = triNoise3D(position, 1, time).sub(0.2).mul(0.0001)
-        force.addAssign(windDirectionUniform.mul(noise.mul(windUniform)))
+        force.addAssign(windDirectionUniform.mul(noise.mul(windUniform)).mul(1.0))
 
         // Sphere collision: below the surface, push straight out along the
         // radius, scaled by how far inside the vertex is. `max(0)` is what makes

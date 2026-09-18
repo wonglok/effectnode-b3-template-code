@@ -91,7 +91,7 @@ const SHOULDER_ABOVE_FEET = 1.35
  * edge in nor stretches it — which is why that ratio is worth reaching for when
  * tuning the sweep in `readPinCircle`.
  */
-const CAPE_WIDTH = 1.375
+const CAPE_WIDTH = 5
 
 /**
  * The radius of the ring the cape hangs from, in world units — how far the
