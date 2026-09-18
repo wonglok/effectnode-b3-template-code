@@ -68,6 +68,24 @@ interface NavRigSettings {
     playerArmedWalkTimescale: number
     playerArmedRunTimescale: number
 
+    /** Seconds between shots while locked onto an enemy.
+     *
+     *  There is a floor: the player's pool is `POOL_SIZE` (24) droplets at
+     *  `LIFETIME` (1.6) s, and a saturated pool *drops* a shot rather than
+     *  stealing one still in the air — so anything under 24 / 1.6 = 0.067 s
+     *  starts losing rounds, and the gun appears to fire blanks. Applied live. */
+    playerFireInterval: number
+    /** How far a locked target can be before the lock is dropped, in world
+     *  units.
+     *
+     *  Derived from the player's own reach rather than picked: the ballistic
+     *  solve fixes the horizontal speed at `MUZZLE_SPEED` (20), so a droplet
+     *  covers 20 × 1.6 = 32 m, and this sits just inside that — a lock held at a
+     *  range the gun cannot actually reach would fire at nothing. Deliberately
+     *  not the crowd's `npcFireRange` (14), which is the NPCs' lobbing standoff,
+     *  not the player's reach. Applied live. */
+    playerFireRange: number
+
     /** Health every character starts with. Ten droplets at `dropletDamage`. */
     maxHp: number
     /** Damage one water droplet does on contact. */
@@ -225,6 +243,8 @@ export const useNavRigStore = create<NavRigState>((set, get) => ({
         npcArmedRunTimescale: 1.5,
         playerArmedWalkTimescale: 6.5,
         playerArmedRunTimescale: 2.7,
+        playerFireInterval: 0.15,
+        playerFireRange: 30,
         maxHp: DEFAULT_MAX_HP,
         dropletDamage: 10,
         npcRespawnSeconds: 4,

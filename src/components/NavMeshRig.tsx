@@ -12,7 +12,7 @@ import { CRATE_POOL_SIZE, useBlenderStore, useNavRigStore } from '../b3/b3-runti
 import type { EmotionDef } from '../b3/b3-runtime/src/components/stores/navRigStore'
 import { buildWalkableMeshesFromStore } from './blenderWalkableMeshes'
 import { BASE_SET_KEY, loadAvatar, LOCOMOTION_KEYS, type AvatarConfig, type AvatarRig } from './avatarLoader'
-import { createNpcEnemies, type NpcEnemies, type NpcTarget } from './npcEnemies'
+import { AIM_HEIGHT, createNpcEnemies, type NpcEnemies, type NpcTarget } from './npcEnemies'
 import { DEFAULT_WEAPON_BONE, type WeaponEntry } from '../b3/b3-runtime/src/components/AvatarSDK'
 import { ARMED_SET_KEY } from './armedClipSet'
 import { DEATH_CLIPS } from './deathClip'
@@ -46,6 +46,18 @@ function disposeMesh(mesh: THREE.Mesh) {
  * a miss here reads as "the gun did not fire" rather than as a near miss.
  */
 const PICK_RADIUS_PX = 40
+
+/**
+ * How close to the target a terrain hit still counts as a clear shot, in world
+ * units.
+ *
+ * The line-of-sight ray runs chest to chest, and the last stretch of it grazes
+ * the ground the target is standing on — so without this, an enemy on a rising
+ * slope reads as behind cover. Wide enough to forgive that final approach, far
+ * short of the ~3 m standoff the crowd closes to, so a hill genuinely between
+ * the two is still a block.
+ */
+const LOS_CLEARANCE = 0.5
 
 /** Dispose an entire Object3D subtree. */
 function disposeObject(root: THREE.Object3D) {
@@ -265,7 +277,14 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         // the forward reference: the gun is calibrated to the character's
         // forward, and `rig.scene` cannot serve because it carries the Z-up to
         // Y-up correction, which points its own +Z at the sky.
-        const playerCombat: PlayerCombat = createPlayerCombat(scene, playerGroup)
+        const playerCombat: PlayerCombat = createPlayerCombat(scene, playerGroup, {
+            // Both close over the picking helpers declared further down this same
+            // effect — the forward reference `groundPointFromPointer` already makes
+            // to `refreshColliderObjects`. Neither runs before the frame loop, by
+            // which point everything below has been built.
+            canEngage: (aim) => inEngageRange(aim) && hasLineOfSight(aim),
+            onAim: (aim) => faceTowards(aim),
+        })
         // Resolved once and reused, so a gun can be attached synchronously the
         // moment an avatar lands — awaiting the load inside `mountAvatar` would
         // race a mode toggle and could attach twice.
@@ -901,6 +920,9 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
         const _pickNdc = new THREE.Vector2()
         /** Scratch for projecting an NPC's chest to screen space. */
         const _pickWorld = new THREE.Vector3()
+        /** Scratch for the line-of-sight ray — its origin and unit direction. */
+        const _losOrigin = new THREE.Vector3()
+        const _losDirection = new THREE.Vector3()
 
         // Hold-to-move: while the mouse is held, the per-frame loop keeps re-aiming
         // the character at the current pointer position. A quick click sets it once.
@@ -995,14 +1017,67 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             playerGroup.rotation.y = Math.atan2(dx, dz)
         }
 
+        /** Is the target close enough to shoot at? Measured player-to-target on
+         *  the straight line, which is the distance the droplet has to cover. */
+        const inEngageRange = (aim: THREE.Vector3): boolean =>
+            playerGroup.position.distanceTo(aim) <= settings.playerFireRange
+
         /**
-         * Shoot at the enemy under the pointer. Returns true if there was one.
+         * Is the line from the player's chest to the target's chest clear?
          *
-         * The ball is locked onto the enemy's live chest rather than the point
-         * it was standing on when the trigger was pulled, so a moving target is
-         * still hit.
+         * Fired once per shot rather than per frame: it is a raycast against the
+         * terrain, and its answer is only read at the moment a droplet leaves the
+         * muzzle.
+         *
+         * Both ends sit at `AIM_HEIGHT` — the same chest height the aim points and
+         * the pool's hit test use — so the ray is drawn along the line a droplet
+         * actually travels. The `LOS_CLEARANCE` shortening is what stops that line
+         * from being reported as blocked by the ground the target is standing on:
+         * a ray that reaches the target's chest has to arrive *through* the slope
+         * it is standing on, and the last stretch of it grazes that slope. The
+         * clearance only forgives hits in the final stretch, so a hill genuinely
+         * between the two still counts.
          */
-        const fireAtPickedEnemy = (clientX: number, clientY: number): boolean => {
+        const hasLineOfSight = (aim: THREE.Vector3): boolean => {
+            refreshColliderObjects()
+            if (colliderObjects.length === 0) return true
+
+            _losOrigin.set(playerGroup.position.x, playerGroup.position.y + AIM_HEIGHT, playerGroup.position.z)
+            _losDirection.subVectors(aim, _losOrigin)
+
+            const distance = _losDirection.length()
+            if (distance < 1e-4) return true
+
+            _losDirection.divideScalar(distance)
+
+            // Deliberately leaves the raycaster's near/far alone — `setFromCamera`
+            // does not restore them, so narrowing this ray and then walking away
+            // would have the *walk* ray culled at the shot's range. A whole-length
+            // ray needs no far plane anyway: the only question is whether the
+            // nearest hit lands short of the target, and terrain beyond it answers
+            // that by being further away.
+            clickRaycaster.set(_losOrigin, _losDirection)
+
+            const hits = clickRaycaster.intersectObjects(colliderObjects, false)
+            if (hits.length === 0) return true
+
+            return hits[0].distance >= distance - LOS_CLEARANCE
+        }
+
+        /**
+         * Lock onto the enemy under the pointer and open fire. Returns true if
+         * there was one.
+         *
+         * Not a single shot: the lock holds fire until the enemy is down, and both
+         * the chest read here and the one the loop re-reads before each shot come
+         * off the same live handle — so a moving target is still hit, and a target
+         * that goes down mid-burst is what ends the burst.
+         *
+         * The turn happens here as well as in the loop's `onAim`, so the click
+         * reads as "face and shoot" instead of waiting a frame for the loop to
+         * swing the character round.
+         */
+        const lockOntoPickedEnemy = (clientX: number, clientY: number): boolean => {
             // A downed player shoots nothing — and returns false, so a tap while
             // down does not get swallowed from whatever else wants it.
             if (playerDowned) return false
@@ -1011,22 +1086,30 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             const aim = target.aimPoint()
             if (!aim) return false
             faceTowards(aim)
-            playerCombat.fireAt(aim, target)
+            playerCombat.lockOn(target)
             return true
         }
 
         /**
          * The deliberate fire command — the right button.
          *
-         * An enemy under the cursor is shot at; empty space is a free-aim shot
-         * that splashes where it lands. Distinct from the tap handler below,
-         * which only ever shoots enemies: a touch device has no right button, so
-         * it needs a way to shoot at all, and giving up "tap the ground to walk
-         * there" as well would strand it.
+         * An enemy under the cursor is locked onto and held under fire; empty
+         * space is a free-aim shot that splashes where it lands. Distinct from the
+         * tap handler below, which only ever shoots enemies: a touch device has no
+         * right button, so it needs a way to shoot at all, and giving up "tap the
+         * ground to walk there" as well would strand it.
          */
         const handleFireCommand = (clientX: number, clientY: number) => {
             if (!useNavRigStore.getState().attackMode) return
-            if (fireAtPickedEnemy(clientX, clientY)) return
+            if (lockOntoPickedEnemy(clientX, clientY)) return
+
+            // Aimed at the ground, so there is nothing to hold fire on. Cleared
+            // before the ground test rather than after, so a right-click at the
+            // sky — no ground hit at all — still releases whoever was locked: the
+            // command was "shoot over there", and the answer is not to keep
+            // firing at the enemy already being shot.
+            playerCombat.lockOn(null)
+
             const ground = groundPointFromPointer(clientX, clientY)
             if (ground) {
                 faceTowards(ground)
@@ -1053,12 +1136,16 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // character strolls off the moment the context menu is dismissed.
             if (event.button !== 0) return
 
-            // In attack mode a tap on an enemy shoots instead of walking to it.
-            // This is the only way a touch device can fire — it has no right
-            // button — so it has to pre-empt click-to-move, and only for an
-            // actual hit: a tap on bare ground still walks.
-            if (useNavRigStore.getState().attackMode && fireAtPickedEnemy(event.clientX, event.clientY)) {
-                return
+            // In attack mode a tap on an enemy locks on and opens fire instead of
+            // walking to it. This is the only way a touch device can fire — it has
+            // no right button — so it has to pre-empt click-to-move, and only for
+            // an actual hit: a tap on bare ground still walks.
+            if (useNavRigStore.getState().attackMode) {
+                if (lockOntoPickedEnemy(event.clientX, event.clientY)) return
+                // Bare ground in attack mode is a walk command, so it is also the
+                // signal to stop shooting: walking away from a locked enemy would
+                // otherwise leave the gun firing behind the player.
+                playerCombat.lockOn(null)
             }
 
             pointerDown = true
@@ -1177,6 +1264,13 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             .add(settings, 'playerArmedRunTimescale', 0.2, 12, 0.1)
             .name('Attack Run Rate')
             .onChange(pushPlayerCadence)
+        // No `onChange`: both are read live, the interval by the frame loop's
+        // `setFireInterval` push and the range inside the engage gate, so a drag
+        // takes effect on the next shot either way. The interval's lower bound is
+        // above the pool ceiling documented on the tunable, so every setting on
+        // the slider actually delivers the rate it says.
+        attackFolder.add(settings, 'playerFireInterval', 0.08, 1, 0.01).name('Fire Interval')
+        attackFolder.add(settings, 'playerFireRange', 5, 40, 0.5).name('Fire Range')
         attackFolder.close()
 
         // Health crates. No `onChange` handlers anywhere: the crate pool reads
@@ -1602,6 +1696,12 @@ export function NavMeshRig({ guiContainer }: NavMeshRigProps) {
             // Strictly after `advance`, which is what poses the skeleton: the
             // gun's aim is re-solved from the bones, so running it first would
             // align the barrel against last frame's pose.
+            //
+            // The cadence is pushed rather than captured, exactly as the gun
+            // tuning is: `settings` is mutated in place by lil-gui, so dragging
+            // the fire-interval slider has to land on the next shot with no
+            // rebuild and no stale copy to go out of step.
+            playerCombat.setFireInterval(settings.playerFireInterval)
             playerCombat.update(clamped)
 
             if (navMeshHelper?.object) {

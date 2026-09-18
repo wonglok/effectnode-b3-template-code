@@ -140,8 +140,12 @@ const MOVING_SPEED = 0.04
  * so a droplet that visibly reaches the player is also the one that is
  * recycled; aiming at the chest but testing against the feet would sail every
  * shot past the check.
+ *
+ * Exported because the player's line-of-sight check has to ray between the same
+ * two chests: a ray drawn at some other height would be testing a line nobody
+ * shoots along, and could report a hillside as blocking a shot that clears it.
  */
-const AIM_HEIGHT = 0.8
+export const AIM_HEIGHT = 0.8
 
 /**
  * How closely an armed NPC must be facing the player before it will shoot —

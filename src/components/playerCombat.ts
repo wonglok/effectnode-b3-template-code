@@ -29,6 +29,20 @@
  * each droplet here is given its own hit-test point at spawn: the locked
  * enemy's live chest, or the fixed point the shot was aimed at. The pool's own
  * `getTarget` is therefore never used and returns null.
+ *
+ * ## Two ways to shoot
+ *
+ * `fireAt` is one droplet, aimed once — the free-aim ground shot, and the
+ * deliberate single tap. `lockOn` is the sustained version: hold fire on an
+ * enemy until it is gone, one droplet every `fireInterval`.
+ *
+ * They share one shot body (`shoot`), so a locked shot and a tapped shot cannot
+ * drift apart. What differs is only who decides when to pull the trigger.
+ *
+ * The lock releases on its own from the target's side. `NpcTarget.aimPoint` goes
+ * null once the NPC is down or the crowd is disposed — that null *is* "the target
+ * is gone", so nothing here needs to know what death looks like. A target that
+ * respawns gets no re-engagement: the lock is already gone.
  */
 
 import * as THREE from 'three'
@@ -64,6 +78,44 @@ export interface PlayerWeaponSpec {
     rotation: [number, number, number]
 }
 
+/** Default cadence, mirroring `playerFireInterval` in the store's settings. Only
+ *  ever in play for the first frame — the rig pushes the live value every frame. */
+const DEFAULT_FIRE_INTERVAL = 0.15
+
+/**
+ * What the shooter has to know about the world that it does not own.
+ *
+ * Injected as callbacks, exactly the way `npcEnemies` takes `getHostile` /
+ * `getPlayerPosition` / `onPlayerHit`: it keeps this module importing nothing
+ * from the store, the navmesh, or the terrain, and leaves the rig owning where
+ * the player is and what is between them.
+ */
+export interface PlayerCombatOptions {
+    /**
+     * Whether a locked target may be shot at right now — in range, and with
+     * terrain that does not come between.
+     *
+     * Asked **once per shot**, not per frame. The answer only has to be right at
+     * the moment a droplet leaves the muzzle, and a terrain raycast is far too
+     * expensive to run at frame rate for a question nothing else reads.
+     *
+     * False **drops the lock** rather than pausing it: a target that has walked
+     * out of range or behind a hill is no longer being engaged, so the shot that
+     * would have gone its way is skipped, not queued.
+     */
+    canEngage?: (aim: THREE.Vector3) => boolean
+    /**
+     * Called with the aim point just before a locked shot, so the caller can turn
+     * the character to face it. Runs ahead of the gun calibration, so the barrel
+     * is aimed on the same frame the droplet is spawned.
+     *
+     * Injected because the facing convention (`atan2(x, z)` written straight onto
+     * the player group) belongs to the rig that owns that group and shares it
+     * with the movement loop. A second copy here would drift from it.
+     */
+    onAim?: (aim: THREE.Vector3) => void
+}
+
 export interface PlayerCombat {
     /**
      * Adopt the manifest's weapon entry. Returns true when `url` or `bone`
@@ -80,6 +132,29 @@ export interface PlayerCombat {
     detach(): void
     /** Arm/disarm — attack mode. Visibility follows this, not the crowd's. */
     setActive(active: boolean): void
+    /**
+     * Hold fire on `target` until it is gone, or clear the lock with `null`.
+     *
+     * Fires immediately, then once every `fireInterval`, for as long as the
+     * target keeps returning an aim point. Released by `setActive(false)`, by the
+     * target going down, by the crowd being disposed, and by `canEngage` saying
+     * no. All four are one-way: re-acquiring is a fresh `lockOn`, so a respawned
+     * NPC is not re-engaged.
+     *
+     * Safe to call while unarmed — the lock is simply dropped on the next frame,
+     * which is what keeps a click during the disarm frame from arming anything.
+     */
+    lockOn(target: NpcTarget | null): void
+    /**
+     * Seconds between shots while locked on.
+     *
+     * Pushed every frame from the tunable, like the gun tuning, so a GUI drag
+     * lands on the next shot with no rebuild. **Not clamped here**: the pool
+     * caps the real rate at `POOL_SIZE / LIFETIME` (≈ 15/s) by dropping shots
+     * once it is saturated, and a clamp that hid that would make the tunable
+     * disagree with what the gun does.
+     */
+    setFireInterval(seconds: number): void
     /** Match the armed walk / run clip cadence to the player's movement speed
      *  (the rig owns the clip sets; this just forwards the numbers). */
     setCadence(walk: number, run: number): void
@@ -99,7 +174,11 @@ export interface PlayerCombat {
     dispose(): void
 }
 
-export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object3D): PlayerCombat {
+export function createPlayerCombat(
+    scene: THREE.Scene,
+    forwardRoot: THREE.Object3D,
+    options: PlayerCombatOptions = {},
+): PlayerCombat {
     // The player's own weapon object — never the crowd's, and mutated in place
     // like theirs so `applyGunTuning` reads the live placement off it.
     const weapon: NpcWeapon = {
@@ -132,6 +211,12 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
     let gun: NpcGun | null = null
     let disposed = false
 
+    /** The enemy being held under fire, or null. See `lockOn`. */
+    let lockedTarget: NpcTarget | null = null
+    /** Seconds until the next locked shot. Negative means owed. */
+    let fireCountdown = 0
+    let fireInterval = DEFAULT_FIRE_INTERVAL
+
     /**
      * Remove the gun and free what it owns.
      *
@@ -155,6 +240,56 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
             for (const m of mats) m?.dispose()
         })
         gun = null
+    }
+
+    /**
+     * Put one droplet in the air and play the recoil.
+     *
+     * The single body behind both `fireAt` and the sustained-fire loop, so the
+     * two cannot drift: a locked shot is exactly a clicked shot, fired again.
+     * The caller has already established that the gun is armed and held.
+     *
+     * `destination` is where the droplet is *aimed* at spawn — the enemy's chest
+     * for a locked shot, the clicked point for a free-aim one. With a `target`
+     * the pool re-reads the aim from it every frame, so the ball tracks a moving
+     * enemy rather than landing where it stood.
+     */
+    const shoot = (destination: THREE.Vector3, target?: NpcTarget | null) => {
+        if (!gun) return
+
+        gun.muzzle.updateWorldMatrix(true, false)
+        gun.muzzle.getWorldPosition(_muzzleWorld)
+
+        if (target) {
+            // Re-read per frame by the pool, so the ball follows the enemy.
+            const locked = target
+            projectiles.spawn(
+                _muzzleWorld,
+                destination,
+                MUZZLE_SPEED,
+                () => locked.aimPoint(),
+                // Damage, through the same handle that supplied the aim point —
+                // the crowd decides what a droplet is worth, so nothing here
+                // needs to know the number.
+                () => locked.damage(),
+            )
+        } else {
+            // A free-aim shot still needs something to hit, or it would fly
+            // through its own landing point and only vanish on the fall limit.
+            // Its own destination is that something, so the water splashes where
+            // the player clicked.
+            //
+            // Copied per shot rather than read from a scratch: every droplet holds
+            // this for its whole flight, so a second click would otherwise drag a
+            // ball still in the air onto the new landing spot and burst the water
+            // in the wrong place.
+            const landing = destination.clone()
+            projectiles.spawn(_muzzleWorld, landing, MUZZLE_SPEED, () => landing)
+        }
+
+        // The recoil, through the same path the crowd uses. Played after the
+        // spawn so a missing FBX still produces the water.
+        if (ARMED_FIRING_CLIP) rig?.playEmotionOnce(ARMED_FIRING_CLIP)
     }
 
     return {
@@ -186,9 +321,26 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
 
         setActive(active) {
             weapon.enabled = active
+            // A lock cannot outlive the mode that armed it. Dropping it here, on
+            // the one path that disarms, means leaving attack mode ends the fight
+            // rather than pausing it — re-entering starts peaceful instead of
+            // silently resuming fire on whoever was last clicked.
+            if (!active) lockedTarget = null
             // Hide immediately rather than waiting for the next frame's
             // `applyGunTuning`, so a mode toggle never shows a stale frame of gun.
             if (gun) gun.mount.visible = active
+        },
+
+        lockOn(target) {
+            // Always fires on the next frame rather than after a full interval:
+            // the click that set the lock should read as a shot, not as a fifth
+            // of a second of nothing happening.
+            fireCountdown = 0
+            lockedTarget = target
+        },
+
+        setFireInterval(seconds) {
+            fireInterval = seconds
         },
 
         setCadence(walk, run) {
@@ -197,6 +349,49 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
 
         update(delta) {
             if (disposed) return
+
+            // The four steps below are in a deliberate order, and it is the
+            // facing that fixes it: the character has to be turned toward the
+            // target *before* the gun is calibrated, or every shot is aimed at
+            // where the enemy was a frame ago.
+
+            // 1. Resolve the lock, and decide whether this frame shoots.
+            let aim: THREE.Vector3 | null = null
+            let target: NpcTarget | null = null
+
+            if (lockedTarget) {
+                if (!gun || !weapon.enabled) {
+                    // Disarmed, or the gun is gone. `setActive` already clears on
+                    // the way out of attack mode; this covers the other way a lock
+                    // can be left holding nothing.
+                    lockedTarget = null
+                } else {
+                    fireCountdown -= delta
+
+                    if (fireCountdown <= 0) {
+                        const chest = lockedTarget.aimPoint()
+
+                        // Null means the NPC is down, or the crowd is gone. That
+                        // null is the whole release rule — see NpcTarget.aimPoint.
+                        if (!chest) {
+                            lockedTarget = null
+                        } else if (options.canEngage && !options.canEngage(chest)) {
+                            // Out of range, or the terrain is in the way.
+                            lockedTarget = null
+                        } else {
+                            // `chest` is the crowd's shared scratch — read it and
+                            // use it this frame, which is exactly how long it lives.
+                            aim = chest
+                            target = lockedTarget
+                            options.onAim?.(chest)
+                        }
+                    }
+                }
+            }
+
+            // 2. The gun, every frame — armed or not, firing or not. The hand
+            //    moves as the idle and walk clips play, so a calibration skipped
+            //    on a non-firing frame leaves the barrel trailing the hand.
             if (gun) {
                 // Tuning is re-applied every frame so a lil-gui edit lands
                 // without a rebuild, exactly as the crowd does it.
@@ -206,50 +401,32 @@ export function createPlayerCombat(scene: THREE.Scene, forwardRoot: THREE.Object
                 // the barrel pointing wherever the hand happened to be then.
                 if (weapon.enabled) calibrateGun(gun)
             }
+
+            // 3. The shot, now that the barrel points where this frame's facing
+            //    put it.
+            if (aim && target) {
+                shoot(aim, target)
+                // Added rather than assigned, so the debt carries: an interval
+                // that is not a whole number of frames keeps its average rate
+                // instead of losing a slice of every gap to the rounding. At most
+                // one shot a frame, so a long delta arrives as a quick follow-up
+                // shot rather than as a burst.
+                fireCountdown += fireInterval
+            }
+
+            // 4. The droplets.
             projectiles.update(delta)
         },
 
         fireAt(destination, target) {
             if (disposed || !weapon.enabled || !gun) return
-
-            gun.muzzle.updateWorldMatrix(true, false)
-            gun.muzzle.getWorldPosition(_muzzleWorld)
-
-            if (target) {
-                // Re-read per frame by the pool, so the ball follows the enemy.
-                const locked = target
-                projectiles.spawn(
-                    _muzzleWorld,
-                    destination,
-                    MUZZLE_SPEED,
-                    () => locked.aimPoint(),
-                    // Damage, through the same handle that supplied the aim
-                    // point — the crowd decides what a droplet is worth, so
-                    // nothing here needs to know the number.
-                    () => locked.damage(),
-                )
-            } else {
-                // A free-aim shot still needs something to hit, or it would fly
-                // through its own landing point and only vanish on the fall
-                // limit. Its own destination is that something, so the water
-                // splashes where the player clicked.
-                //
-                // Copied per shot rather than read from a scratch: every droplet
-                // holds this for its whole flight, so a second click would
-                // otherwise drag a ball still in the air onto the new landing
-                // spot and burst the water in the wrong place.
-                const landing = destination.clone()
-                projectiles.spawn(_muzzleWorld, landing, MUZZLE_SPEED, () => landing)
-            }
-
-            // The recoil, through the same path the crowd uses. Spawned before
-            // the clip so a missing FBX still produces the water.
-            if (ARMED_FIRING_CLIP) rig?.playEmotionOnce(ARMED_FIRING_CLIP)
+            shoot(destination, target)
         },
 
         dispose() {
             if (disposed) return
             disposed = true
+            lockedTarget = null
             detachGun()
             projectiles.dispose()
         },
