@@ -731,9 +731,9 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const clothMaterial: TransmissionTSLMaterial = new TransmissionTSLMaterial({
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
-        thickness: 0.08,
+        thickness: 1.1,
         roughness: 0.0,
-        ior: 1.5,
+        ior: 1.35,
         transmission: 1,
         attenuationColor: '#ffffff',
         attenuationDistance: Infinity,
@@ -742,8 +742,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
         ...options.material,
     })
 
-    clothMaterial.sheenNode = color(new Color('#5954de'))
-    clothMaterial.colorNode = color(new Color('#00d0ff'))
+    clothMaterial.sheenNode = color(new Color('#0000ff').offsetHSL(0, -0.15, -0.15))
+    clothMaterial.colorNode = color(new Color('#0000ff'))
+    clothMaterial.iridescence = 1.0
+    clothMaterial.iridescenceIOR = 1.5
 
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which
