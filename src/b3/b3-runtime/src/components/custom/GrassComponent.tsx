@@ -16,6 +16,11 @@
 // is aligned to the sampled surface normal, so it grows out of a slope rather
 // than standing plumb with the world and sinking into it.
 //
+// Where they land is then shaped by a world-space Perlin density field: the blade
+// count is fixed and the noise decides how tightly they bunch, so the field reads
+// as patches with thin ground between them instead of an even lawn. See
+// `grassDensity`.
+//
 // Every blade is drawn, every frame: all `instances` are inside
 // `geometry.instanceCount` and the field is bounded by the measured
 // `boundingSphere` so three only frustum-culls the whole thing when it is
@@ -79,12 +84,24 @@ const bladeAlpha: Texture = loader.load('/texture/grass/blade_alpha.jpg', (d) =>
 // reference's three octaves, wavelengths and amplitudes. It is *not* the same
 // function as simplex — only the same relief and character.
 
-/** 32-bit lattice hash → [-1, 1]. */
-function hashLattice(ix: number, iy: number, seed: number): number {
+/**
+ * 32-bit lattice hash, unsigned.
+ *
+ * The shared core of both noises below. They want different things out of it —
+ * value noise a uniform float, Perlin a gradient index — but they mix the
+ * lattice identically, and each caller passes its own seed, so the two fields
+ * come out unrelated without either one knowing about the other.
+ */
+function hashBits(ix: number, iy: number, seed: number): number {
     let h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 1274126177)
     h = Math.imul(h ^ (h >>> 13), 1274126177)
     h ^= h >>> 16
-    return ((h >>> 0) / 0xffffffff) * 2 - 1
+    return h >>> 0
+}
+
+/** Value-noise lattice sample → [-1, 1]. */
+function hashLattice(ix: number, iy: number, seed: number): number {
+    return (hashBits(ix, iy, seed) / 0xffffffff) * 2 - 1
 }
 
 /** Value noise, smoothstep-interpolated across the lattice. */
@@ -116,6 +133,163 @@ function terrainHeight(x: number, z: number, amplitude: number): number {
     y += 0.2 * valueNoise2D(x / 10, z / 10, 3)
 
     return y * amplitude
+}
+
+// ---------------------------------------------------------------------------
+// Blade clumping
+// ---------------------------------------------------------------------------
+// Terrain height is *value* noise above; this is gradient (Perlin) noise, and the
+// distinction is the point at this scale. Value noise interpolates the lattice,
+// so its extremes sit on the lattice points themselves and its cells can read as
+// a faint grid. Perlin is zero at every lattice point and peaks between them, so
+// it has no preferred axes — patches scatter instead of striping.
+//
+// The field is anchored in **world** XZ, not in the field's own frame, so a patch
+// is a fixed size in metres wherever the collider happens to sit and the pattern
+// survives a collider re-sync unchanged.
+
+/**
+ * The eight gradient directions, unit length.
+ *
+ * Perlin's lattice dot product, tabulated: indexing this by the hash's low three
+ * bits is what keeps `perlin2D` allocation-free. The diagonals are normalised to
+ * `1/√2` rather than left as ±1 so every direction contributes equally — the
+ * unnormalised `(±1, ±1)` corners are longer, and that bias is visible as a
+ * preference for diagonal features.
+ */
+const SQRT1_2 = Math.SQRT1_2
+const PERLIN_GRADIENTS = new Float32Array([
+    1, 0, -1, 0, 0, 1, 0, -1, SQRT1_2, SQRT1_2, -SQRT1_2, SQRT1_2, SQRT1_2, -SQRT1_2, -SQRT1_2, -SQRT1_2,
+])
+
+/** Perlin's fade `6t⁵ - 15t⁴ + 10t³` — zero first *and* second derivative at 0 and 1. */
+function fade(t: number): number {
+    return t * t * t * (t * (t * 6 - 15) + 10)
+}
+
+/** The GLSL three-argument smoothstep, clamped to `0..1` outside the edges. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+    const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+    return t * t * (3 - 2 * t)
+}
+
+/** The gradient at lattice point (ix, iy), dotted with the offset (dx, dy) from it. */
+function gradientDot(ix: number, iy: number, dx: number, dy: number, seed: number): number {
+    const g = (hashBits(ix, iy, seed) & 7) * 2
+    return PERLIN_GRADIENTS[g] * dx + PERLIN_GRADIENTS[g + 1] * dy
+}
+
+/**
+ * 2D Perlin noise → roughly [-0.707, 0.707].
+ *
+ * The bound is `√2/2`, not 1: each corner gradient contributes at most its own
+ * length across the half-cell it owns. `grassDensity` uses that bound rather than
+ * guessing at one.
+ */
+function perlin2D(x: number, y: number, seed: number): number {
+    const ix = Math.floor(x)
+    const iy = Math.floor(y)
+    const dx = x - ix
+    const dy = y - iy
+
+    const ux = fade(dx)
+    const uy = fade(dy)
+
+    const n00 = gradientDot(ix, iy, dx, dy, seed)
+    const n10 = gradientDot(ix + 1, iy, dx - 1, dy, seed)
+    const n01 = gradientDot(ix, iy + 1, dx, dy - 1, seed)
+    const n11 = gradientDot(ix + 1, iy + 1, dx - 1, dy - 1, seed)
+
+    const top = n00 + (n10 - n00) * ux
+    const bottom = n01 + (n11 - n01) * ux
+
+    return top + (bottom - top) * uy
+}
+
+/**
+ * Octaves in the fBm.
+ *
+ * Three is where the field stops being a set of blobs and starts reading as
+ * ground: the second octave breaks up the patch outlines, the third roughs their
+ * edges. A fourth adds detail at 1/16 of `clumpScale` — under a metre at the
+ * default — which the blades themselves are already finer than.
+ */
+const CLUMP_OCTAVES = 3
+
+/** Deliberately unrelated to the terrain seeds (1, 2, 3) — see `hashBits`. */
+const CLUMP_SEED = 101
+
+/**
+ * A patch is thinned to this, never emptied.
+ *
+ * Load-bearing: the placement loops *reject* candidates until one passes, so a
+ * region of genuine zero would spin until its attempt budget ran out. Measured
+ * over a 300x300 unit field, this floor is reached by about a tenth of the ground
+ * and puts 17% of the area under a quarter of the mean density — patchy, but with
+ * ground cover still standing in the thin parts rather than bare earth.
+ */
+const MIN_BLADE_DENSITY = 0.05
+
+/**
+ * How many candidates a single blade may burn before the last one is taken
+ * regardless.
+ *
+ * At `MIN_BLADE_DENSITY` this is reached by ~4% of the blades in the barest
+ * patches; those land uniformly instead of clumped, which softens the very
+ * barest ground rather than ever hanging the sampler.
+ */
+const MAX_SAMPLE_ATTEMPTS = 64
+
+/**
+ * Half-width of the ramp that turns the fBm into a density, measured on the
+ * normalised field: below `0.5 - this` is bare ground, above `0.5 + this` is full
+ * density.
+ *
+ * This is the knob that makes the difference between a mottle and actual patches,
+ * and its size is not arbitrary. Normalising the fBm against Perlin's
+ * *theoretical* bound is not enough on its own, because that bound assumes every
+ * octave aligns adversarially — which a sum with halving amplitudes never does.
+ * Measured over 300x300 units this field spans only about 0.26 to 0.74, so a ramp
+ * drawn across the whole range would barely bite. Drawing it inside the span, at
+ * 0.35 to 0.65, puts roughly a tenth of the ground at genuinely bare and a tenth
+ * at full density, with the rest graded between.
+ */
+const CLUMP_CONTRAST = 0.15
+
+/**
+ * Blade density at a world XZ position, in `0..1` — the clumping field.
+ *
+ * Octave 0 is centred on `clumpScale` and each octave doubles the frequency, so
+ * the octaves land at 1/2, 1/4, ... of it. Their amplitudes halve at the same
+ * rate, which keeps the detail a modulation *of* the patches rather than a field
+ * competing with them.
+ */
+function grassDensity(x: number, z: number, clumpScale: number, clumpStrength: number): number {
+    let sum = 0
+    let total = 0
+    let frequency = 1 / clumpScale
+    let amplitude = 1
+
+    for (let octave = 0; octave < CLUMP_OCTAVES; octave++) {
+        sum += amplitude * perlin2D(x * frequency, z * frequency, CLUMP_SEED + octave)
+        total += amplitude
+        frequency *= 2
+        amplitude *= 0.5
+    }
+
+    // `sum / total` is a weighted mean of values each bounded by 0.707, so it is
+    // bounded by 0.707 too — the SQRT1_2 maps that onto [-1, 1] exactly, it is not
+    // a fudge factor. It is a loose bound in practice, which is what the ramp
+    // above is for.
+    const normalized = (sum / total) * SQRT1_2 + 0.5
+    const contrast = smoothstep(0.5 - CLUMP_CONTRAST, 0.5 + CLUMP_CONTRAST, normalized)
+
+    // Blended from "accept everything" to the field, rather than from the floor
+    // upwards. Both spellings agree at full strength, but this one makes the knob
+    // honest at the other end: `clumpStrength: 0` is a density of exactly 1, so
+    // the neutral setting rejects nothing instead of burning ~20 attempts a blade
+    // to arrive at the same uniform scatter.
+    return 1 - clumpStrength * (1 - MIN_BLADE_DENSITY) * (1 - contrast)
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +327,12 @@ const TILT_RANGE = 0.25
  * geometry attributes directly and never touches `matrixWorld` — so both the
  * point and the normal are transformed out here.
  */
-function sampleColliderPlacement(collider: Mesh, instances: number): BladePlacement | null {
+function sampleColliderPlacement(
+    collider: Mesh,
+    instances: number,
+    clumpScale: number,
+    clumpStrength: number,
+): BladePlacement | null {
     const geometry = collider.geometry
 
     // Without a normal attribute `sample()` silently leaves the target normal
@@ -177,18 +356,41 @@ function sampleColliderPlacement(collider: Mesh, instances: number): BladePlacem
 
     const point = new Vector3()
     const normal = new Vector3()
-    const normalMatrix = new Matrix3()
+
+    // Hoisted: `getNormalMatrix` inverts a 3x3, and the collider's world matrix is
+    // fixed for the whole sample (`updateWorldMatrix` ran above). It used to be
+    // recomputed per blade; with rejection sampling below there are now more draws
+    // than blades, so it is worth computing once.
+    const normalMatrix = new Matrix3().getNormalMatrix(collider.matrixWorld)
 
     for (let i = 0; i < instances; i++) {
-        sampler.sample(point, normal)
+        // Rejection sampling — see `grassDensity`. The blade *count* is what stays
+        // constant; the noise decides how densely they land, so the field thins to
+        // near-bare ground in some places and bunches in others without a single
+        // change to what is drawn.
+        //
+        // Drawn and transformed before the test because the test reads the world
+        // position, and taken as-is once the budget runs out rather than looping.
+        let attempts = 0
+        for (;;) {
+            sampler.sample(point, normal)
 
-        point.applyMatrix4(collider.matrixWorld)
-        normal.applyNormalMatrix(normalMatrix.getNormalMatrix(collider.matrixWorld))
+            point.applyMatrix4(collider.matrixWorld)
+            normal.applyNormalMatrix(normalMatrix)
+
+            attempts++
+            if (attempts >= MAX_SAMPLE_ATTEMPTS) break
+            if (Math.random() < grassDensity(point.x, point.z, clumpScale, clumpStrength)) break
+        }
 
         // Exported meshes routinely carry inverted winding, which would grow
         // every blade out of the *underside* of the terrain. Trust the side the
         // surface faces rather than the winding: anything pointing below the
         // horizon is flipped back up.
+        //
+        // After the accept test rather than inside it: the test only reads the
+        // position, so flipping and normalising a candidate that is about to be
+        // thrown away is pure waste.
         if (normal.y < 0) normal.negate()
         normal.normalize()
 
@@ -205,13 +407,33 @@ function sampleColliderPlacement(collider: Mesh, instances: number): BladePlacem
 }
 
 /** Scatter blades over the fBm height field, all standing plumb. */
-function sampleTerrainPlacement(instances: number, width: number, terrainAmplitude: number): BladePlacement {
+function sampleTerrainPlacement(
+    instances: number,
+    width: number,
+    terrainAmplitude: number,
+    clumpScale: number,
+    clumpStrength: number,
+): BladePlacement {
     const positions = new Float32Array(instances * 3)
     const ups = new Float32Array(instances * 3)
 
     for (let i = 0; i < instances; i++) {
-        const x = Math.random() * width - width / 2
-        const z = Math.random() * width - width / 2
+        // Rejection sampling as in `sampleColliderPlacement`, with a fresh square
+        // draw instead of a fresh surface sample. The draw comes first so that a
+        // blade always has a position to fall back on: if the attempt budget is
+        // already spent, that first draw is the one that is kept.
+        let x = 0
+        let z = 0
+        let attempts = 0
+
+        for (;;) {
+            x = Math.random() * width - width / 2
+            z = Math.random() * width - width / 2
+
+            attempts++
+            if (attempts >= MAX_SAMPLE_ATTEMPTS) break
+            if (Math.random() < grassDensity(x, z, clumpScale, clumpStrength)) break
+        }
 
         positions[i * 3] = x
         positions[i * 3 + 1] = terrainHeight(x, z, terrainAmplitude)
@@ -387,6 +609,23 @@ export interface GrassComponentProps {
     windSpeed?: number
     /** Peak gust bend, in radians. */
     windStrength?: number
+    /**
+     * Size of the largest clump, in world units — the wavelength of the noise
+     * that decides where the field is dense and where it thins out.
+     *
+     * Smaller gives many small patches, larger a few broad ones. Patches are
+     * anchored in world space, so this is a real size in metres, not a fraction
+     * of whatever the collider happens to span.
+     */
+    clumpScale?: number
+    /**
+     * How hard the clumping pushes the density around: `0` is a uniform scatter,
+     * `1` is patches separated by near-bare ground.
+     *
+     * Redistribution only — the blade count is the same either way, so draw cost
+     * does not move with this.
+     */
+    clumpStrength?: number
 }
 
 export function GrassComponent({
@@ -409,6 +648,11 @@ export function GrassComponent({
     groundColor = '#000f00',
     windSpeed = 0.25,
     windStrength = 0.15,
+    // ~8 m patches: wide enough to read as clumping at the scale the camera moves
+    // over the field, small enough that the field as a whole still looks planted
+    // rather than split into two halves.
+    clumpScale = 8,
+    clumpStrength = 1,
 }: GrassComponentProps) {
     const scene = useThree((r) => r.scene)
 
@@ -457,9 +701,13 @@ export function GrassComponent({
         // (no normals, instanced), so the field is visible while a scene syncs
         // rather than silently empty. It is rebuilt — visibly — once the real
         // surface arrives.
-        const sampled = placement === 'collider' && collider ? sampleColliderPlacement(collider, instances) : null
+        const sampled =
+            placement === 'collider' && collider
+                ? sampleColliderPlacement(collider, instances, clumpScale, clumpStrength)
+                : null
 
-        const bladePlacement = sampled ?? sampleTerrainPlacement(instances, width, terrainAmplitude)
+        const bladePlacement =
+            sampled ?? sampleTerrainPlacement(instances, width, terrainAmplitude, clumpScale, clumpStrength)
 
         const attributes = buildGrassAttributes(bladePlacement)
 
@@ -563,6 +811,8 @@ export function GrassComponent({
         groundColor,
         windSpeed,
         windStrength,
+        clumpScale,
+        clumpStrength,
     ])
 
     useEffect(() => {
