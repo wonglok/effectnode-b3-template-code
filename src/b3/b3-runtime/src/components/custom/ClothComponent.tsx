@@ -197,6 +197,8 @@ endCape.position.x = 0.0
 cape.add(startCape)
 cape.add(endCape)
 
+cape.position.y = 1
+
 /**
  * The line the cape hangs from, in world units — read by the cloth once a frame.
  *
@@ -217,8 +219,6 @@ function readCapeLine(width: number): PinLine | null {
         playerGroup.add(cape)
     }
 
-    cape.position.z = 0.0
-    cape.position.y = 1
     startCape.getWorldPosition(startCape.userData.wp)
     endCape.getWorldPosition(endCape.userData.wp)
 

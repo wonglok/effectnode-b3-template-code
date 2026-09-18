@@ -99,10 +99,7 @@ export interface GrassCuller {
     update(x: number, y: number, z: number): boolean
 }
 
-export function createGrassCuller(
-    buffers: GrassCullerBuffers,
-    options: GrassCullerOptions,
-): GrassCuller {
+export function createGrassCuller(buffers: GrassCullerBuffers, options: GrassCullerOptions): GrassCuller {
     const { offset, rootDirection, orientation, stretch } = buffers
     const count = stretch.length
 
