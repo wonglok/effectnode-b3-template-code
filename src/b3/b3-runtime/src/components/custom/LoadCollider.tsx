@@ -176,14 +176,14 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         playPulse()
     }, [jumpRequest?.nonce])
 
-    useFrame(() => {
-        scene?.traverse((it: any) => {
-            // console.log(it)
-            if (it?.name.includes('collider')) {
-                it.visible = false
-            }
-        })
-    })
+    // useFrame(() => {
+    //     scene?.traverse((it: any) => {
+    //         // console.log(it)
+    //         if (it?.name.includes('collider')) {
+    //             it.visible = false
+    //         }
+    //     })
+    // })
 
     useEffect(() => {
         // const rm = roughnessMap

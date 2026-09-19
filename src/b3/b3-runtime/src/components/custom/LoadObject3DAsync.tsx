@@ -35,7 +35,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 it from. Its vertex shader reads a storage buffer, so
                 `CanvasGPU` has to ask for `maxStorageBuffersInVertexStage` —
                 see the note there. */}
-            <ClothComponent segmentsX={256} segmentsY={96} />
+            <ClothComponent sphereRadius={1.0} segmentsX={256} segmentsY={96} />
 
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water'} objects={objects}></SceneWaterObject>

@@ -163,7 +163,7 @@ function readCentre(centre: Object3D): Vector3 {
  */
 function readPinCircle(radius: number): PinCircle {
     ANCHOR_CENTRE.copy(readCentre(CAPE_CENTRE))
-    ANCHOR_CENTRE.y += 1.1
+    ANCHOR_CENTRE.y += 0.5
 
     // Both directions come straight off `rotation.y` — one angle gives the pair,
     // rather than a facing read out of `readFacing` and a cross product taken
@@ -184,7 +184,7 @@ function readPinCircle(radius: number): PinCircle {
 
     // A radius of zero divides into the span and leaves no ring to hang from, so
     // the degenerate case is floored rather than guarded.
-    const safeRadius = radius * 12
+    const safeRadius = radius * 5
 
     return {
         centre: ANCHOR_CENTRE,
