@@ -49,9 +49,7 @@ export const KTX2_IS_Y_FLIP = true
  * encode actually produced a KTX2 file rather than an empty buffer or an error
  * string — the encoder fails soft in some paths.
  */
-export const KTX2_MAGIC = new Uint8Array([
-    0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
-])
+export const KTX2_MAGIC = new Uint8Array([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a])
 
 /**
  * The encoder wasm, served from a stable same-origin path.
@@ -282,12 +280,7 @@ function floorTo4(value: number): number {
     return Math.max(4, value - (value % 4))
 }
 
-function computeKtx2Size(
-    w: number,
-    h: number,
-    maxW: number,
-    maxH: number,
-): { width: number; height: number } {
+function computeKtx2Size(w: number, h: number, maxW: number, maxH: number): { width: number; height: number } {
     if (w <= maxW && h <= maxH) return { width: floorTo4(w), height: floorTo4(h) }
     const scale = Math.min(maxW / w, maxH / h)
     return { width: floorTo4(Math.round(w * scale)), height: floorTo4(Math.round(h * scale)) }
