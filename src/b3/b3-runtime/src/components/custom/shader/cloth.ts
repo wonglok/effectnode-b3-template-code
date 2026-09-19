@@ -884,6 +884,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
     clothMaterial.iridescence = 0.1
     clothMaterial.iridescenceIOR = 1.0
 
+    clothMaterial.transparent = false
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which
     // is what a DoubleSide material resolves to.
