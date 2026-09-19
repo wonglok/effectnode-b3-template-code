@@ -8,7 +8,6 @@ import {
     vec4,
     texture,
     uv,
-    reflector,
     time,
     vec3,
     float,
@@ -126,54 +125,15 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
         return uniform(5.0, 'float')
     }, [])
 
-    const reflection = useMemo(() => {
-        if (!playerGroup) {
-            return
-        }
-        return reflector({
-            target: playerGroup,
-            // `bounces: false` — a reflector with `bounces: true` renders *other*
-            // reflector nodes inside its own pass, and this scene has three (two
-            // water, this one). Each nesting is another whole
-            // `renderer.render(scene, virtualCamera)`. Off, three sets
-            // `updateBeforeType` to `FRAME` instead of `RENDER`, so this one
-            // updates once per frame and — `ReflectorNode.updateBefore` — skips
-            // itself entirely while another reflector's pass is in flight. The
-            // visible consequence is only that this reflection no longer appears
-            // *inside* the water's, which is the whole trade.
-            bounces: false,
-            resolutionScale: 0.5,
-        })
-    }, [playerGroup])
-
-    useEffect(() => {
-        if (!reflection) {
-            return
-        }
-        // 0.5 is half of the rendering view
-        // reflection.target.rotation.x = -Math.PI / 2
-
-        scene.add(reflection.target)
-        return () => {
-            try {
-                reflection.target.removeFromParent()
-                reflection.dispose()
-            } catch (e) {
-                console.log(e)
-            }
-        }
-    }, [reflection])
-
     useFrame(() => {
-        // Outside the reflection guard on purpose: the ring is drawn from this
-        // radius whether or not the reflective floor exists, so binding it to the
-        // reflector would freeze it at its default in any scene without one.
+        // Read live rather than captured in the memo above: the ring's reach is a
+        // runtime tunable, and the ring *is* the force field's edge, so it has to
+        // pick up a new radius on the same frame the field does.
         uFieldRadius.value = useNavRigStore.getState().settings.forceFieldRadius
-        if (playerGroup && reflection) {
+        // The pulse is centred on the player, so this is what the shader's
+        // `uPlayerPosition` points at — see `circlePulse`.
+        if (playerGroup) {
             placeOfPlayer.position.copy(playerGroup.position)
-            reflection.target.position.x = playerGroup?.position.x
-            reflection.target.position.y = playerGroup?.position.y
-            reflection.target.position.z = playerGroup?.position.z
         }
     })
 
@@ -244,11 +204,7 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
             // ring is the jump's force field, and it should read as one.
             const pulseMotion = circlePulse(uPlayerPosition, uFieldRadius, float(1.6), uPulseProgress)
             const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale)) as Node<'float'>
-            const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
-
-            // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
-            // yet wired in; uncomment once it's referenced (kept the build green).
-            const reflectionColor = texture(reflection, uv().mul(texScale))
+            // const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             //
             // const normalVec4 = texture(normalMap, uv().mul(texScale))

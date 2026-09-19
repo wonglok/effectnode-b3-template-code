@@ -21,7 +21,7 @@ GET http://localhost:4343/api/health
 ```
 
 `editors` is how many tabs can answer. Every request goes to all of them and
-every answer comes back, so more than one is the *useful* case, not a problem.
+every answer comes back, so more than one is the _useful_ case, not a problem.
 
 `unidentified` counts tabs that joined without announcing themselves — still
 answerable, but not nameable. `duplicates` lists editor ids presented by more
@@ -35,13 +35,25 @@ GET http://localhost:4343/api/editors
 ```
 
 ```json
-{ "editors": [
-    { "id": "959e7c1b-9fcb-4387-a93b-f4e08c932b2d", "loadId": "60502996-c646-47a4-9333-b81d3d77ed89",
-      "label": "macOS · Chrome · /production", "platform": "macOS", "browser": "Chrome",
-      "page": "/production", "viewport": { "width": 1728, "height": 854 },
-      "devicePixelRatio": 1, "userAgent": "Mozilla/5.0 …",
-      "socketId": "JF3iecjYkdf0L1K4AAAA", "connectedAt": 1789349358273, "identified": true } ],
-  "duplicates": [] }
+{
+    "editors": [
+        {
+            "id": "959e7c1b-9fcb-4387-a93b-f4e08c932b2d",
+            "loadId": "60502996-c646-47a4-9333-b81d3d77ed89",
+            "label": "macOS · Chrome · /production",
+            "platform": "macOS",
+            "browser": "Chrome",
+            "page": "/production",
+            "viewport": { "width": 1728, "height": 854 },
+            "devicePixelRatio": 1,
+            "userAgent": "Mozilla/5.0 …",
+            "socketId": "JF3iecjYkdf0L1K4AAAA",
+            "connectedAt": 1789349358273,
+            "identified": true
+        }
+    ],
+    "duplicates": []
+}
 ```
 
 This route is loopback-guarded like the mutations — it lists user agents and
@@ -94,19 +106,19 @@ Aim mutations at one device with it. Without it, a mutation applies to **every**
 connected editor — which is what you want for "run this probe everywhere" and is
 a footgun for `dispose`, which would detach the subtree on all of them.
 
-> `$0` is resolved **per editor** — it is the object *that tab* last addressed,
+> `$0` is resolved **per editor** — it is the object _that tab_ last addressed,
 > not a scene address. Fanning `?object=$0` out to three tabs asks about three
 > different objects, and `patch`es three different subtrees. The envelope warns
 > when it sees one, but prefer a real path or uuid when targeting several tabs.
 
 ## Failure modes
 
-| Status | Meaning |
-|---|---|
-| `503 no editor connected` | No tab is open, or it hasn't connected yet. |
-| `403` | You called a guarded route (a mutation, or `/api/editors`) from a non-local origin. |
-| `404` | `?editor=` matched no connected editor. |
-| `400` | `?editor=` matched more than one — the error lists them. |
+| Status                     | Meaning                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| `503 no editor connected`  | No tab is open, or it hasn't connected yet.                                         |
+| `403`                      | You called a guarded route (a mutation, or `/api/editors`) from a non-local origin. |
+| `404`                      | `?editor=` matched no connected editor.                                             |
+| `400`                      | `?editor=` matched more than one — the error lists them.                            |
 | `200` with `partial: true` | The request ran, but at least one editor failed or dropped out. Read `responses[]`. |
 
 There is no `504`: a request that outruns its editors still answers `200`, with
@@ -123,12 +135,12 @@ nobody is looking at, not a bug.
 Every request that targets an object takes a **selector** (`?object=` on a GET,
 `"object"` in a POST body). Resolved in this order:
 
-| Form | Example | Meaning |
-|---|---|---|
-| `$0` | `$0` | The object the last successful request addressed. |
-| uuid | `a1b2c3d4-…` | Exact `Object3D.uuid` match (from `/api/query/scene`). |
-| path | `player/Avatar/head` | Walk children from the scene root by name or uuid. |
-| name | `player` | First object in depth-first order with that name. |
+| Form | Example              | Meaning                                                |
+| ---- | -------------------- | ------------------------------------------------------ |
+| `$0` | `$0`                 | The object the last successful request addressed.      |
+| uuid | `a1b2c3d4-…`         | Exact `Object3D.uuid` match (from `/api/query/scene`). |
+| path | `player/Avatar/head` | Walk children from the scene root by name or uuid.     |
+| name | `player`             | First object in depth-first order with that name.      |
 
 There is no selection UI in the app, so `$0` is populated by exactly this
 mechanism: address something and it becomes `$0`. Known useful entry points:
@@ -150,20 +162,20 @@ Every node carries:
 
 ```json
 {
-  "uuid": "a1b2c3d4-…",
-  "name": "PlayerCharacter",
-  "type": "Group",
-  "visible": true,
-  "castShadow": true,
-  "receiveShadow": true,
-  "frustumCulled": true,
-  "renderOrder": 0,
-  "position": [0, 8.005, -29.23],
-  "rotation": [0, 1.5707, 0],
-  "scale": [1, 1, 1],
-  "bbox": { "min": [-0.5, 0, -0.5], "max": [0.5, 1.8, 0.5] },
-  "material": { "name": "MeshPhysicalNodeMaterial", "type": "…", "color": 16777215 },
-  "children": []
+    "uuid": "a1b2c3d4-…",
+    "name": "PlayerCharacter",
+    "type": "Group",
+    "visible": true,
+    "castShadow": true,
+    "receiveShadow": true,
+    "frustumCulled": true,
+    "renderOrder": 0,
+    "position": [0, 8.005, -29.23],
+    "rotation": [0, 1.5707, 0],
+    "scale": [1, 1, 1],
+    "bbox": { "min": [-0.5, 0, -0.5], "max": [0.5, 1.8, 0.5] },
+    "material": { "name": "MeshPhysicalNodeMaterial", "type": "…", "color": 16777215 },
+    "children": []
 }
 ```
 
@@ -172,7 +184,7 @@ Every node carries:
   It is `null` for a node with no geometry beneath it.
 - **Cull flags** answer "why is my shadow missing?" (`castShadow`) and "why does
   this disappear when I pan?" (`frustumCulled`).
-- `maxDepth` truncates the *emitted tree* only — bounds stay correct.
+- `maxDepth` truncates the _emitted tree_ only — bounds stay correct.
 - **Local vs world:** `position` / `rotation` / `scale` are the **local**
   transform — exactly the properties `/api/mutation/patch` writes, so you can
   verify a patch by re-querying. `bbox` is **world-space** and includes every
@@ -187,34 +199,58 @@ GET /api/query/performance
 
 ```json
 {
-  "totals": {
-    "objects": 412, "drawCalls": 96, "uniqueGeometries": 38,
-    "uniqueMaterials": 31, "uniqueTextures": 12,
-    "vertices": 118004, "triangles": 39201,
-    "drawnVertices": 240118, "drawnTriangles": 79002
-  },
-  "geometries": [ { "uuid": "…", "triangleCount": 12000, "references": 3, "owners": ["a","b","c"], "bytes": 576000 } ],
-  "slowObjects": [ { "name": "Terrain", "instances": 1, "triangleCount": 12000 } ],
-  "runtime": {
-    "sampling": true, "frames": 900,
-    "environment": {
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) …",
-      "userAgentData": { "brands": [ { "brand": "Chromium", "version": "140" } ],
-                         "mobile": false, "platform": "macOS" }
+    "totals": {
+        "objects": 412,
+        "drawCalls": 96,
+        "uniqueGeometries": 38,
+        "uniqueMaterials": 31,
+        "uniqueTextures": 12,
+        "vertices": 118004,
+        "triangles": 39201,
+        "drawnVertices": 240118,
+        "drawnTriangles": 79002
     },
-    "framerate": { "fps": 58.2, "frameMs": 17.2, "p95FrameMs": 24.1, "minFps": 31.0, "slowFrames": 4 },
-    "budgetTargets": [ { "target": 60, "budgetMs": 16.67, "headroomPct": -3.2, "overBudget": true } ],
-    "load": {
-      "drawCalls": 118, "frameCalls": 4, "calls": 108420,
-      "triangles": 79002, "points": 0, "lines": 0,
-      "textures": 12, "geometries": 38, "totalBytes": 41883648,
-      "memory": { "geometries": 38, "textures": 12, "programs": 31,
-                  "attributesSize": 34000000, "texturesSize": 7800000,
-                  "programsSize": 84000, "uniformBuffersSize": 2048,
-                  "indexAttributesSize": 1900000, "totalBytes": 41883648 }
-    },
-    "slowEffects": [ { "name": "bloom", "avgMs": 6.4, "maxMs": 11.2, "frames": 900 } ]
-  }
+    "geometries": [
+        { "uuid": "…", "triangleCount": 12000, "references": 3, "owners": ["a", "b", "c"], "bytes": 576000 }
+    ],
+    "slowObjects": [{ "name": "Terrain", "instances": 1, "triangleCount": 12000 }],
+    "runtime": {
+        "sampling": true,
+        "frames": 900,
+        "environment": {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) …",
+            "userAgentData": {
+                "brands": [{ "brand": "Chromium", "version": "140" }],
+                "mobile": false,
+                "platform": "macOS"
+            }
+        },
+        "framerate": { "fps": 58.2, "frameMs": 17.2, "p95FrameMs": 24.1, "minFps": 31.0, "slowFrames": 4 },
+        "budgetTargets": [{ "target": 60, "budgetMs": 16.67, "headroomPct": -3.2, "overBudget": true }],
+        "load": {
+            "drawCalls": 118,
+            "frameCalls": 4,
+            "calls": 108420,
+            "triangles": 79002,
+            "points": 0,
+            "lines": 0,
+            "textures": 12,
+            "geometries": 38,
+            "totalBytes": 41883648,
+            "memory": {
+                "geometries": 38,
+                "textures": 12,
+                "programs": 31,
+                "attributesSize": 34000000,
+                "texturesSize": 7800000,
+                "programsSize": 84000,
+                "uniformBuffersSize": 2048,
+                "indexAttributesSize": 1900000,
+                "totalBytes": 41883648
+            }
+        },
+        "slowEffects": [{ "name": "bloom", "avgMs": 6.4, "maxMs": 11.2, "frames": 900 }]
+    }
 }
 ```
 
@@ -224,13 +260,13 @@ Read it like this:
   estimate from the scene graph; the second is the **measured whole-frame
   count**, including shadow-map and post-processing passes. A large gap is
   expected (the bloom pipeline and shadows are not scene-graph objects) — but a
-  gap that *grows* points at a pass doing more work over time.
+  gap that _grows_ points at a pass doing more work over time.
 - **`runtime.load.frameCalls`** is how many `render()` invocations made up the
   frame — i.e. how many passes ran.
 - **Geometry-bound vs CPU-bound:** compare `triangles` against `drawCalls`. Many
   draw calls and few triangles means CPU-bound (batching will help — see
   `/api/query/memory`). The reverse means geometry-bound (decimate).
-- `slowObjects` ranks *static* primitive cost, not frame time. `runtime` is the
+- `slowObjects` ranks _static_ primitive cost, not frame time. `runtime` is the
   only place real milliseconds appear.
 - **`runtime.environment`** records which browser produced those numbers — frame
   timings only compare across machines when you know the machine. `userAgentData`
@@ -246,21 +282,43 @@ GET /api/query/memory
 
 ```json
 {
-  "totals": { "objects": 412, "geometries": 38, "materials": 31, "textures": 12,
-              "geometryBytes": 35900000, "textureBytes": 7800000, "textureBytesEstimated": true },
-  "gpu": { "geometries": 44, "textures": 19, "programs": 33, "totalBytes": 48200000 },
-  "geometries": [], "materials": [], "textures": [],
-  "truncated": { "geometries": 0, "materials": 0, "textures": 0 },
-  "leakCandidates": [
-    { "uuid": "…", "kind": "texture", "name": "studio_hdr", "type": "Texture",
-      "firstSeenMs": 12040, "lastSeenMs": 88120, "observations": 14,
-      "disposeHint": "texture.dispose()" }
-  ],
-  "instancingCandidates": [
-    { "geometryUuid": "…", "objectCount": 24, "triangles": 7200,
-      "drawCallsNow": 24, "drawCallsAfter": 1, "names": ["Rock_1", "Rock_2"] }
-  ],
-  "notes": ["…"]
+    "totals": {
+        "objects": 412,
+        "geometries": 38,
+        "materials": 31,
+        "textures": 12,
+        "geometryBytes": 35900000,
+        "textureBytes": 7800000,
+        "textureBytesEstimated": true
+    },
+    "gpu": { "geometries": 44, "textures": 19, "programs": 33, "totalBytes": 48200000 },
+    "geometries": [],
+    "materials": [],
+    "textures": [],
+    "truncated": { "geometries": 0, "materials": 0, "textures": 0 },
+    "leakCandidates": [
+        {
+            "uuid": "…",
+            "kind": "texture",
+            "name": "studio_hdr",
+            "type": "Texture",
+            "firstSeenMs": 12040,
+            "lastSeenMs": 88120,
+            "observations": 14,
+            "disposeHint": "texture.dispose()"
+        }
+    ],
+    "instancingCandidates": [
+        {
+            "geometryUuid": "…",
+            "objectCount": 24,
+            "triangles": 7200,
+            "drawCallsNow": 24,
+            "drawCallsAfter": 1,
+            "names": ["Rock_1", "Rock_2"]
+        }
+    ],
+    "notes": ["…"]
 }
 ```
 
@@ -276,7 +334,7 @@ GET /api/query/memory
   this is the first walk.
 - **`instancingCandidates`** groups separate meshes sharing one geometry+material
   that could collapse into a single `InstancedMesh` (`drawCallsNow` → 1). It
-  cannot see two meshes with *identical-looking but distinct* geometries — this
+  cannot see two meshes with _identical-looking but distinct_ geometries — this
   app keys its own batching on the Blender object name, so identically-shaped
   objects with different names never collide.
 
@@ -301,23 +359,27 @@ GET /api/query/shader?object=$0&maxChars=40000
 
 ```json
 {
-  "object": { "uuid": "…", "name": "Terrain", "type": "Mesh" },
-  "material": { "uuid": "…", "name": "MeshPhysicalNodeMaterial", "type": "…" },
-  "language": "wgsl",
-  "source": "captured",
-  "vertexShader": "@vertex fn main(…",
-  "fragmentShader": "@fragment fn main(…",
-  "truncated": false,
-  "uniforms": {
-    "from": "node-builder",
-    "entries": [ { "name": "uPlayerPosition", "type": "vec3", "value": [1.2, 0, -4.5] } ]
-  },
-  "features": {
-    "defines": [],
-    "materialDefines": null,
-    "activeSlots": [ { "slot": "map", "kind": "texture" }, { "slot": "emissiveNode", "kind": "node" } ]
-  },
-  "notes": ["…"], "warnings": []
+    "object": { "uuid": "…", "name": "Terrain", "type": "Mesh" },
+    "material": { "uuid": "…", "name": "MeshPhysicalNodeMaterial", "type": "…" },
+    "language": "wgsl",
+    "source": "captured",
+    "vertexShader": "@vertex fn main(…",
+    "fragmentShader": "@fragment fn main(…",
+    "truncated": false,
+    "uniforms": {
+        "from": "node-builder",
+        "entries": [{ "name": "uPlayerPosition", "type": "vec3", "value": [1.2, 0, -4.5] }]
+    },
+    "features": {
+        "defines": [],
+        "materialDefines": null,
+        "activeSlots": [
+            { "slot": "map", "kind": "texture" },
+            { "slot": "emissiveNode", "kind": "node" }
+        ]
+    },
+    "notes": ["…"],
+    "warnings": []
 }
 ```
 
@@ -333,15 +395,15 @@ assumed. Read this before interpreting the response:**
 3. **Materials here have no `.uniforms` table.** `NodeMaterial` keeps uniforms in
    the node graph, and some (e.g. the collider's pulse) live in closures the
    material never sees. `uniforms.from` says where values came from:
-   - `"node-builder"` — live values read from the compiled builder. This is the
-     useful one. **The values are real; the names are not.** TSL emits synthetic
-     names (`nodeUniform0`, `nodeUniform1`, …), so match a uniform by its value
-     and position in the list, not by reading its name.
-   - `"material.uniforms"` — a `ShaderMaterial` uniform table. Rare here.
-   - `"none"` — the object has not been rendered yet, so nothing was captured.
-     Render it once and re-query.
+    - `"node-builder"` — live values read from the compiled builder. This is the
+      useful one. **The values are real; the names are not.** TSL emits synthetic
+      names (`nodeUniform0`, `nodeUniform1`, …), so match a uniform by its value
+      and position in the list, not by reading its name.
+    - `"material.uniforms"` — a `ShaderMaterial` uniform table. Rare here.
+    - `"none"` — the object has not been rendered yet, so nothing was captured.
+      Render it once and re-query.
 
-**On `maxChars`:** truncation clips from the *start*, and a compiled shader opens
+**On `maxChars`:** truncation clips from the _start_, and a compiled shader opens
 with licence and directive comments — so a small cap returns only the header,
 with `truncated: true` and none of the actual code. Typical sizes here are ~3KB
 vertex / ~24KB fragment, so the 400,000 default covers them whole. Raise the cap
@@ -360,7 +422,7 @@ reflects the default render context, not necessarily the variant in use.
 
 # Optimization heuristics (WebGPU)
 
-The queries above say *what* is expensive. These are the levers that actually
+The queries above say _what_ is expensive. These are the levers that actually
 change it, most-impactful first. Each is a change to app code, not a query — use
 `/api/mutation/eval` to prototype against the live scene, then edit the source.
 
@@ -375,7 +437,7 @@ offload, not the backend.
 This app already runs TSL end to end: `/api/query/shader` answering
 `language: "wgsl"` with `uniforms.from: "node-builder"` is the fingerprint.
 
-Where to look: low `triangles` but high `frameMs` and a *modest*
+Where to look: low `triangles` but high `frameMs` and a _modest_
 `runtime.load.drawCalls` means the cost is simulation on the CPU, not
 rasterization — that is your compute-shader candidate.
 
@@ -383,7 +445,7 @@ rasterization — that is your compute-shader candidate.
 
 `runtime.framerate` and `runtime.slowEffects` are built from
 `performance.now()`, so they include JavaScript overhead and queue wait. They
-tell you *a frame* was slow, not *which pass* was slow. The GPU timestamp query
+tell you _a frame_ was slow, not _which pass_ was slow. The GPU timestamp query
 is the ground truth, and it needs the renderer constructed with:
 
 ```js
@@ -402,7 +464,7 @@ CPU→GPU draw calls stay expensive under WebGPU. Two tools:
   `/api/query/memory` already ranks exactly these as `instancingCandidates`,
   with the projected `drawCallsNow → drawCallsAfter`. Treat that list as the
   work queue.
-- **`BatchedMesh`** to merge *varied* geometries into a single call. Reach for
+- **`BatchedMesh`** to merge _varied_ geometries into a single call. Reach for
   it when `instancingCandidates` is empty yet `/api/query/drawcalls` still shows
   many small objects sharing a material — distinct geometries don't collide in
   the instancing heuristic.
@@ -416,7 +478,7 @@ passes included) before and after.
 `totals.textureBytes` is the number to watch. Full-resolution PNG/JPG decodes
 into uncompressed VRAM and dominates memory bandwidth at sample time.
 
-- **KTX2** keeps textures compressed *on the GPU*, which is the single biggest
+- **KTX2** keeps textures compressed _on the GPU_, which is the single biggest
   VRAM lever — the texture is never blown out to raw RGBA.
 - **Draco / Meshopt** compress the geometry payloads that show up as
   `geometryBytes` and `load.memory.attributesSize`.
@@ -441,7 +503,7 @@ The two queries that catch this:
 
 - `/api/query/memory` **`gpu` vs `totals`** — a persistent gap is unreferenced
   but still-resident memory.
-- **`leakCandidates`** — a differential walk, not a verdict. Query *twice*,
+- **`leakCandidates`** — a differential walk, not a verdict. Query _twice_,
   before and after the suspected action, or the list is empty merely because it
   was the first walk.
 
@@ -485,24 +547,39 @@ selector otherwise: `"/player/position/y"` ≡ `{"object":"player"}` +
 `replace`, `move`, `copy`, `test`.
 
 ```json
-{ "reqID": "patch_1a2b", "ok": true, "result": {
-    "count": 1, "expected": 1, "partial": false, "timedOut": false, "warnings": [],
-    "responses": [
-      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 1,
-        "result": {
-          "applied": 3, "partial": false, "rebuildRisk": ["/material/wireframe"],
-          "target": { "uuid": "…", "name": "player", "type": "Group" },
-          "results": [ { "op": "replace", "path": "/position/y", "ok": true, "previous": 0 } ]
-        } }
-    ] } }
+{
+    "reqID": "patch_1a2b",
+    "ok": true,
+    "result": {
+        "count": 1,
+        "expected": 1,
+        "partial": false,
+        "timedOut": false,
+        "warnings": [],
+        "responses": [
+            {
+                "editor": { "label": "macOS · Chrome · /production" },
+                "ok": true,
+                "elapsedMs": 1,
+                "result": {
+                    "applied": 3,
+                    "partial": false,
+                    "rebuildRisk": ["/material/wireframe"],
+                    "target": { "uuid": "…", "name": "player", "type": "Group" },
+                    "results": [{ "op": "replace", "path": "/position/y", "ok": true, "previous": 0 }]
+                }
+            }
+        ]
+    }
+}
 ```
 
 - **`partial: true` means an op failed and the rest were skipped — the scene is
   left partly modified.** Ops run in order and the patch stops at the first
   failure; it does not roll back. `results` says exactly how far it got.
 - **Two different `partial`s.** The one inside `responses[].result` is the
-  patch's own (an op failed on that device); the one on the envelope means *some
-  editor's whole answer failed*. Both being `false` is the only "clean" reading.
+  patch's own (an op failed on that device); the one on the envelope means _some
+  editor's whole answer failed_. Both being `false` is the only "clean" reading.
 - **`rebuildRisk`** lists paths whose change likely altered three's pipeline
   cache key (e.g. toggling `wireframe` or `side`, or a value crossing zero),
   forcing a shader rebuild that allocates a new GPU pipeline. Check
@@ -526,16 +603,41 @@ In scope: `$0`, `scene`, `camera`, `gl`, `THREE`, `requestAnimationFrame`.
 not an expression. `$0.position.y` alone returns `null`.
 
 ```json
-{ "reqID": "eval_9x8y", "ok": true, "result": {
-    "count": 2, "expected": 2, "partial": false, "timedOut": false, "warnings": [],
-    "responses": [
-      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 2,
-        "result": { "ok": true, "result": [0, 1.8, 0], "elapsedMs": 1.42,
-                    "target": { "uuid": "…", "name": "player", "type": "Group" } } },
-      { "editor": { "label": "iOS · Safari · /production" }, "ok": true, "elapsedMs": 3,
-        "result": { "ok": true, "result": [0, 1.8, 0], "elapsedMs": 0.9,
-                    "target": { "uuid": "…", "name": "player", "type": "Group" } } }
-    ] } }
+{
+    "reqID": "eval_9x8y",
+    "ok": true,
+    "result": {
+        "count": 2,
+        "expected": 2,
+        "partial": false,
+        "timedOut": false,
+        "warnings": [],
+        "responses": [
+            {
+                "editor": { "label": "macOS · Chrome · /production" },
+                "ok": true,
+                "elapsedMs": 2,
+                "result": {
+                    "ok": true,
+                    "result": [0, 1.8, 0],
+                    "elapsedMs": 1.42,
+                    "target": { "uuid": "…", "name": "player", "type": "Group" }
+                }
+            },
+            {
+                "editor": { "label": "iOS · Safari · /production" },
+                "ok": true,
+                "elapsedMs": 3,
+                "result": {
+                    "ok": true,
+                    "result": [0, 1.8, 0],
+                    "elapsedMs": 0.9,
+                    "target": { "uuid": "…", "name": "player", "type": "Group" }
+                }
+            }
+        ]
+    }
+}
 ```
 
 This is the sharpest tool for comparing devices: the same snippet runs on every
@@ -560,13 +662,32 @@ texture it referenced (deduped by identity). This is the remedy for a
 `leakCandidates` entry.
 
 ```json
-{ "reqID": "dispose_1", "ok": true, "result": {
-    "count": 1, "expected": 1, "partial": false, "timedOut": false, "warnings": [],
-    "responses": [
-      { "editor": { "label": "macOS · Chrome · /production" }, "ok": true, "elapsedMs": 4,
-        "result": { "ok": true, "geometryCount": 2, "materialCount": 2, "textureCount": 1,
-                    "detachedFrom": "scene", "target": { "uuid": "…", "name": "Rock_14" } } }
-    ] } }
+{
+    "reqID": "dispose_1",
+    "ok": true,
+    "result": {
+        "count": 1,
+        "expected": 1,
+        "partial": false,
+        "timedOut": false,
+        "warnings": [],
+        "responses": [
+            {
+                "editor": { "label": "macOS · Chrome · /production" },
+                "ok": true,
+                "elapsedMs": 4,
+                "result": {
+                    "ok": true,
+                    "geometryCount": 2,
+                    "materialCount": 2,
+                    "textureCount": 1,
+                    "detachedFrom": "scene",
+                    "target": { "uuid": "…", "name": "Rock_14" }
+                }
+            }
+        ]
+    }
+}
 ```
 
 **Destructive and not undoable by a patch.** It refuses the scene root — dispose
