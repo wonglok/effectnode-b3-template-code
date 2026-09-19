@@ -1207,12 +1207,13 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
     // weaves. It does not touch the water: dodging is evasion, not deflection, so
     // nothing here can change the shot's course or hurt whoever fired it.
     //
-    // The displacement is what does the dodging. The clip (`more/dodging`)
-    // measures 1.633 s and is a weave *in place* — every bone returns to where it
-    // started — so on its own it would still be hit: the pool captures a droplet
-    // within 0.407 m of the chest, and the clip's own head travel is ~20 cm. What
-    // makes the shot miss is the sidestep below, and the clip is what makes the
-    // sidestep read as a dodge rather than a slide.
+    // The displacement is what does the dodging. The clip (`shooter/strafe`)
+    // measures 0.667 s and is de-trended to *in place* by its catalog entry's
+    // `inPlace` flag — see `dodgeClip.ts` — so on its own it would still be hit:
+    // the pool captures a droplet within 0.407 m of the chest, and what survives
+    // the strip is a couple of units of sway. What makes the shot miss is the
+    // sidestep below, and the clip is what makes the sidestep read as a dodge
+    // rather than a slide.
 
     /**
      * Dodge one incoming shot: step sideways out of its path, and play the weave.
@@ -1262,14 +1263,25 @@ export async function createNpcEnemies(opts: NpcEnemiesOptions): Promise<NpcEnem
         // is the mechanic and the weave is how it reads. A dodge with no clip is
         // still a dodge — see DODGE_CLIP.
         //
-        // Triggered once per *sequence*, not once per sidestep, and never cut. The
-        // weave is 1.633 s while a dodging NPC sidesteps every
-        // `npcDodgeRecovery` (0.15 s by default), so re-triggering it per dodge
-        // would restart it ten times inside one burst — ten fragments of a weave,
-        // none of them finishing. Letting the first one run covers the whole
-        // burst, and reads as one continuous evasion rather than as a twitch.
+        // Triggered once per *sequence*, not once per sidestep, and never cut. A
+        // dodging NPC sidesteps every `npcDodgeRecovery` (0.15 s by default), so
+        // re-triggering per dodge would restart the clip ten times inside one
+        // burst — ten fragments, none of them finishing. Letting the first one
+        // run reads as one continuous evasion rather than as a twitch.
         // `getEmotionId` is what says one is already playing; it also lets a fresh
         // burst start a fresh weave once the last one has ended on its own.
+        //
+        // How much burst one clip covers is a property of the clip, and this one
+        // is much shorter than the weave it replaced: 0.667 s against 1.633 s. A
+        // default five-charge burst fires its last sidestep at ~0.60 s, so the
+        // clip still covers it — but with ~0.07 s of slack where the old clip had
+        // a full second. Raise `npcDodgeCharges`, or drop `npcDodgeRecovery` under
+        // 0.667 s of burst, and a second strafe now starts mid-burst. That is
+        // benign rather than a regression: the clip is de-trended to in-place, so
+        // a restart reads as continuing footwork in the same direction (the
+        // per-NPC side parity above guarantees it), not as a reset. `speedFactor`
+        // scales the clip along with everything else, so the real-time length is
+        // 0.667/speedFactor.
         if (DODGE_CLIP && npc.rig && npc.rig.getEmotionId() !== DODGE_CLIP.id) {
             npc.rig.playEmotionOnce(DODGE_CLIP)
         }

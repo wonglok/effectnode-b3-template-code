@@ -14,13 +14,22 @@ export interface EmotionGroup {
 const humanize = (s: string) =>
   s.replace(/\.fbx$/, "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-const make = (folder: string, name: string, startAt = 0, dance = false): EmotionDef => ({
+/** `inPlace` strips the clip's authored root travel — see `EmotionDef.inPlace`.
+ *  Only the weapon packs need it; the gesture/dance libraries are in place. */
+const make = (
+  folder: string,
+  name: string,
+  startAt = 0,
+  dance = false,
+  inPlace = false,
+): EmotionDef => ({
   id: `${folder}/${name}`,
   name,
   url: `/char/motion-2/fbx/${folder}/${name}.fbx`,
   label: humanize(name),
   ...(startAt > 0 ? { startAt } : {}),
   ...(dance ? { dance: true } : {}),
+  ...(inPlace ? { inPlace: true } : {}),
 });
 
 export const EMOTION_GROUPS: EmotionGroup[] = [
@@ -237,7 +246,7 @@ export const EMOTION_GROUPS: EmotionGroup[] = [
     make("shooter", "start-walking", 0, false),
     make("shooter", "start-walking-backwards", 0, false),
     make("shooter", "stop-walking", 0, false),
-    make("shooter", "strafe", 0, false),
+    make("shooter", "strafe", 0, false, true),
     make("shooter", "strafe-2", 0, false),
     make("shooter", "walk-backwards-stop", 0, false),
     make("shooter", "walking", 0, false),

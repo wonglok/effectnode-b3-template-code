@@ -262,6 +262,25 @@ function playClip(
 // ---------------------------------------------------------------------------
 
 /**
+ * The emotion path's view of a catalog {@link EmotionDef}: the clip to load,
+ * plus the flags that change how it plays.
+ *
+ * Spelled once here rather than repeated at each of the signatures that take
+ * it, so a new flag is declared in one place and the compiler points at every
+ * site that has to honour it.
+ */
+type EmotionClipDef = MotionClipDef & {
+    /** Seconds of authored preamble to skip (see `startAt`). */
+    startAt?: number
+    /** Loop until cancelled instead of one-shot-then-idle. */
+    dance?: boolean
+    /** Clip id reported by `getEmotionId`. */
+    id?: string
+    /** Strip the clip's root XZ travel before playing — see `EmotionDef.inPlace`. */
+    inPlace?: boolean
+}
+
+/**
  * The composed, SDK-built avatar plus the small imperative controller the
  * NavMeshRig drives each frame. `scene` is the group to add under the player
  * group; the rest replace the mixer/action plumbing the rig used to own.
@@ -357,9 +376,12 @@ export interface AvatarRig {
      * Interrupts any emotion currently playing. While it runs `isEmotionActive()`
      * is true — the emotion owns the mixers (locomotion weight forced to 0). The
      * clip plays as-authored: its root translation is preserved, so the player is
-     * not locked in place. `def.startAt` skips an authored preamble (e.g. the gesture library's
+     * not locked in place — **unless `def.inPlace` is set**, which asks for that
+     * travel to be stripped first (the weapon packs are authored to carry the
+     * character forward, and a one-shot played where the navmesh owns position
+     * would slide off its spot). `def.startAt` skips an authored preamble (e.g. the gesture library's
      * ~0.14s "get up from the floor" intro) so a one-shot begins standing. */
-    playEmotionOnce(def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }): void
+    playEmotionOnce(def: EmotionClipDef): void
     /** True while an emotion is playing. */
     isEmotionActive(): boolean
     /** True when the active emotion is a looping dance (tap again to stop). */
@@ -725,7 +747,7 @@ export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promis
         writeLocomotionWeights()
     }
 
-    const startEmotionClip = (clip: THREE.AnimationClip, def: { startAt?: number; dance?: boolean; id?: string }) => {
+    const startEmotionClip = (clip: THREE.AnimationClip, def: EmotionClipDef) => {
         const startAt = def.startAt ?? 0
         const bodyClip = clip
         const makeAction = (m: THREE.AnimationMixer, c: THREE.AnimationClip) => {
@@ -771,12 +793,22 @@ export async function loadAvatar(config?: AvatarConfig | AvatarManifest): Promis
      */
     const oneShotClips = new Map<string, Promise<THREE.AnimationClip | null>>()
 
-    const triggerEmotion = (def: MotionClipDef & { startAt?: number; dance?: boolean; id?: string }) => {
+    const triggerEmotion = (def: EmotionClipDef) => {
         const token = ++emotionToken
         stopEmotion() // interrupt any emotion already playing
         let pending = oneShotClips.get(def.url)
         if (!pending) {
-            pending = loadMotionClips([def], bodyScene).then((loaded) => loaded.get(def.name) ?? null)
+            // The strip belongs *inside* the cached chain, not after it. An
+            // `inPlace` clip is de-trended by cloning (a fresh uuid), and
+            // `mixer.clipAction` caches by uuid and never evicts — so stripping
+            // past the cache would mint a new action on every trigger, which is
+            // exactly the unbounded growth the note above guards against. Here
+            // the stripped clip is built once and every later trigger reuses it.
+            pending = loadMotionClips([def], bodyScene).then((loaded) => {
+                const clip = loaded.get(def.name) ?? null
+                if (!clip || !def.inPlace) return clip
+                return stripClipTravel(clip, bodyScene)
+            })
             oneShotClips.set(def.url, pending)
         }
         void pending.then((clip) => {

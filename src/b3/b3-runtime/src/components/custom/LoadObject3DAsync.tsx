@@ -8,6 +8,7 @@ import { SceneWaterObject } from './SceneWaterObject'
 export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
     return (
         <>
+            {/* <directionalLight position={[1, 1, 1]} intensity={10}></directionalLight> */}
             <LoadCollider texData={texData} objects={objects}></LoadCollider>
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>

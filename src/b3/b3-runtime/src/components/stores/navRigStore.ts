@@ -146,8 +146,14 @@ interface NavRigSettings {
      *  Measured against a five-shot burst, at 5 charges and a 2 s cool-off: at
      *  0.15 the NPC spends all five charges and takes none of the five; at 0.3 it
      *  spends three and still takes none (the sidesteps overlap, and it is still
-     *  sliding when the later shots arrive); at 1.6 — the weave's own length — it
-     *  dodges once and wears three. */
+     *  sliding when the later shots arrive); at 1.6 it dodges once and wears
+     *  three. Those are properties of the **sidestep impulse**, not of the clip,
+     *  so they hold for any dodge clip.
+     *
+     *  What the clip does bound is how long one trigger covers the burst. The
+     *  dodge clip is now `shooter/strafe` at 0.667 s — see `dodgeClip.ts` — so a
+     *  burst longer than that restarts it partway; `npcEnemies` records what that
+     *  does and does not change. */
     npcDodgeRecovery: number
     /** How many dodges an NPC has before it must cool off — the size of the
      *  pool, restored all at once by `npcDodgeRecharge`. Each dodge spends one,
@@ -284,6 +290,14 @@ export interface EmotionDef {
      *  again (or another emotion is picked), and the character keeps steering/
      *  walking while it plays. Gestures default to one-shot then idle. */
     dance?: boolean
+    /** Remove the clip's root **XZ travel** before playing it. Weapon-pack clips
+     *  are authored to carry the character forward — `shooter/strafe` crosses
+     *  135 units over its 0.667 s — so a one-shot played where the navmesh, not
+     *  the clip, owns position has to have that drift taken out or the character
+     *  slides away from its spot and snaps back on every repeat. Set this
+     *  whenever a clip from the travelling packs is declared as an emotion; the
+     *  in-place sway and vertical bob are untouched. See `stripClipTravel`. */
+    inPlace?: boolean
 }
 
 /** Min / max camera distance from the player (world units). */

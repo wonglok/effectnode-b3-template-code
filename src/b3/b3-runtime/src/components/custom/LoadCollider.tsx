@@ -238,12 +238,12 @@ export function LoadCollider({ texData = new Map(), objects = [] }) {
                 collider.userData.oMaterial = collider.material
             }
 
-            const texScale = 35.0
+            const texScale = 35.0 * 10.0
 
             // Band widened from 1.0 and the emissive lifted from 5.0 below: the
             // ring is the jump's force field, and it should read as one.
             const pulseMotion = circlePulse(uPlayerPosition, uFieldRadius, float(1.6), uPulseProgress)
-            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale).mul(0.5)) as Node<'float'>
+            const honeyCombThinBase = getHoneyComb(float(0.0), float(0.02), float(texScale)) as Node<'float'>
             const noisePattern = getNoiseValue(float(0.05), float(0.25)) as Node<'float'>
 
             // TEMP WIP — reflectionColor is drafted for the backdrop effect but not
