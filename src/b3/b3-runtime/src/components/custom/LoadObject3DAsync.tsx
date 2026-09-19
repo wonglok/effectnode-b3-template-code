@@ -26,7 +26,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 the field now looks thin, the answer is not to raise this back
                 but to wire `grassCuller`, which is written to keep density
                 near the player and cut the count behind them. */}
-            {/* <GrassComponent objects={objects} instances={50000} /> */}
+            <GrassComponent objects={objects} instances={50000} />
 
             {/* The player's cape: a GPU verlet cloth drawn with the TSL
                 transmission material (`shader/TransmissionTSLMaterial.ts`),

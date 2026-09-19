@@ -659,15 +659,15 @@ export function GrassComponent({
     // Only the aspect differs from a uniform shrink, so the blades are noticeably
     // taller than they are wide.
     bladeWidth = 0.025,
-    bladeHeight = 0.25,
+    bladeHeight = 0.5,
     joints = 4,
     terrainAmplitude = 1,
     showGround = false,
     // sRGB equivalents of the reference's (0, 0.6, 0) / (0, 0.1, 0).
-    tipColor = '#009900',
+    tipColor = '#50fb50',
     bottomColor = '#001a00',
     groundColor = '#000f00',
-    windSpeed = 0.35,
+    windSpeed = 0.5,
     windStrength = 0.1,
     // ~8 m patches: wide enough to read as clumping at the scale the camera moves
     // over the field, small enough that the field as a whole still looks planted
