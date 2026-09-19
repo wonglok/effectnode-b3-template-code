@@ -57,7 +57,13 @@ import {
     Quaternion,
     Vector3,
 } from 'three'
-import { DoubleSide, LineBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } from 'three/webgpu'
+import {
+    DoubleSide,
+    LineBasicNodeMaterial,
+    MeshPhysicalNodeMaterial,
+    MeshStandardNodeMaterial,
+    SpriteNodeMaterial,
+} from 'three/webgpu'
 import {
     Fn,
     If,
@@ -865,13 +871,14 @@ export function createCloth(options: ClothOptions): ClothHandle {
     clothGeometry.setAttribute('vertexIds', new BufferAttribute(verletVertexIdArray, 4, false))
     clothGeometry.setIndex(clothIndices)
 
-    const clothMaterial: TransmissionTSLMaterial = new TransmissionTSLMaterial({
+    const clothMaterial: MeshPhysicalNodeMaterial = new MeshPhysicalNodeMaterial({
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
+        reflectivity: 0.5,
         thickness: 1.0,
         roughness: 0.0,
         ior: 1.45,
-        transmission: 1.0,
+        transmission: 0.0,
         attenuationColor: '#ffffff',
         attenuationDistance: Infinity,
         chromaticAberration: 0.06,
@@ -879,12 +886,17 @@ export function createCloth(options: ClothOptions): ClothHandle {
         ...options.material,
     })
 
+    clothMaterial.opacity = 0.5
+    clothMaterial.transparent = true
+    clothMaterial.depthTest = false
+
     // clothMaterial.sheenNode = color(new Color('#ffffff'))
     // clothMaterial.colorNode = color(new Color('#ffffff'))
     clothMaterial.iridescence = 0.1
     clothMaterial.iridescenceIOR = 1.0
 
-    clothMaterial.transparent = false
+    // clothMaterial.opacity = 1.0
+    // clothMaterial.transparent = true
     // DoubleSide because a cloth has no inside: the folds turn both faces to the
     // camera. The transmission reads the opaque viewport for a front face, which
     // is what a DoubleSide material resolves to.
@@ -919,7 +931,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // `material` off it reads `builder.material` — the material being built —
         // and the assignment lands on this material. There is no other channel
         // from a position node back to its own material.
-        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().normalize().negate().abs()
+        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying()
 
         return v0.add(v1).add(v2).add(v3).mul(0.25)
     })()
@@ -929,8 +941,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
     clothMesh.frustumCulled = false
 
     // --- the sphere it drapes over -------------------------------------------
-    const sphere = new Mesh(new IcosahedronGeometry(sphereRadius * 0.95, 4), new MeshStandardNodeMaterial())
+    const sphere = new Mesh(new IcosahedronGeometry(sphereRadius * 0.95, 4), new MeshPhysicalNodeMaterial())
     sphere.frustumCulled = false
+
+    // sphere.renderOrder = 99999999
 
     // --- wireframe debug view (opt-in) ---------------------------------------
     // Two visualisers of the sim: a point per verlet vertex, and a line per
