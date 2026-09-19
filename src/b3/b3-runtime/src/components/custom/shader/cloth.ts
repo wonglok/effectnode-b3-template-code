@@ -874,21 +874,20 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const clothMaterial: MeshPhysicalNodeMaterial = new MeshPhysicalNodeMaterial({
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
-        reflectivity: 0.5,
-        thickness: 1.0,
+        thickness: 1.5,
         roughness: 0.0,
+        metalness: 0.0,
         ior: 1.45,
-        transmission: 0.0,
-        attenuationColor: '#ffffff',
-        attenuationDistance: Infinity,
+        transmission: 1.0,
+        // attenuationColor: '#ffffff',
+        // attenuationDistance: Infinity,
         chromaticAberration: 0.06,
         anisotropicBlur: 0.1,
         ...options.material,
     })
 
-    clothMaterial.opacity = 0.5
-    clothMaterial.transparent = true
-    clothMaterial.depthTest = false
+    // clothMaterial.opacity = 0.5
+    // clothMaterial.transparent = true
 
     // clothMaterial.sheenNode = color(new Color('#ffffff'))
     // clothMaterial.colorNode = color(new Color('#ffffff'))
