@@ -868,10 +868,10 @@ export function createCloth(options: ClothOptions): ClothHandle {
     const clothMaterial: TransmissionTSLMaterial = new TransmissionTSLMaterial({
         // Glass over a draped sheet: thin, smooth, and mostly transparent, with
         // the chromatic fringe turned up enough to read on the folds.
-        thickness: 0.95,
+        thickness: 1.0,
         roughness: 0.0,
-        ior: 1.35,
-        transmission: 1,
+        ior: 1.45,
+        transmission: 1.0,
         attenuationColor: '#ffffff',
         attenuationDistance: Infinity,
         chromaticAberration: 0.06,
@@ -918,7 +918,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // `material` off it reads `builder.material` — the material being built —
         // and the assignment lands on this material. There is no other channel
         // from a position node back to its own material.
-        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().negate()
+        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().oneMinus().normalize()
 
         return v0.add(v1).add(v2).add(v3).mul(0.25)
     })()
