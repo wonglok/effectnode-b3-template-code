@@ -918,7 +918,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // `material` off it reads `builder.material` — the material being built —
         // and the assignment lands on this material. There is no other channel
         // from a position node back to its own material.
-        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().oneMinus().normalize()
+        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().normalize().negate().abs()
 
         return v0.add(v1).add(v2).add(v3).mul(0.25)
     })()
