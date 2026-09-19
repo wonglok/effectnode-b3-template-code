@@ -20,7 +20,7 @@
  * | `springForceBuffer` sized `springCount * 3` | `springCount` — one vec3 per spring, which is all the shader indexes. The example's extra 2/3 is never read |
  * | Wireframe helpers always built | Built only when `wireframe: true` — they are the part of the example that is a debug view rather than the cloth, and they are the part this port cannot verify headlessly |
  * | The sphere is unconditional | Optional, on by default — the collision in the vertex pass reads `sphereUniform`, which is 0 when the sphere is off, so the two always agree |
- * | The sphere drifts on the example's two sines | It **follows the player**, so walking through the cloth drags it over the sphere. The drift is gone; a caller that supplies no `getPlayerPosition` gets a sphere parked where the cloth hangs |
+ * | The sphere drifts on the example's two sines | It **follows the player**, so walking through the cloth drags it over the sphere: placed outright on the scene's player group, `SPHERE_PLAYER_OFFSET` above it, and off the optional `getPlayerPosition` callback when there is no player group to read — a caller that supplies neither gets a sphere parked where the cloth hangs |
  * | Pinned vertices are never touched after upload | `getPinCircle` **places** them, every step, on the circle they hang from — which is what lets the cloth be worn (`ClothComponent` hangs it in a ring around the avatar) instead of hanging in one spot. With no circle the pins are seeded onto their own authored row, so a static cloth behaves exactly as the example did |
  * | The wind always blows along the world's `-Z` | `getWindDirection` — read in the direction the caller gives it, defaulting to the example's `-Z`. A garment has to be blown along its **wearer's** back: with a fixed world direction a character who turns away from `-Z` gets a sidewind, and one who turns to face it gets a cape blown through their front |
  *
@@ -52,6 +52,7 @@ import {
     InstancedBufferGeometry,
     Line,
     Mesh,
+    type Object3D,
     PlaneGeometry,
     Quaternion,
     Vector3,
@@ -77,6 +78,7 @@ import {
     uniform,
 } from 'three/tsl'
 import type { Node, WebGPURenderer } from 'three/webgpu'
+import { useGameGlobal } from '../../../../../../components/useGameGlobal'
 import { TransmissionTSLMaterial, type TransmissionTSLParams } from './TransmissionTSLMaterial'
 
 // ---------------------------------------------------------------------------
@@ -117,6 +119,18 @@ const DEFAULT_PIN_EVERY = 5
  *  fraction of a second rather than in one step. */
 const DEFAULT_SPHERE_FOLLOW_SPEED = 30
 
+/**
+ * Where the collider sphere sits relative to the player group's own position, in
+ * world units — the offset the sphere is placed at when the scene has a player.
+ *
+ * The group's position is the player's feet on the navmesh, so this is chest
+ * height on a 1.7 m body: the height the cloth's pinned edge hangs at, and the
+ * part of the player a cloth would actually be draped over. Move it and the
+ * collider follows — down towards the feet and the sphere drops below a hem it
+ * was reaching, up towards the head and the cloth rides over a torso it misses.
+ */
+const SPHERE_PLAYER_OFFSET = new Vector3(0, 1.5, 0)
+
 /** The example's numbers: a 1 m cloth in a 30 × 30 grid, draped over a 15 cm
  *  sphere, with the top edge pinned every fifth vertex. */
 const DEFAULTS = {
@@ -124,7 +138,7 @@ const DEFAULTS = {
     height: 1,
     segmentsX: 24,
     segmentsY: 24,
-    sphereRadius: 0.15,
+    sphereRadius: 0.5,
 } as const
 
 export interface ClothOptions {
@@ -167,6 +181,11 @@ export interface ClothOptions {
      *
      * A teleport — a respawn, or `placePlayer` resolving late — is absorbed by
      * the follow's smoothing rather than being applied as one enormous shove.
+     *
+     * Only the **fallback**: while the scene has a player group to read (see
+     * `SPHERE_PLAYER_OFFSET`) that group is what the sphere is placed on, and
+     * this is never called. It is for a cloth with no player in the scene — a
+     * bare demo, or a caller driving its own collider.
      */
     getPlayerPosition?: () => Vector3 | null
     /**
@@ -675,7 +694,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         sphere: true,
         wind: options.wind ?? 1.0,
         stiffness: 0.2,
-        dampening: 0.97,
+        dampening: 0.975,
         sphereFollowSpeed: options.sphereFollowSpeed ?? DEFAULT_SPHERE_FOLLOW_SPEED,
     }
 
@@ -899,7 +918,7 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // `material` off it reads `builder.material` — the material being built —
         // and the assignment lands on this material. There is no other channel
         // from a position node back to its own material.
-        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().abs()
+        material.normalNode = transformNormalToView(cross(tangent, bitangent)).toVarying().negate()
 
         return v0.add(v1).add(v2).add(v3).mul(0.25)
     })()
@@ -1020,12 +1039,19 @@ export function createCloth(options: ClothOptions): ClothHandle {
         sphere.visible = false
         sphereUniform.value = params.sphere ? 1 : 0
 
+        // The player, when the scene has one. Read once for the whole frame —
+        // the group itself is stable, so this is a store lookup rather than a
+        // subscription — and read *here* rather than further down because the
+        // matrix guard below has to know whether the sphere will be converted
+        // this frame.
+        const playerGroup = useGameGlobal.getState().playerGroup as Object3D | null
+
         // Both readings below convert world positions into this group's space,
         // so its matrix has to be current first: `update` runs before the render
         // pass, which means the matrix would otherwise be last frame's. One
         // frame stale is invisible for a cloth, but it is not invisible on the
         // first frame, when the matrix is still the identity.
-        if (getPlayerPosition || getPinCircle) {
+        if (playerGroup || getPlayerPosition || getPinCircle) {
             object3D.updateWorldMatrix(true, false)
         }
 
@@ -1035,14 +1061,36 @@ export function createCloth(options: ClothOptions): ClothHandle {
         // below, because it is part of the simulation's state.
         hasTarget = false
 
-        if (getPlayerPosition) {
+        // The player group is where the sphere goes, then and there: its
+        // position is the player's feet on the navmesh, so `SPHERE_PLAYER_OFFSET`
+        // lifts it to the height the cloth hangs at.
+        //
+        // Set outright rather than chased, which is the one thing here that
+        // differs from the callback path below: the sphere *is* the player's
+        // torso, and a chase is a smoothing for something the cloth is being
+        // draped over, not for the body itself — at a follow speed close to the
+        // player's own it trails them by half a metre, and this is the collider
+        // everything about contact is measured from. The cost is that
+        // `sphereFollowSpeed` has nothing to do on this path, and that a
+        // teleport lands in one frame rather than over several — which for a
+        // body is what a teleport is.
+        //
+        // It also means the callback below is only for a cloth with no player
+        // group to read — a bare demo, or a caller driving its own collider —
+        // so the two are never both writing the sphere.
+        if (playerGroup) {
+            target.copy(playerGroup.position).add(SPHERE_PLAYER_OFFSET)
+            object3D.worldToLocal(target)
+
+            sphere.position.copy(target)
+            hasTarget = true
+        }
+
+        if (getPlayerPosition && !playerGroup) {
             const reported = getPlayerPosition()
 
             if (reported) {
                 playerWorld.copy(reported).add(playerOffset)
-
-                //
-                // playerOffset.y = 0
 
                 target.copy(playerWorld)
                 object3D.worldToLocal(target)

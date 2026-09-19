@@ -9,7 +9,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
     return (
         <>
             {/* <directionalLight position={[1, 1, 1]} intensity={10}></directionalLight> */}
-            <LoadCollider texData={texData} objects={objects}></LoadCollider>
+            {/* <LoadCollider texData={texData} objects={objects}></LoadCollider> */}
             <LoadCurve objects={objects}></LoadCurve>
             <LoadEdge texData={texData} objects={objects}></LoadEdge>
 
@@ -26,7 +26,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 the field now looks thin, the answer is not to raise this back
                 but to wire `grassCuller`, which is written to keep density
                 near the player and cut the count behind them. */}
-            <GrassComponent objects={objects} instances={50000} />
+            {/* <GrassComponent objects={objects} instances={50000} /> */}
 
             {/* The player's cape: a GPU verlet cloth drawn with the TSL
                 transmission material (`shader/TransmissionTSLMaterial.ts`),
@@ -35,7 +35,7 @@ export function LoadObject3DAsync({ texData = new Map(), objects = [] }) {
                 it from. Its vertex shader reads a storage buffer, so
                 `CanvasGPU` has to ask for `maxStorageBuffersInVertexStage` —
                 see the note there. */}
-            <ClothComponent segmentsX={150} segmentsY={50} />
+            <ClothComponent segmentsX={150} segmentsY={100} />
 
             <group position={[0, 0.0, 0]}>
                 <SceneWaterObject name={'water'} objects={objects}></SceneWaterObject>
